@@ -64,3 +64,5 @@ input[type="range"].range-light { background: var(--color-line); }
 .pulse-rec { animation: pulse-rec 1.2s ease-in-out infinite; }
 .safe-bottom { padding-bottom: max(16px, env(safe-area-inset-bottom)); }
 .safe-top { padding-top: max(12px, env(safe-area-inset-top)); }
+@keyframes notify-in { from { opacity: 0; transform: translateY(-8px) scale(.98) } to { opacity: 1; transform: none } }
+.notify-in { animation: notify-in .28s cubic-bezier(.2,.8,.2,1); }

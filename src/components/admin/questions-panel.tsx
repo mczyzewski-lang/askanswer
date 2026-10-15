@@ -241,7 +241,6 @@ function QuestionRow({ q, index, data, refresh, toast, onEdit, onPreview }: { q:
   const [open, setOpen] = useState(false);
   const [narrating, setNarrating] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
-  const st = STATUS[q.status];
 
   const patch = async (body: Record<string, unknown>, msg?: string) => {
     try {
@@ -303,8 +302,15 @@ function QuestionRow({ q, index, data, refresh, toast, onEdit, onPreview }: { q:
                 </option>
               ))}
             </NativeSelect>
-            <Button size="sm" variant={open ? "subtle" : "ghost"} onClick={() => setOpen(!open)} aria-expanded={open}>
-              <Badge tone={q.takes.length ? st.tone : "gray"}>{q.takes.length}</Badge>
+            <Button
+              size="sm"
+              variant={open ? "subtle" : "ghost"}
+              onClick={() => setOpen(!open)}
+              aria-expanded={open}
+              data-testid="takes-toggle"
+              className={cn(q.takes.length > 0 && "border border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100")}
+            >
+              <Badge tone={q.takes.length ? "green" : "gray"}>{q.takes.length}</Badge>
               <span className="hidden sm:inline">{q.takes.length === 1 ? "nagranie" : "nagrania"}</span>
               <ChevronDown className={cn("transition", open && "rotate-180")} />
             </Button>

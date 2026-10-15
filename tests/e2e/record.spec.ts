@@ -1,12 +1,12 @@
 import { expect, test } from "@playwright/test";
-import { adminRequest, demoProject, newInvitation, waitForTakes } from "./helpers";
+import { adminRequest, demoProject, login, newInvitation, waitForTakes } from "./helpers";
 
 /**
  * Tests 2–7: invitation scoping, real camera recording (Chromium fake media device fed with a
  * generated TEST FIXTURE), ElevenLabs narration as a separate asset (mock API), pause/resume,
  * retakes and transcription with word timestamps.
  */
-test("expert records answers on a phone via the invitation link", async ({ page, request, browserName }) => {
+test("expert records answers on a phone via the invitation link", async ({ page, request, browser, browserName }) => {
   test.skip(browserName !== "chromium", "fake media devices are Chromium-only");
   await adminRequest(request);
   const data = await demoProject(request);
@@ -27,6 +27,15 @@ test("expert records answers on a phone via the invitation link", async ({ page,
   expect(forbidden.status()).toBe(403);
   const bad = await request.get(`/api/record/invalidtoken0000000000000000000`);
   expect(bad.status()).toBe(404);
+
+  // the admin keeps the project open on a desktop — it must update live, without a reload
+  const adminCtx = await browser.newContext({ viewport: { width: 1440, height: 900 }, isMobile: false, hasTouch: false });
+  const admin = await adminCtx.newPage();
+  await login(admin);
+  await admin.goto(`/admin/projects/${data.project.id}`);
+  const greenTakes = admin.locator("[data-testid=takes-toggle].bg-emerald-50");
+  await expect(admin.getByTestId("takes-toggle").first()).toBeVisible();
+  await expect(greenTakes).toHaveCount(0);
 
   await page.goto(url);
   await expect(page.getByText(/Masz \d+ pyta/)).toBeVisible();
@@ -55,6 +64,12 @@ test("expert records answers on a phone via the invitation link", async ({ page,
   await page.waitForTimeout(2500);
   await page.getByRole("button", { name: "Zatrzymaj" }).click();
   await expect(page.getByText("Nagranie bezpiecznie zapisane")).toBeVisible({ timeout: 60_000 });
+
+  // live admin update: mini-notification + pastel-green recordings button, no page reload
+  await expect(admin.getByTestId("upload-notification")).toContainText("Nowe nagranie", { timeout: 20_000 });
+  await expect(admin.getByTestId("upload-notification")).toContainText(q1.text.slice(0, 20));
+  await expect(greenTakes).toHaveCount(1, { timeout: 20_000 });
+  await adminCtx.close();
 
   // Test 6: second take of the same answer
   await page.getByRole("button", { name: "Nagraj ponownie" }).click();

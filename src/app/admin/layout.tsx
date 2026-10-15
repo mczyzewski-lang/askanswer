@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { currentUser } from "@/lib/server/auth";
 import { elevenLabsConfigured } from "@/lib/server/env";
 import { AdminNav } from "@/components/admin/nav";
+import { ActivityNotifier } from "@/components/admin/activity-notifier";
 
 export const dynamic = "force-dynamic";
 
@@ -32,6 +33,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         </div>
       </header>
       <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">{children}</main>
+      <ActivityNotifier />
     </div>
   );
 }
