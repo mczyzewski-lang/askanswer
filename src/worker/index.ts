@@ -7,6 +7,7 @@ import { prisma } from "../lib/server/db";
 import { claimJob, completeJob, failJob, startHeartbeat } from "../lib/server/jobs";
 import { processTake, transcribeTake, PermanentError } from "../lib/server/pipeline";
 import { runRender } from "../lib/server/render-job";
+import { enhanceComposition } from "../lib/server/enhance";
 import { ElevenLabsError } from "../lib/server/elevenlabs";
 
 const workerId = `${os.hostname()}-${process.pid}`;
@@ -21,6 +22,8 @@ async function handle(job: { id: string; type: string; payload: unknown }) {
       return transcribeTake(p.takeId, Boolean(p.force));
     case "render":
       return runRender(p.renderJobId);
+    case "enhance-audio":
+      return { map: await enhanceComposition(p.compositionId, p.mode as "podcast" | "isolator", (p.strength as "natural" | "podcast" | "radio") ?? "podcast") };
     default:
       throw new PermanentError(`Unknown job type ${job.type}`);
   }
@@ -45,9 +48,9 @@ async function loop() {
     console.log(`[worker] ${job.type} ${job.id} (attempt ${job.attempts})`);
     const stopBeat = startHeartbeat(job.id);
     try {
-      await handle(job);
+      const result = await handle(job);
       stopBeat();
-      await completeJob(job.id);
+      await completeJob(job.id, result ?? undefined);
       console.log(`[worker] ✓ ${job.type} ${job.id} in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
     } catch (e) {
       stopBeat();

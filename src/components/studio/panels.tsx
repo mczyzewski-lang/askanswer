@@ -864,9 +864,35 @@ function VoiceEnhanceSection({ meta }: { meta: StudioMeta }) {
     }
     setBusy(m);
     try {
+      const readJson = async (r: Response) => {
+        const txt = await r.text();
+        try {
+          return JSON.parse(txt);
+        } catch {
+          throw new Error(r.status >= 500 ? `Serwer nie odpowiedział poprawnie (HTTP ${r.status}) — mógł się właśnie aktualizować. Spróbuj ponownie za chwilę.` : `Błąd HTTP ${r.status}`);
+        }
+      };
       const res = await fetch(`/api/admin/compositions/${meta.compositionId}/enhance-audio`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ mode: m, strength: level }) });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Nie udało się ulepszyć dźwięku");
+      let data = await readJson(res);
+      if (!res.ok) throw new Error(data.error ?? `Nie udało się ulepszyć dźwięku (HTTP ${res.status})`);
+      if (data.jobId) {
+        // processed in the background (ElevenLabs + FFmpeg); poll until done
+        const started = Date.now();
+        for (;;) {
+          await new Promise((r) => setTimeout(r, 2000));
+          const jr = await fetch(`/api/admin/jobs/${data.jobId}`, { cache: "no-store" });
+          const job = await readJson(jr).catch(() => null);
+          if (!job) continue;
+          if (job.status === "SUCCEEDED") {
+            data = { map: job.result?.map ?? {}, assets: job.assets };
+            break;
+          }
+          if (job.status === "FAILED") throw new Error(job.error ?? "Nie udało się ulepszyć dźwięku");
+          if (job.status === "QUEUED" && job.error) setErr(`Ponawiam… (${String(job.error).slice(0, 160)})`);
+          if (Date.now() - started > 15 * 60_000) throw new Error("Przetwarzanie trwa zbyt długo — spróbuj ponownie później.");
+        }
+        setErr(null);
+      }
       const st = useStudio.getState();
       st.addAssets(data.assets);
       st.apply((d) => ({ ...d, clips: d.clips.map((c) => ({ ...c, audioAssetId: data.map[c.assetId] ?? c.audioAssetId ?? null })) }));

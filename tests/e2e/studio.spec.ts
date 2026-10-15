@@ -73,6 +73,12 @@ test("studio: pauses, cuts, subtitles, zoom, theme, persistence and real MP4 exp
   await page.getByRole("button", { name: "Płynne przybliżenie" }).click();
   await expect(page.getByText(/100→115%/)).toBeVisible();
 
+  // Voice enhancement (ElevenLabs isolator + mastering) runs as a background job
+  await page.getByTestId("tab-audio").click();
+  await page.getByTestId("enhance-isolator").click();
+  await expect(page.getByText(/Aktywny ulepszony dźwięk/)).toBeVisible({ timeout: 90_000 });
+  await waitSaved(page);
+
   // Test 12 — theme accent/highlight change propagates (stored on the project theme)
   await page.getByTestId("tab-theme").click();
   await page.getByTestId("theme-highlight").evaluate((el: HTMLInputElement) => {

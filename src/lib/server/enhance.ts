@@ -49,6 +49,23 @@ export function masteringChain(strength: EnhanceStrength): string {
 // v3: lossless FLAC output — plays in every browser and has no encoder delay (exact lip sync)
 const CHAIN_VERSION = "v3";
 
+/** Already generated version (no work needed) or null. */
+export async function cachedEnhancement(sourceAssetId: string, mode: EnhanceMode, strength: EnhanceStrength): Promise<string | null> {
+  const src = await prisma.mediaAsset.findUnique({ where: { id: sourceAssetId } });
+  const id = ((src?.meta ?? {}) as { enhanced?: Record<string, string> }).enhanced?.[`${mode}:${strength}:${CHAIN_VERSION}`];
+  if (!id) return null;
+  return (await prisma.mediaAsset.findUnique({ where: { id } })) ? id : null;
+}
+
+/** Enhance every recording used by a composition; returns sourceAssetId → enhancedAssetId. */
+export async function enhanceComposition(compositionId: string, mode: EnhanceMode, strength: EnhanceStrength): Promise<Record<string, string>> {
+  const comp = await prisma.videoComposition.findUniqueOrThrow({ where: { id: compositionId } });
+  const doc = comp.document as unknown as { clips: Array<{ assetId: string }> };
+  const map: Record<string, string> = {};
+  for (const s of [...new Set(doc.clips.map((c) => c.assetId))]) map[s] = await enhanceAudio(s, mode, strength);
+  return map;
+}
+
 export async function enhanceAudio(sourceAssetId: string, mode: EnhanceMode, strength: EnhanceStrength = "podcast"): Promise<string> {
   const src = await prisma.mediaAsset.findUniqueOrThrow({ where: { id: sourceAssetId } });
   const meta = (src.meta ?? {}) as Record<string, unknown> & { enhanced?: Record<string, string> };
