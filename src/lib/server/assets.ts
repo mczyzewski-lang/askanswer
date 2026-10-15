@@ -20,6 +20,7 @@ export async function assetInfo(id: string, withWaveform = false): Promise<Asset
     waveform: withWaveform ? ((a.waveform as unknown as Waveform) ?? null) : undefined,
     label: a.originalName ?? undefined,
     variant: (a.meta as { mode?: string } | null)?.mode ?? null,
+    voiceId: (a.meta as { voiceId?: string } | null)?.voiceId ?? null,
   };
 }
 

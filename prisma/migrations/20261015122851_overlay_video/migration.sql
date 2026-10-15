@@ -1,0 +1,2 @@
+-- AlterEnum
+ALTER TYPE "AssetKind" ADD VALUE 'OVERLAY_VIDEO';

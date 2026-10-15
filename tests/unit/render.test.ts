@@ -32,3 +32,32 @@ describe("server renderer", () => {
     expect(probe.streams.map((s: { codec_name: string }) => s.codec_name).sort()).toEqual(["aac", "h264"]);
   });
 });
+
+describe("video overlay layer", () => {
+  it("draws an uploaded video as its own layer only within its time range", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "askby-ov-"));
+    const base = path.join(dir, "base.mp4");
+    const ov = path.join(dir, "ov.mp4");
+    execFileSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", "color=c=blue:s=540x960:d=3:r=30", "-f", "lavfi", "-i", "sine=f=300:d=3", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", base]);
+    execFileSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", "color=c=0x00ff00:s=320x180:d=1:r=30", "-c:v", "libx264", "-pix_fmt", "yuv420p", ov]);
+    let doc = buildInitialDocument({ questionText: "Test", theme: DEFAULT_THEME, mode: "ANSWER_ONLY", recording: { assetId: "v", duration: 3 }, narration: null, segments: [], pauses: [], visibility: "FULL", questionSeconds: 4 });
+    doc = {
+      ...doc,
+      overlays: [{ id: "o1", kind: "video", name: "ov", assetId: "ov", fit: "cover", sourceIn: 0, loop: true, volume: 0, radius: 0, start: 1, end: 2.5, x: 0.25, y: 0.4, w: 0.5, h: 0.2, opacity: 1, animation: "none" }],
+    };
+    const out = path.join(dir, "out.mp4");
+    await renderComposition(
+      doc,
+      new Map([
+        ["v", { id: "v", path: base, width: 540, height: 960, hasAudio: true, hasVideo: true, kind: "x", durationSec: 3 }],
+        ["ov", { id: "ov", path: ov, width: 320, height: 180, hasAudio: false, hasVideo: true, kind: "OVERLAY_VIDEO", durationSec: 1 }],
+      ]),
+      out,
+      { width: 540, height: 960, quality: "draft" },
+    );
+    const px = (t: number) => [...execFileSync("ffmpeg", ["-v", "error", "-ss", String(t), "-i", out, "-frames:v", "1", "-vf", "crop=2:2:270:480,format=rgb24", "-f", "rawvideo", "-pix_fmt", "rgb24", "-"])];
+    expect(px(0.5)[2]).toBeGreaterThan(150); // blue: before the layer starts
+    expect(px(1.8)[1]).toBeGreaterThan(150); // green: overlay visible (looped past its 1 s length)
+    expect(px(2.8)[2]).toBeGreaterThan(150); // blue again after it ends
+  });
+});

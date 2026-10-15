@@ -11,7 +11,9 @@ import path from "node:path";
 import { createCanvas, GlobalFonts, ImageData, loadImage, type SKRSContext2D, type Canvas, type Image } from "@napi-rs/canvas";
 import type { EditorDocument } from "../editor/types";
 import { clipAt, clipEnd, docDuration } from "../editor/timeline";
-import { drawFrame, type Ctx, type FrameSource } from "./compositor";
+import { drawFrame, overlayVideoTime, type Ctx, type FrameSource } from "./compositor";
+import { overlayEnd } from "../editor/timeline";
+import type { VideoOverlay } from "../editor/types";
 import { run } from "../server/ffmpeg";
 import { env } from "../server/env";
 
@@ -23,6 +25,7 @@ export interface RenderAsset {
   hasAudio: boolean;
   hasVideo: boolean;
   kind: string;
+  durationSec?: number | null;
 }
 
 export interface RenderOptions {
@@ -164,6 +167,25 @@ export async function mixAudio(doc: EditorDocument, assets: Map<string, RenderAs
   };
   for (const c of doc.clips) if (!c.muted) addClip(c.audioAssetId ?? c.assetId, c.sourceIn, c.sourceOut, c.start, c.volume);
   for (const c of doc.narration) if (!c.muted) addClip(c.assetId, c.sourceIn, c.sourceOut, c.start, c.volume, c.fadeIn, c.fadeOut);
+  // video overlays with sound (volume > 0); looping clips are expanded into repeated segments
+  for (const o of doc.overlays) {
+    if (o.kind !== "video" || o.hidden || o.volume <= 0) continue;
+    const a = assets.get(o.assetId);
+    if (!a?.hasAudio) continue;
+    const end = Math.min(overlayEnd(o, duration), duration);
+    const fileDur = a.durationSec ?? end - o.start + o.sourceIn;
+    let t0 = o.start;
+    let src = o.sourceIn;
+    let guard = 0;
+    while (t0 < end - 0.02 && guard++ < 200) {
+      const len = Math.min(end - t0, fileDur - src);
+      if (len <= 0.02) break;
+      addClip(o.assetId, src, src + len, t0, o.volume, 0.05, 0.05);
+      t0 += len;
+      if (!o.loop) break;
+      src = o.sourceIn;
+    }
+  }
   for (const c of doc.music) {
     if (c.muted) continue;
     const end = Math.min(clipEnd(c), duration);
@@ -214,9 +236,36 @@ export async function renderVideoSegment(job: SegmentJob, onFrame?: (done: numbe
     encoder.on("close", (code) => (code === 0 ? resolve() : reject(new Error(`Encoder failed (${code}): ${encErr.slice(-1500)}`))));
   });
   let reader: { clipId: string; n0: number; r: FrameReader } | null = null;
+  // video overlays: one sequential reader per layer (recreated when a loop wraps around)
+  const ovReaders = new Map<string, { l0: number; r: FrameReader }>();
+  const ovCanvases = new Map<string, Canvas>();
+  const durationAll = docDuration(doc);
   try {
     for (let i = job.fromFrame; i < job.toFrame; i++) {
       const t = i / fps;
+      const ovFrames = new Map<string, FrameSource>();
+      for (const o of doc.overlays) {
+        if (o.kind !== "video" || o.hidden || t < o.start || t >= overlayEnd(o, durationAll)) continue;
+        const a = assets.get(o.assetId);
+        if (!a || !a.width || !a.height) continue;
+        const local = overlayVideoTime(o as VideoOverlay, t, a.durationSec ?? null);
+        let rd = ovReaders.get(o.id);
+        const n = Math.round(((rd ? local - rd.l0 : 0) * fps));
+        if (!rd || n < 0 || n > rd.r.index + 90) {
+          rd?.r.close();
+          rd = { l0: local, r: new FrameReader(a.path, local, 36000, a.width * a.height * 4) };
+          ovReaders.set(o.id, rd);
+        }
+        const buf = await rd.r.frameAt(Math.max(0, Math.round((local - rd.l0) * fps)));
+        if (!buf) continue;
+        let cv = ovCanvases.get(o.id);
+        if (!cv) {
+          cv = createCanvas(a.width, a.height);
+          ovCanvases.set(o.id, cv);
+        }
+        cv.getContext("2d").putImageData(new ImageData(new Uint8ClampedArray(buf.buffer, buf.byteOffset, buf.byteLength), a.width, a.height), 0, 0);
+        ovFrames.set(o.id, { image: cv as unknown as CanvasImageSource, width: a.width, height: a.height });
+      }
       const clip = clipAt(doc, t + 1e-6);
       let frame: FrameSource | null = null;
       if (clip) {
@@ -248,6 +297,7 @@ export async function renderVideoSegment(job: SegmentJob, onFrame?: (done: numbe
           return img ? { image: img as unknown as CanvasImageSource, width: img.width, height: img.height } : null;
         },
         includeSuggestedZooms: false,
+        getOverlayFrame: (o) => ovFrames.get(o.id) ?? null,
       });
       const px = ctx.getImageData(0, 0, job.width, job.height).data;
       const ok = encoder.stdin.write(Buffer.from(px.buffer, px.byteOffset, px.byteLength));
@@ -256,6 +306,7 @@ export async function renderVideoSegment(job: SegmentJob, onFrame?: (done: numbe
     }
   } finally {
     reader?.r.close();
+    for (const r of ovReaders.values()) r.r.close();
     encoder.stdin.end();
   }
   await encDone;

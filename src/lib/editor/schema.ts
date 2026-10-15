@@ -69,7 +69,7 @@ const overlayBase = {
   w: num.min(0.01).max(3),
   h: num.min(0).max(3),
   opacity: num.min(0).max(1),
-  animation: z.enum(["none", "fade", "pop", "slide"]),
+  animation: z.enum(["none", "fade", "pop", "slide", "slideDown", "slideLeft", "zoom"]),
   hidden: z.boolean().optional(),
 };
 
@@ -92,8 +92,9 @@ const textStyle = z.object({
 const overlay = z.discriminatedUnion("kind", [
   z.object({ ...overlayBase, kind: z.literal("text"), role: z.enum(["question", "label", "custom"]), text: z.string().max(2000), style: textStyle }),
   z.object({ ...overlayBase, kind: z.enum(["rect", "ellipse", "highlight"]), fill: color.nullable(), stroke: color.nullable(), strokeWidth: num.min(0).max(60), radius: num.min(0).max(500) }),
-  z.object({ ...overlayBase, kind: z.enum(["callout", "lowerThird"]), title: z.string().max(300), subtitle: z.string().max(300), fill: color, accent: color, textColor: color, fontFamily: font }),
+  z.object({ ...overlayBase, kind: z.enum(["callout", "lowerThird"]), title: z.string().max(300), subtitle: z.string().max(300), fill: color, accent: color, textColor: color, fontFamily: font, titleSize: num.min(8).max(300).optional(), subtitleSize: num.min(6).max(300).optional() }),
   z.object({ ...overlayBase, kind: z.enum(["image", "logo"]), assetId: z.string().max(64).nullable(), fit: z.enum(["contain", "cover"]) }),
+  z.object({ ...overlayBase, kind: z.literal("video"), assetId: z.string().max(64), fit: z.enum(["contain", "cover"]), sourceIn: num.min(0), loop: z.boolean(), volume: num.min(0).max(2), radius: num.min(0).max(500) }),
 ]);
 
 const subStyle = z.object({

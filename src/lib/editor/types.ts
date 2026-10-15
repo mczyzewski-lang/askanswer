@@ -101,7 +101,7 @@ export interface TextStyle {
   uppercase: boolean;
 }
 
-export type OverlayAnimation = "none" | "fade" | "pop" | "slide";
+export type OverlayAnimation = "none" | "fade" | "pop" | "slide" | "slideDown" | "slideLeft" | "zoom";
 
 interface OverlayBase {
   id: string;
@@ -140,6 +140,9 @@ export interface CalloutOverlay extends OverlayBase {
   accent: ColorRef;
   textColor: ColorRef;
   fontFamily: FontRef;
+  /** Font sizes in design px (1080-wide canvas); when absent, derived from the box height. */
+  titleSize?: number;
+  subtitleSize?: number;
 }
 
 export interface ImageOverlay extends OverlayBase {
@@ -148,7 +151,18 @@ export interface ImageOverlay extends OverlayBase {
   fit: "contain" | "cover";
 }
 
-export type Overlay = TextOverlay | ShapeOverlay | CalloutOverlay | ImageOverlay;
+/** Uploaded video placed as its own layer (picture-in-picture, B-roll, animated graphic). */
+export interface VideoOverlay extends OverlayBase {
+  kind: "video";
+  assetId: string;
+  fit: "contain" | "cover";
+  sourceIn: number; // where the clip starts inside the uploaded file
+  loop: boolean;
+  volume: number; // 0 = muted
+  radius: number;
+}
+
+export type Overlay = TextOverlay | ShapeOverlay | CalloutOverlay | ImageOverlay | VideoOverlay;
 
 export interface SubWord {
   id: string;
@@ -240,6 +254,8 @@ export interface AssetInfo {
   label?: string;
   /** For enhanced audio: which enhancement produced it ("podcast" | "isolator"). */
   variant?: string | null;
+  /** For narration: the ElevenLabs voice it was generated with. */
+  voiceId?: string | null;
 }
 
 export interface Waveform {

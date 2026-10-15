@@ -7,7 +7,7 @@
  * which is what gives preview/export parity. Editor-only UI (selection handles,
  * safe-area guides) is never drawn here.
  */
-import type { CalloutOverlay, ColorRef, EditorDocument, FontRef, ImageOverlay, Overlay, ShapeOverlay, TextOverlay, ThemeTokens } from "../editor/types";
+import type { CalloutOverlay, ColorRef, EditorDocument, FontRef, ImageOverlay, Overlay, ShapeOverlay, TextOverlay, ThemeTokens, VideoOverlay } from "../editor/types";
 import { clipAt, docDuration, overlayEnd, segmentAt, timedSegments, type TimedSegment } from "../editor/timeline";
 import { zoomAt } from "../editor/zoom";
 
@@ -28,6 +28,22 @@ export interface RenderEnv {
   includeSuggestedZooms?: boolean;
   /** Overlay ids to skip (e.g. the one being edited in place). */
   hideOverlayIds?: Set<string>;
+  /** Frame of a video overlay at its local time (seconds inside the uploaded file). */
+  getOverlayFrame?: (overlay: VideoOverlay, localTime: number) => FrameSource | null;
+  /** Paused editor preview: show entrance animations in their final state so elements stay editable. */
+  settled?: boolean;
+}
+
+export const ENTRANCE = 0.55;
+
+/** Local time inside a video overlay's file (handles looping). */
+export function overlayVideoTime(o: VideoOverlay, t: number, fileDuration: number | null): number {
+  const local = o.sourceIn + Math.max(0, t - o.start);
+  if (o.loop && fileDuration && fileDuration > 0.1) {
+    const span = fileDuration - o.sourceIn;
+    return span > 0.05 ? o.sourceIn + ((local - o.sourceIn) % span) : o.sourceIn;
+  }
+  return fileDuration ? Math.min(local, Math.max(0, fileDuration - 0.04)) : local;
 }
 
 export function unit(doc: Pick<EditorDocument, "width" | "height">): number {
@@ -164,29 +180,46 @@ export function layoutTextOverlay(ctx: Ctx, doc: EditorDocument, o: TextOverlay)
 
 export function overlayRect(ctx: Ctx, doc: EditorDocument, o: Overlay): Rect {
   if (o.kind === "text") return layoutTextOverlay(ctx, doc, o).rect;
+  if (o.kind === "callout" || o.kind === "lowerThird") {
+    // a bar grows to fit larger fonts
+    const u = unit(doc);
+    const need = calloutSizes(o, o.h * doc.height, u);
+    return { x: o.x * doc.width, y: o.y * doc.height, w: o.w * doc.width, h: Math.max(o.h * doc.height, need.minH) };
+  }
   return { x: o.x * doc.width, y: o.y * doc.height, w: o.w * doc.width, h: o.h * doc.height };
 }
 
-function animState(o: Overlay, t: number, duration: number): { alpha: number; scale: number; dy: number } {
+function animState(o: Overlay, t: number, duration: number, settled = false): { alpha: number; scale: number; dx: number; dy: number } {
   const end = overlayEnd(o, duration);
-  // elements present from the first frame are fully visible immediately (no fade-in from 0)
-  const inP = o.start <= 0.001 ? 1 : Math.min(1, Math.max(0, (t - o.start) / 0.35));
-  const outP = o.end == null ? 1 : Math.min(1, Math.max(0, (end - t) / 0.3));
+  const inP = settled ? 1 : Math.min(1, Math.max(0, (t - o.start) / ENTRANCE));
+  const outP = o.end == null || settled ? 1 : Math.min(1, Math.max(0, (end - t) / 0.3));
   const p = Math.min(inP, outP);
+  const k = 1 - Math.pow(1 - p, 3); // ease-out cubic
+  const back = p >= 1 ? 1 : 1 + 2.2 * Math.pow(p - 1, 3) + 1.2 * Math.pow(p - 1, 2); // ease-out-back (slight overshoot)
   switch (o.animation) {
     case "fade":
-      return { alpha: p, scale: 1, dy: 0 };
-    case "pop": {
-      const k = 1 - Math.pow(1 - p, 3);
-      return { alpha: Math.min(1, p * 2), scale: 0.9 + 0.1 * k, dy: 0 };
-    }
-    case "slide": {
-      const k = 1 - Math.pow(1 - p, 3);
-      return { alpha: p, scale: 1, dy: (1 - k) * 40 };
-    }
+      return { alpha: p, scale: 1, dx: 0, dy: 0 };
+    case "pop":
+      return { alpha: Math.min(1, p * 2), scale: 0.86 + 0.14 * back, dx: 0, dy: 0 };
+    case "slide":
+      return { alpha: Math.min(1, p * 1.6), scale: 1, dx: 0, dy: (1 - k) * 60 };
+    case "slideDown":
+      return { alpha: Math.min(1, p * 1.6), scale: 1, dx: 0, dy: -(1 - k) * 90 };
+    case "slideLeft":
+      return { alpha: Math.min(1, p * 1.6), scale: 1, dx: (1 - k) * 140, dy: 0 };
+    case "zoom":
+      return { alpha: Math.min(1, p * 1.8), scale: 1.25 - 0.25 * k, dx: 0, dy: 0 };
     default:
-      return { alpha: 1, scale: 1, dy: 0 };
+      return { alpha: 1, scale: 1, dx: 0, dy: 0 };
   }
+}
+
+function calloutSizes(o: CalloutOverlay, boxH: number, u: number) {
+  const titleSize = o.titleSize ? o.titleSize * u : Math.min(boxH * 0.4, 46 * u);
+  const subSize = o.subtitleSize ? o.subtitleSize * u : Math.min(boxH * 0.26, 30 * u);
+  const hasSub = !!o.subtitle.trim();
+  const minH = 20 * u + titleSize * 1.15 + (hasSub ? subSize * 1.35 : 0) + 8 * u;
+  return { titleSize, subSize, minH, hasSub };
 }
 
 function drawTextOverlay(ctx: Ctx, doc: EditorDocument, o: TextOverlay) {
@@ -265,19 +298,19 @@ function drawCallout(ctx: Ctx, doc: EditorDocument, o: CalloutOverlay) {
   ctx.restore();
   ctx.restore();
   const padX = barW + 26 * u;
-  const titleSize = Math.min(r.h * 0.4, 46 * u);
-  const subSize = Math.min(r.h * 0.26, 30 * u);
+  const { titleSize, subSize, hasSub } = calloutSizes(o, o.h * doc.height, u);
   ctx.save();
   ctx.textBaseline = "middle";
   ctx.fillStyle = resolveColor(o.textColor, doc.theme);
   ctx.font = fontString(800, titleSize, fam);
-  const hasSub = !!o.subtitle.trim();
-  const titleY = hasSub ? r.y + r.h * 0.38 : r.y + r.h / 2;
-  ctx.fillText(fitLine(ctx, o.title, r.w - padX - 20 * u), r.x + padX, titleY);
+  // title + subtitle block centred vertically in the (possibly grown) box
+  const blockH = titleSize * 1.15 + (hasSub ? subSize * 1.35 : 0);
+  const top = r.y + (r.h - blockH) / 2;
+  ctx.fillText(fitLine(ctx, o.title, r.w - padX - 20 * u), r.x + padX, top + titleSize * 0.575);
   if (hasSub) {
     ctx.globalAlpha *= 0.82;
     ctx.font = fontString(500, subSize, fam);
-    ctx.fillText(fitLine(ctx, o.subtitle, r.w - padX - 20 * u), r.x + padX, r.y + r.h * 0.7);
+    ctx.fillText(fitLine(ctx, o.subtitle, r.w - padX - 20 * u), r.x + padX, top + titleSize * 1.15 + subSize * 0.675);
   }
   ctx.restore();
 }
@@ -305,16 +338,35 @@ function drawImageOverlay(ctx: Ctx, doc: EditorDocument, o: ImageOverlay, env: R
   ctx.restore();
 }
 
+function drawVideoOverlay(ctx: Ctx, doc: EditorDocument, o: VideoOverlay, t: number, env: RenderEnv) {
+  const f = env.getOverlayFrame?.(o, t);
+  const r = overlayRect(ctx, doc, o);
+  ctx.save();
+  roundRect(ctx, r.x, r.y, r.w, r.h, o.radius * unit(doc));
+  ctx.clip();
+  if (!f) {
+    ctx.fillStyle = "rgba(0,0,0,0.35)";
+    ctx.fillRect(r.x, r.y, r.w, r.h);
+    ctx.restore();
+    return;
+  }
+  const k = o.fit === "cover" ? Math.max(r.w / f.width, r.h / f.height) : Math.min(r.w / f.width, r.h / f.height);
+  const dw = f.width * k;
+  const dh = f.height * k;
+  ctx.drawImage(f.image, r.x + (r.w - dw) / 2, r.y + (r.h - dh) / 2, dw, dh);
+  ctx.restore();
+}
+
 export function drawOverlay(ctx: Ctx, doc: EditorDocument, o: Overlay, t: number, env: RenderEnv, duration: number) {
-  const a = animState(o, t, duration);
+  const a = animState(o, t, duration, env.settled);
   if (a.alpha <= 0.001) return;
   ctx.save();
   ctx.globalAlpha = Math.max(0, Math.min(1, o.opacity)) * a.alpha;
-  if (a.scale !== 1 || a.dy !== 0) {
+  if (a.scale !== 1 || a.dy !== 0 || a.dx !== 0) {
     const r = overlayRect(ctx, doc, o);
     const cx = r.x + r.w / 2;
     const cy = r.y + r.h / 2;
-    ctx.translate(cx, cy + a.dy * unit(doc));
+    ctx.translate(cx + a.dx * unit(doc), cy + a.dy * unit(doc));
     ctx.scale(a.scale, a.scale);
     ctx.translate(-cx, -cy);
   }
@@ -334,6 +386,9 @@ export function drawOverlay(ctx: Ctx, doc: EditorDocument, o: Overlay, t: number
     case "image":
     case "logo":
       drawImageOverlay(ctx, doc, o, env);
+      break;
+    case "video":
+      drawVideoOverlay(ctx, doc, o, t, env);
       break;
   }
   ctx.restore();

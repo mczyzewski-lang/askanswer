@@ -53,6 +53,7 @@ enum AssetKind {
   NARRATION
   MUSIC
   IMAGE
+  OVERLAY_VIDEO
   LOGO
   RENDER
 }

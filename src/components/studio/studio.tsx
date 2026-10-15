@@ -394,7 +394,7 @@ export function Studio({ id }: { id: string }) {
           {tab === "zoom" ? <ZoomPanel engine={engine} /> : null}
           {tab === "audio" ? <AudioPanel meta={meta} onUpload={async (f) => void (await upload(f))} onRegenerate={regenerateNarration} /> : null}
           {tab === "text" ? <TextPanel /> : null}
-          {tab === "graphics" ? <GraphicsPanel meta={meta} onUploadImage={async (f) => (await upload(f))?.id ?? null} /> : null}
+          {tab === "graphics" ? <GraphicsPanel meta={meta} onUpload={upload} /> : null}
           {tab === "templates" ? <TemplatesPanel /> : null}
           {tab === "theme" ? <ThemePanel themeId={payload.project.themeId} toast={toast} /> : null}
         </aside>

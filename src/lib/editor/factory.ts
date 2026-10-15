@@ -25,7 +25,7 @@ export function questionOverlay(text: string, start: number, end: number | null)
     w: 0.86,
     h: 0.1,
     opacity: 1,
-    animation: "fade",
+    animation: "slideDown",
     style: {
       fontFamily: "$question",
       fontSize: 58,

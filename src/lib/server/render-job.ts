@@ -27,6 +27,7 @@ export function referencedAssetIds(doc: EditorDocument): string[] {
       const id = o.assetId ?? (o.kind === "logo" ? doc.theme.logoAssetId : null);
       if (id) ids.add(id);
     }
+    if (o.kind === "video") ids.add(o.assetId);
   }
   return [...ids];
 }
@@ -48,7 +49,7 @@ async function renderOne(doc: EditorDocument, out: string, settings: RenderSetti
     for (const r of rows) {
       const f = await toLocalFile(r.storageKey);
       locals.push(f);
-      assets.set(r.id, { id: r.id, path: f.path, width: r.width, height: r.height, hasAudio: r.hasAudio, hasVideo: r.hasVideo, kind: r.kind });
+      assets.set(r.id, { id: r.id, path: f.path, width: r.width, height: r.height, hasAudio: r.hasAudio, hasVideo: r.hasVideo, kind: r.kind, durationSec: r.durationSec });
     }
     const missing = doc.clips.filter((c) => !assets.has(c.assetId));
     if (missing.length) throw new Error("Brak pliku źródłowego dla części klipów — nie można wyrenderować");

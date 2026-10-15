@@ -6,8 +6,9 @@
  * so what you see here is what the server renderer produces.
  */
 import type { AssetInfo, AudioClip, EditorDocument } from "@/lib/editor/types";
-import { clipAt, clipEnd, docDuration, sortedClips } from "@/lib/editor/timeline";
-import { drawFrame } from "@/lib/render/compositor";
+import { clipAt, clipEnd, docDuration, overlayEnd, sortedClips } from "@/lib/editor/timeline";
+import { drawFrame, overlayVideoTime } from "@/lib/render/compositor";
+import type { VideoOverlay } from "@/lib/editor/types";
 
 const DRIFT = 0.25;
 
@@ -24,6 +25,7 @@ export class PlaybackEngine {
   private assignment = new Map<HTMLVideoElement, string>(); // element -> clip id
   private audios = new Map<string, HTMLAudioElement>(); // per audio clip id
   private images = new Map<string, HTMLImageElement>();
+  private overlayVideos = new Map<string, HTMLVideoElement>(); // per video overlay id
   private raf = 0;
   private playing = false;
   private startWall = 0;
@@ -47,9 +49,56 @@ export class PlaybackEngine {
     this.raf = requestAnimationFrame(this.loop);
   }
 
+  /** Keep video-overlay elements in sync with the timeline (seek on drift, play/pause with the transport). */
+  private syncOverlayVideos(t: number, force: boolean) {
+    const doc = this.doc;
+    if (!doc) return;
+    const dur = docDuration(doc);
+    const live = new Set<string>();
+    for (const o of doc.overlays) {
+      if (o.kind !== "video") continue;
+      live.add(o.id);
+      const asset = this.assets[o.assetId];
+      if (!asset) continue;
+      let v = this.overlayVideos.get(o.id);
+      if (!v) {
+        v = document.createElement("video");
+        v.preload = "auto";
+        v.playsInline = true;
+        v.src = playableUrl(asset);
+        v.addEventListener("seeked", () => this.invalidate());
+        v.addEventListener("loadeddata", () => this.invalidate());
+        this.container.appendChild(v);
+        this.overlayVideos.set(o.id, v);
+      }
+      const visible = !o.hidden && t >= o.start && t < overlayEnd(o, dur);
+      const local = overlayVideoTime(o, t, asset.durationSec);
+      v.muted = o.volume <= 0;
+      v.volume = Math.max(0, Math.min(1, o.volume));
+      if (!visible) {
+        if (!v.paused) v.pause();
+        if (Math.abs(v.currentTime - local) > 0.05 && !v.seeking) v.currentTime = local;
+        continue;
+      }
+      if (force || Math.abs(v.currentTime - local) > (this.playing ? DRIFT : 0.02)) {
+        if (!v.seeking || force) v.currentTime = local;
+      }
+      if (this.playing && v.paused) void v.play().catch(() => {});
+      if (!this.playing && !v.paused) v.pause();
+    }
+    for (const [id, v] of this.overlayVideos) {
+      if (!live.has(id)) {
+        v.pause();
+        v.remove();
+        this.overlayVideos.delete(id);
+      }
+    }
+  }
+
   destroy() {
     cancelAnimationFrame(this.raf);
     for (const list of this.videos.values()) for (const v of list) v.pause();
+    for (const v of this.overlayVideos.values()) v.pause();
     for (const a of this.audios.values()) a.pause();
     this.container.remove();
   }
@@ -114,6 +163,7 @@ export class PlaybackEngine {
   pause() {
     this.playing = false;
     for (const list of this.videos.values()) for (const v of list) v.pause();
+    for (const v of this.overlayVideos.values()) v.pause();
     for (const a of this.audios.values()) a.pause();
     this.invalidate();
   }
@@ -169,6 +219,7 @@ export class PlaybackEngine {
     for (const list of this.videos.values()) for (const v of list) if (!used.has(v) && !v.paused) v.pause();
     this.syncLinkedAudio(clip, t, force);
     for (const c of [...doc.narration, ...doc.music]) this.syncAudio(c, t, force);
+    this.syncOverlayVideos(t, force);
     // clean up audio elements for removed clips
     const ids = new Set([...doc.narration, ...doc.music].map((c) => c.id));
     for (const [id, a] of this.audios) {
@@ -278,6 +329,13 @@ export class PlaybackEngine {
       },
       includeSuggestedZooms: this.includeSuggested,
       hideOverlayIds: this.hideOverlayIds,
+      // paused: entrance animations shown in their final state so layers stay visible and editable
+      settled: !this.playing,
+      getOverlayFrame: (o: VideoOverlay) => {
+        const v = this.overlayVideos.get(o.id);
+        if (!v || v.readyState < 2 || !v.videoWidth) return null;
+        return { image: v, width: v.videoWidth, height: v.videoHeight };
+      },
     });
   }
 }

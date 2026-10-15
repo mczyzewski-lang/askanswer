@@ -1,6 +1,7 @@
 "use client";
 import { Trash2 } from "lucide-react";
-import type { AudioClip, AVClip, CalloutOverlay, EditorDocument, ImageOverlay, Overlay, ShapeOverlay, TextOverlay, ZoomEffect } from "@/lib/editor/types";
+import type { AudioClip, AVClip, CalloutOverlay, EditorDocument, ImageOverlay, Overlay, ShapeOverlay, TextOverlay, VideoOverlay, ZoomEffect } from "@/lib/editor/types";
+import { NarrationVoiceChanger } from "./narration";
 import { clipEnd, deleteClip, docDuration } from "@/lib/editor/timeline";
 import { ZOOM_PRESETS } from "@/lib/editor/zoom";
 import { SUBTITLE_PRESETS } from "@/lib/editor/subtitles";
@@ -66,8 +67,11 @@ function TimingFields({ o, doc }: { o: Overlay; doc: EditorDocument }) {
         <Select value={o.animation} onChange={(v) => patchOverlay(o.id, { animation: v as Overlay["animation"] })}>
           <option value="none">Brak</option>
           <option value="fade">Pojawienie</option>
-          <option value="pop">Pop</option>
-          <option value="slide">Wjazd</option>
+          <option value="pop">Pop (odbicie)</option>
+          <option value="slide">Wjazd z dołu</option>
+          <option value="slideDown">Wjazd z góry</option>
+          <option value="slideLeft">Wjazd z boku</option>
+          <option value="zoom">Najazd (zoom)</option>
         </Select>
       </Row>
       <Row label="Krycie">
@@ -126,6 +130,7 @@ function OverlayProps({ o, doc }: { o: Overlay; doc: EditorDocument }) {
         {o.kind === "rect" || o.kind === "ellipse" || o.kind === "highlight" ? <ShapeProps o={o} doc={doc} /> : null}
         {o.kind === "callout" || o.kind === "lowerThird" ? <CalloutProps o={o} doc={doc} /> : null}
         {o.kind === "image" || o.kind === "logo" ? <ImageProps o={o} /> : null}
+        {o.kind === "video" ? <VideoProps o={o} /> : null}
       </Section>
       <Section title="Pozycja i rozmiar">
         <PositionFields o={o} />
@@ -242,6 +247,33 @@ function CalloutProps({ o, doc }: { o: CalloutOverlay; doc: EditorDocument }) {
       <Row label="Czcionka">
         <FontSelect value={o.fontFamily} onChange={(v) => patchOverlay<CalloutOverlay>(o.id, { fontFamily: v })} />
       </Row>
+      <Row label="Rozmiar tytułu">
+        <Slider value={o.titleSize ?? Math.round(Math.min(o.h * 1920 * 0.4, 46))} min={16} max={140} onChange={(v) => patchOverlay<CalloutOverlay>(o.id, { titleSize: v })} />
+      </Row>
+      <Row label="Rozmiar podtytułu">
+        <Slider value={o.subtitleSize ?? Math.round(Math.min(o.h * 1920 * 0.26, 30))} min={12} max={100} onChange={(v) => patchOverlay<CalloutOverlay>(o.id, { subtitleSize: v })} />
+      </Row>
+      <p className="text-[11.5px] text-studio-muted">Belka sama się powiększa, gdy tekst jest większy.</p>
+    </>
+  );
+}
+
+function VideoProps({ o }: { o: VideoOverlay }) {
+  return (
+    <>
+      <Row label="Dopasowanie">
+        <Seg value={o.fit} onChange={(v) => patchOverlay<VideoOverlay>(o.id, { fit: v })} options={[["contain", "Zmieść"], ["cover", "Wypełnij"]]} />
+      </Row>
+      <Toggle label="Zapętlaj" checked={o.loop} onChange={(v) => patchOverlay<VideoOverlay>(o.id, { loop: v })} />
+      <Row label="Dźwięk">
+        <Slider value={o.volume} min={0} max={1.5} step={0.01} onChange={(v) => patchOverlay<VideoOverlay>(o.id, { volume: v })} format={(v) => (v <= 0 ? "wył." : `${Math.round(v * 100)}%`)} />
+      </Row>
+      <Row label="Start w pliku (s)">
+        <NumberField value={o.sourceIn} min={0} onChange={(v) => patchOverlay<VideoOverlay>(o.id, { sourceIn: Math.max(0, v) })} />
+      </Row>
+      <Row label="Zaokrąglenie">
+        <Slider value={o.radius} min={0} max={120} onChange={(v) => patchOverlay<VideoOverlay>(o.id, { radius: v })} />
+      </Row>
     </>
   );
 }
@@ -325,6 +357,12 @@ function AudioProps({ c, kind }: { c: AudioClip; kind: "narration" | "music" }) 
       <p className="text-[11.5px] text-studio-muted">
         Na osi: {c.start.toFixed(2)}–{clipEnd(c).toFixed(2)} s. Przeciągnij krawędzie na osi czasu, aby przyciąć.
       </p>
+      {kind === "narration" ? (
+        <div className="border-t border-studio-line pt-3">
+          <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-studio-muted">Zmień lektora</p>
+          <NarrationVoiceChanger questionText={useStudio.getState().doc?.meta.questionText} />
+        </div>
+      ) : null}
     </Section>
   );
 }

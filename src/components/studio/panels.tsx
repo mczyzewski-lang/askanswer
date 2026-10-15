@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Check, CircleDot, Combine, ImagePlus, Loader2, Music2, Plus, RefreshCw, Scissors, Sparkles, Split, Square, Trash2, Undo2, X } from "lucide-react";
-import type { AudioClip, EditorDocument, Overlay, TextOverlay } from "@/lib/editor/types";
+import type { AssetInfo, AudioClip, EditorDocument, Overlay, TextOverlay } from "@/lib/editor/types";
 import {
   applyAcceptedPauses,
   applyPause,
@@ -25,7 +25,7 @@ import { cn } from "@/lib/utils";
 import { useStudio } from "./store";
 import { Row, Section, Seg, Select, SButton, Slider, TextField } from "./controls";
 import type { PlaybackEngine } from "./playback";
-import { VoicePicker } from "@/components/voice-picker";
+import { NarrationVoiceChanger } from "./narration";
 
 export interface StudioMeta {
   compositionId: string;
@@ -86,6 +86,11 @@ export function QuestionPanel({ meta }: { meta: StudioMeta }) {
         )}
         <p className="text-[11.5px] text-studio-muted">Pytanie to edytowalna warstwa tekstowa — nigdy nie jest wypalane w oryginalnym nagraniu.</p>
       </Section>
+      {meta.elevenLabs ? (
+        <Section title="Lektor pytania (ElevenLabs)">
+          <NarrationVoiceChanger questionText={meta.question?.text ?? doc.meta.questionText} initialVoiceId={doc.narration.length ? null : meta.project.voiceId} />
+        </Section>
+      ) : null}
     </div>
   );
 }
@@ -554,24 +559,7 @@ export function AudioPanel({ meta, onUpload, onRegenerate }: { meta: StudioMeta;
         ) : (
           <p className="text-[12.5px] text-studio-muted">Brak ścieżki lektora{meta.elevenLabs ? "" : " — wymaga konfiguracji ElevenLabs"}.</p>
         )}
-        {meta.elevenLabs ? (
-          <>
-            <VoicePicker dark value={voice} onChange={setVoice} previewText={meta.question?.text} />
-            <SButton
-              disabled={busy}
-              onClick={async () => {
-                setBusy(true);
-                try {
-                  await onRegenerate(voice);
-                } finally {
-                  setBusy(false);
-                }
-              }}
-            >
-              {busy ? <Loader2 className="animate-spin" /> : <RefreshCw />} {doc.narration.length ? "Wygeneruj ponownie" : "Wygeneruj lektora"}
-            </SButton>
-          </>
-        ) : null}
+        {meta.elevenLabs ? <NarrationVoiceChanger questionText={meta.question?.text} initialVoiceId={doc.narration.length ? null : meta.project.voiceId} /> : null}
         <p className="text-[11.5px] text-studio-muted">Głos lektora to osobny plik audio — nigdy nie jest nagrywany przez mikrofon telefonu.</p>
       </Section>
       <VoiceEnhanceSection meta={meta} />
@@ -682,10 +670,12 @@ export function TextPanel() {
   );
 }
 
-export function GraphicsPanel({ onUploadImage, meta }: { onUploadImage: (f: File) => Promise<string | null>; meta: StudioMeta }) {
+export function GraphicsPanel({ onUpload, meta }: { onUpload: (f: File) => Promise<AssetInfo | null>; meta: StudioMeta }) {
   const time = useStudio((s) => s.time);
   const doc = useStudio((s) => s.doc)!;
   const fileRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const [anim, setAnim] = useState<Overlay["animation"]>("pop");
   const add = (o: Overlay) => {
     useStudio.getState().apply((d) => ({ ...d, overlays: [...d.overlays, o] }));
     useStudio.getState().select({ kind: "overlay", ids: [o.id] });
@@ -713,22 +703,54 @@ export function GraphicsPanel({ onUploadImage, meta }: { onUploadImage: (f: File
           <Plus /> Logo z motywu
         </SButton>
         {!doc.theme.logoAssetId ? <p className="text-[11.5px] text-studio-muted">Wgraj logo w ustawieniach motywu.</p> : null}
-        <SButton onClick={() => fileRef.current?.click()}>
-          <ImagePlus /> Wgraj obraz
+      </Section>
+      <Section title="Własna grafika lub wideo">
+        <p className="text-[12px] text-studio-muted">Obraz (PNG, JPG, WEBP), animowany GIF albo wideo (MP4, MOV, WEBM) jako osobna warstwa nad nagraniem — od miejsca głowicy odtwarzania.</p>
+        <Row label="Animacja wejścia">
+          <Select value={anim} onChange={(v) => setAnim(v as Overlay["animation"])}>
+            <option value="pop">Pop (odbicie)</option>
+            <option value="fade">Pojawienie</option>
+            <option value="slide">Wjazd z dołu</option>
+            <option value="slideDown">Wjazd z góry</option>
+            <option value="slideLeft">Wjazd z boku</option>
+            <option value="zoom">Najazd (zoom)</option>
+            <option value="none">Brak</option>
+          </Select>
+        </Row>
+        <SButton variant="primary" className="w-full" disabled={uploading} onClick={() => fileRef.current?.click()}>
+          {uploading ? <Loader2 className="animate-spin" /> : <ImagePlus />} {uploading ? "Wysyłanie i konwersja…" : "Wgraj grafikę lub wideo"}
         </SButton>
         <input
           ref={fileRef}
           type="file"
-          accept="image/png,image/jpeg,image/webp"
+          accept="image/png,image/jpeg,image/webp,image/gif,video/mp4,video/quicktime,video/webm"
           className="hidden"
           onChange={async (e) => {
             const f = e.target.files?.[0];
             e.target.value = "";
             if (!f) return;
-            const id = await onUploadImage(f);
-            if (id) add({ ...baseOverlay(f.name, time), kind: "image", assetId: id, fit: "contain", x: 0.2, y: 0.35, w: 0.6, h: 0.2 });
+            setUploading(true);
+            try {
+              const a = await onUpload(f);
+              if (!a) return;
+              // keep the file's aspect ratio: 60% of the frame width, centred
+              const w = 0.6;
+              const ar = a.width && a.height ? a.width / a.height : 16 / 9;
+              const h = Math.min(0.6, (w * doc.width) / ar / doc.height);
+              const pos = { x: (1 - w) / 2, y: 0.36 - h / 2 + 0.05, w, h };
+              const total = docDuration(doc);
+              if (a.kind === "OVERLAY_VIDEO") {
+                const end = Math.min(total, time + Math.max(1, a.durationSec ?? 5));
+                add({ ...baseOverlay(f.name, time), end, animation: anim, kind: "video", assetId: a.id, fit: "contain", sourceIn: 0, loop: false, volume: 0, radius: 24, ...pos });
+              } else {
+                add({ ...baseOverlay(f.name, time), animation: anim, kind: "image", assetId: a.id, fit: "contain", ...pos });
+              }
+            } finally {
+              setUploading(false);
+            }
           }}
         />
+        <p className="text-[11.5px] text-studio-muted">Wideo jest domyślnie wyciszone — dźwięk włączysz we właściwościach warstwy. Maks. 300 MB / 5 min.</p>
       </Section>
     </div>
   );
