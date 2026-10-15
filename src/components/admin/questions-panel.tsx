@@ -45,7 +45,7 @@ import {
   NativeSelect,
   Textarea,
 } from "@/components/ui";
-import { api, cn, formatDate, formatDuration } from "@/lib/utils";
+import { api, cn, formatDate, formatDuration, plural } from "@/lib/utils";
 import { themeFromRow, DEFAULT_THEME } from "@/lib/themes";
 import type { PanelProps } from "./project-view";
 import { QuestionPreview } from "./question-preview";
@@ -120,7 +120,7 @@ export function QuestionsPanel({ data, refresh, toast }: PanelProps) {
         }
         try {
           const r = await api<{ created: number }>(`/api/admin/projects/${data.project.id}/questions`, { method: "POST", json: { items: rows } });
-          toast(`Zaimportowano ${r.created} pytań`);
+          toast(`Zaimportowano ${r.created} ${plural(r.created, "pytanie", "pytania", "pytań")}`);
           refresh();
         } catch (err) {
           toast((err as Error).message, "err");
@@ -632,7 +632,7 @@ function BulkDialog({ open, onClose, data, refresh, toast }: { open: boolean; on
                   method: "POST",
                   json: { items: lines.map((l) => ({ text: l, categoryId: categoryId || null, expertId: expertId || null })) },
                 });
-                toast(`Dodano ${r.created} pytań`);
+                toast(`Dodano ${r.created} ${plural(r.created, "pytanie", "pytania", "pytań")}`);
                 setText("");
                 onClose();
                 refresh();
@@ -641,7 +641,7 @@ function BulkDialog({ open, onClose, data, refresh, toast }: { open: boolean; on
               }
             }}
           >
-            Dodaj {lines.length || ""} {lines.length === 1 ? "pytanie" : "pytań"}
+            Dodaj {lines.length || ""} {plural(lines.length, "pytanie", "pytania", "pytań")}
           </Button>
         </div>
       </DialogContent>

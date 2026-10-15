@@ -1,0 +1,278 @@
+"use client";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import type { EditorDocument, Overlay } from "@/lib/editor/types";
+import { overlayEnd, docDuration } from "@/lib/editor/timeline";
+import { cachedSegments, layoutSubtitle, overlayRect, type Rect } from "@/lib/render/compositor";
+import { segmentAt } from "@/lib/editor/timeline";
+import { useStudio } from "./store";
+import type { PlaybackEngine } from "./playback";
+
+/** Approximate platform UI zones (normalized), shown only in the editor — never exported. */
+export const SAFE_ZONES: Record<string, { label: string; zones: Array<[number, number, number, number]> }> = {
+  tiktok: { label: "TikTok", zones: [[0, 0, 1, 0.075], [0, 0.8, 1, 0.2], [0.865, 0.36, 0.135, 0.44]] },
+  reels: { label: "Instagram Reels", zones: [[0, 0, 1, 0.1], [0, 0.78, 1, 0.22], [0.87, 0.46, 0.13, 0.32]] },
+  shorts: { label: "YouTube Shorts", zones: [[0, 0, 1, 0.085], [0, 0.79, 1, 0.21], [0.86, 0.47, 0.14, 0.32]] },
+};
+
+type Drag =
+  | { mode: "move"; ids: string[]; startX: number; startY: number; orig: Map<string, { x: number; y: number }> }
+  | { mode: "resize"; id: string; handle: "nw" | "ne" | "sw" | "se" | "e" | "w"; startX: number; startY: number; orig: Overlay; rect: Rect }
+  | { mode: "subs"; startY: number; origY: number };
+
+function visibleAt(doc: EditorDocument, t: number) {
+  const dur = docDuration(doc);
+  return doc.overlays.filter((o) => !o.hidden && t >= o.start && t < overlayEnd(o, dur));
+}
+
+export function Preview({ engine }: { engine: PlaybackEngine | null }) {
+  const doc = useStudio((s) => s.doc)!;
+  const time = useStudio((s) => s.time);
+  const selection = useStudio((s) => s.selection);
+  const clean = useStudio((s) => s.cleanPreview);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [box, setBox] = useState({ w: 360, h: 640 });
+  const [guides, setGuides] = useState<{ v: number[]; h: number[] }>({ v: [], h: [] });
+  const drag = useRef<Drag | null>(null);
+
+  // fit the canvas into the available area keeping the composition aspect ratio
+  useLayoutEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => {
+      const r = el.getBoundingClientRect();
+      const ar = doc.width / doc.height;
+      let h = r.height - 8;
+      let w = h * ar;
+      if (w > r.width - 8) {
+        w = r.width - 8;
+        h = w / ar;
+      }
+      setBox({ w: Math.max(100, w), h: Math.max(100, h) });
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [doc.width, doc.height]);
+
+  useEffect(() => {
+    if (!engine) return;
+    engine.canvas = canvasRef.current;
+    engine.invalidate();
+  }, [engine]);
+
+  const scale = box.w / doc.width;
+  const ctx = () => canvasRef.current?.getContext("2d") ?? null;
+  const toDoc = (e: { clientX: number; clientY: number }) => {
+    const r = canvasRef.current!.getBoundingClientRect();
+    return { x: (e.clientX - r.left) / scale, y: (e.clientY - r.top) / scale };
+  };
+
+  const selIds = selection?.kind === "overlay" ? selection.ids : [];
+  const c = ctx();
+  const selRects: Array<{ o: Overlay; r: Rect }> = c ? doc.overlays.filter((o) => selIds.includes(o.id)).map((o) => ({ o, r: overlayRect(c, doc, o) })) : [];
+  let subRect: Rect | null = null;
+  if (c && doc.subtitles.enabled) {
+    const seg = segmentAt(cachedSegments(doc), time);
+    if (seg) {
+      const L = layoutSubtitle(c, doc, seg);
+      subRect = { x: L.blockRect.x - 20, y: L.blockRect.y - 12, w: L.blockRect.w + 40, h: L.blockRect.h + 24 };
+    }
+  }
+
+  const onPointerDown = (e: React.PointerEvent) => {
+    const cx = ctx();
+    if (!cx || e.button !== 0) return;
+    const p = toDoc(e);
+    const st = useStudio.getState();
+    const vis = visibleAt(doc, time).reverse();
+    const hit = vis.find((o) => {
+      const r = overlayRect(cx, doc, o);
+      return p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + Math.max(r.h, 20);
+    });
+    if (hit) {
+      let ids = selIds.includes(hit.id) ? selIds : [hit.id];
+      if (e.shiftKey) ids = selIds.includes(hit.id) ? selIds.filter((x) => x !== hit.id) : [...selIds, hit.id];
+      st.select({ kind: "overlay", ids });
+      st.beginGesture();
+      drag.current = { mode: "move", ids, startX: p.x, startY: p.y, orig: new Map(doc.overlays.filter((o) => ids.includes(o.id)).map((o) => [o.id, { x: o.x, y: o.y }])) };
+      (e.target as HTMLElement).setPointerCapture(e.pointerId);
+      return;
+    }
+    if (subRect && p.x >= subRect.x && p.x <= subRect.x + subRect.w && p.y >= subRect.y && p.y <= subRect.y + subRect.h) {
+      st.select({ kind: "subtitles" });
+      st.beginGesture();
+      drag.current = { mode: "subs", startY: p.y, origY: doc.subtitles.style.y };
+      (e.target as HTMLElement).setPointerCapture(e.pointerId);
+      return;
+    }
+    st.select(null);
+  };
+
+  const startResize = (e: React.PointerEvent, o: Overlay, r: Rect, handle: "nw" | "ne" | "sw" | "se" | "e" | "w") => {
+    e.stopPropagation();
+    const p = toDoc(e);
+    useStudio.getState().beginGesture();
+    drag.current = { mode: "resize", id: o.id, handle, startX: p.x, startY: p.y, orig: o, rect: r };
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+  };
+
+  const onPointerMove = (e: React.PointerEvent) => {
+    const d = drag.current;
+    if (!d) return;
+    const p = toDoc(e);
+    const W = doc.width;
+    const H = doc.height;
+    const st = useStudio.getState();
+    if (d.mode === "move") {
+      let dx = (p.x - d.startX) / W;
+      let dy = (p.y - d.startY) / H;
+      const v: number[] = [];
+      const h: number[] = [];
+      const cx = ctx();
+      if (d.ids.length === 1 && cx && !e.altKey) {
+        // snapping: canvas centre and side margins
+        const o = doc.overlays.find((x) => x.id === d.ids[0])!;
+        const orig = d.orig.get(o.id)!;
+        const r = overlayRect(cx, doc, o);
+        const nx = (orig.x + dx) * W;
+        const ny = (orig.y + dy) * H;
+        const th = 14;
+        const snapsX: Array<[number, number]> = [
+          [nx + r.w / 2, W / 2],
+          [nx, W * 0.05],
+          [nx + r.w, W * 0.95],
+        ];
+        for (const [cur, target] of snapsX) {
+          if (Math.abs(cur - target) < th) {
+            dx += (target - cur) / W;
+            v.push(target);
+            break;
+          }
+        }
+        const snapsY: Array<[number, number]> = [
+          [ny + r.h / 2, H / 2],
+          [ny, H * 0.085],
+          [ny + r.h, H * 0.79],
+        ];
+        for (const [cur, target] of snapsY) {
+          if (Math.abs(cur - target) < th) {
+            dy += (target - cur) / H;
+            h.push(target);
+            break;
+          }
+        }
+      }
+      setGuides({ v, h });
+      st.updateGesture((base) => ({
+        ...base,
+        overlays: base.overlays.map((o) => {
+          const orig = d.orig.get(o.id);
+          return orig ? { ...o, x: orig.x + dx, y: orig.y + dy } : o;
+        }),
+      }));
+    } else if (d.mode === "subs") {
+      let y = Math.min(0.95, Math.max(0.05, d.origY + (p.y - d.startY) / H));
+      const v: number[] = [];
+      const hh: number[] = [];
+      if (Math.abs(y - 0.5) < 0.008) {
+        y = 0.5;
+        hh.push(H / 2);
+      }
+      setGuides({ v, h: hh });
+      st.updateGesture((base) => ({ ...base, subtitles: { ...base.subtitles, style: { ...base.subtitles.style, y } } }));
+    } else if (d.mode === "resize") {
+      const o = d.orig;
+      const dxp = p.x - d.startX;
+      const dyp = p.y - d.startY;
+      const left = d.handle === "nw" || d.handle === "sw" || d.handle === "w";
+      const top = d.handle === "nw" || d.handle === "ne";
+      const newW = Math.max(40, d.rect.w + (left ? -dxp : dxp));
+      const k = newW / d.rect.w;
+      st.updateGesture((base) => ({
+        ...base,
+        overlays: base.overlays.map((x) => {
+          if (x.id !== o.id) return x;
+          const nx = left ? (d.rect.x + d.rect.w - newW) / W : x.x;
+          if (x.kind === "text" && o.kind === "text") {
+            if (d.handle === "e" || d.handle === "w") return { ...x, x: nx, w: newW / W };
+            // corner handles scale the text block uniformly
+            const ny = top ? (d.rect.y + d.rect.h - d.rect.h * k) / H : x.y;
+            return { ...x, x: nx, y: ny, w: newW / W, style: { ...o.style, fontSize: Math.max(10, o.style.fontSize * k), padding: o.style.padding * k, radius: o.style.radius * k } };
+          }
+          const newH = d.handle === "e" || d.handle === "w" ? d.rect.h : Math.max(10, d.rect.h + (top ? -dyp : dyp));
+          const ny = top ? (d.rect.y + d.rect.h - newH) / H : x.y;
+          return { ...x, x: nx, y: ny, w: newW / W, h: newH / H };
+        }),
+      }));
+    }
+    engine?.invalidate();
+  };
+
+  const onPointerUp = () => {
+    if (drag.current) useStudio.getState().endGesture();
+    drag.current = null;
+    setGuides({ v: [], h: [] });
+  };
+
+  const safe = doc.meta.showSafeArea && doc.meta.showSafeArea !== "none" ? SAFE_ZONES[doc.meta.showSafeArea] : null;
+
+  return (
+    <div ref={wrapRef} className="relative flex h-full w-full items-center justify-center">
+      <div className="relative shadow-[0_20px_60px_rgba(0,0,0,.5)]" style={{ width: box.w, height: box.h }}>
+        <canvas ref={canvasRef} className="absolute inset-0 h-full w-full rounded-[6px] bg-black" style={{ width: box.w, height: box.h }} />
+        <div
+          className="absolute inset-0 touch-none"
+          onPointerDown={clean ? undefined : onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerUp}
+          onPointerCancel={onPointerUp}
+          onDoubleClick={() => {
+            const el = document.getElementById("prop-text");
+            if (el) (el as HTMLTextAreaElement).focus();
+          }}
+          data-testid="preview-surface"
+        >
+          {!clean && safe ? (
+            <svg className="pointer-events-none absolute inset-0 h-full w-full" viewBox="0 0 1 1" preserveAspectRatio="none" aria-hidden>
+              {safe.zones.map(([x, y, w, h], i) => (
+                <rect key={i} x={x} y={y} width={w} height={h} fill="rgba(255,64,64,.12)" stroke="rgba(255,96,96,.55)" strokeWidth={0.002} strokeDasharray="0.01 0.006" vectorEffect="non-scaling-stroke" />
+              ))}
+            </svg>
+          ) : null}
+          {!clean && safe ? <span className="pointer-events-none absolute bottom-1.5 left-2 text-[10px] font-medium text-red-300/80">Strefa UI {safe.label} (przybliżona)</span> : null}
+          {!clean
+            ? selRects.map(({ o, r }) => (
+                <div key={o.id} className="pointer-events-none absolute border border-sky-400" style={{ left: r.x * scale, top: r.y * scale, width: r.w * scale, height: Math.max(r.h, 8) * scale }}>
+                  {selRects.length === 1
+                    ? (["nw", "ne", "sw", "se", "e", "w"] as const).map((hd) => (
+                        <span
+                          key={hd}
+                          onPointerDown={(e) => startResize(e, o, r, hd)}
+                          onPointerMove={onPointerMove}
+                          onPointerUp={onPointerUp}
+                          className="pointer-events-auto absolute h-2.5 w-2.5 rounded-[2px] border border-sky-500 bg-white"
+                          style={{
+                            left: hd.includes("w") ? -5 : hd.includes("e") ? "calc(100% - 5px)" : undefined,
+                            top: hd === "e" || hd === "w" ? "calc(50% - 5px)" : hd.includes("n") ? -5 : "calc(100% - 5px)",
+                            cursor: hd === "e" || hd === "w" ? "ew-resize" : hd === "nw" || hd === "se" ? "nwse-resize" : "nesw-resize",
+                          }}
+                        />
+                      ))
+                    : null}
+                </div>
+              ))
+            : null}
+          {!clean && selection?.kind === "subtitles" && subRect ? (
+            <div className="pointer-events-none absolute border border-dashed border-sky-400" style={{ left: subRect.x * scale, top: subRect.y * scale, width: subRect.w * scale, height: subRect.h * scale }} />
+          ) : null}
+          {guides.v.map((x) => (
+            <div key={`v${x}`} className="pointer-events-none absolute top-0 h-full w-px bg-fuchsia-500" style={{ left: x * scale }} />
+          ))}
+          {guides.h.map((y) => (
+            <div key={`h${y}`} className="pointer-events-none absolute left-0 h-px w-full bg-fuchsia-500" style={{ top: y * scale }} />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}

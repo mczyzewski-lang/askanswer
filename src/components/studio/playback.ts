@@ -1,0 +1,249 @@
+"use client";
+/**
+ * Browser playback engine for the Studio preview.
+ * A wall clock drives timeline time; <video>/<audio> elements are slaved to it
+ * (re-synced on drift) and every frame is drawn with the shared compositor,
+ * so what you see here is what the server renderer produces.
+ */
+import type { AssetInfo, AudioClip, EditorDocument } from "@/lib/editor/types";
+import { clipAt, clipEnd, docDuration, sortedClips } from "@/lib/editor/timeline";
+import { drawFrame } from "@/lib/render/compositor";
+
+const DRIFT = 0.25;
+
+export class PlaybackEngine {
+  private container: HTMLDivElement;
+  private videos = new Map<string, HTMLVideoElement[]>(); // per asset, 2 elements
+  private assignment = new Map<HTMLVideoElement, string>(); // element -> clip id
+  private audios = new Map<string, HTMLAudioElement>(); // per audio clip id
+  private images = new Map<string, HTMLImageElement>();
+  private raf = 0;
+  private playing = false;
+  private startWall = 0;
+  private startT = 0;
+  private needsDraw = true;
+  doc: EditorDocument | null = null;
+  assets: Record<string, AssetInfo> = {};
+  canvas: HTMLCanvasElement | null = null;
+  onTime: (t: number) => void = () => {};
+  onEnded: () => void = () => {};
+  time = 0;
+  includeSuggested = true;
+  hideOverlayIds = new Set<string>();
+
+  constructor() {
+    this.container = document.createElement("div");
+    this.container.setAttribute("aria-hidden", "true");
+    Object.assign(this.container.style, { position: "fixed", width: "2px", height: "2px", overflow: "hidden", opacity: "0", pointerEvents: "none", left: "0", top: "0" });
+    document.body.appendChild(this.container);
+    this.loop = this.loop.bind(this);
+    this.raf = requestAnimationFrame(this.loop);
+  }
+
+  destroy() {
+    cancelAnimationFrame(this.raf);
+    for (const list of this.videos.values()) for (const v of list) v.pause();
+    for (const a of this.audios.values()) a.pause();
+    this.container.remove();
+  }
+
+  invalidate() {
+    this.needsDraw = true;
+  }
+
+  private videoEls(assetId: string): HTMLVideoElement[] {
+    let list = this.videos.get(assetId);
+    if (!list) {
+      const a = this.assets[assetId];
+      list = [0, 1].map(() => {
+        const v = document.createElement("video");
+        v.preload = "auto";
+        v.playsInline = true;
+        if (a) v.src = a.url;
+        v.addEventListener("seeked", () => this.invalidate());
+        v.addEventListener("loadeddata", () => this.invalidate());
+        this.container.appendChild(v);
+        return v;
+      });
+      this.videos.set(assetId, list);
+    }
+    return list;
+  }
+
+  private image(assetId: string): HTMLImageElement | null {
+    let img = this.images.get(assetId);
+    if (!img) {
+      const a = this.assets[assetId];
+      if (!a) return null;
+      img = new Image();
+      img.onload = () => this.invalidate();
+      img.src = a.url;
+      this.images.set(assetId, img);
+    }
+    return img.complete && img.naturalWidth ? img : null;
+  }
+
+  /** Element bound to a clip, binding a free one (and seeking it) if needed. */
+  private elementFor(clipId: string, assetId: string, src: number, reserve?: string): HTMLVideoElement {
+    const list = this.videoEls(assetId);
+    let el = list.find((v) => this.assignment.get(v) === clipId);
+    if (!el) {
+      el = list.find((v) => this.assignment.get(v) !== reserve) ?? list[0];
+      this.assignment.set(el, clipId);
+      if (Math.abs(el.currentTime - src) > 0.01) el.currentTime = src;
+    }
+    return el;
+  }
+
+  play() {
+    if (!this.doc) return;
+    const dur = docDuration(this.doc);
+    if (this.time >= dur - 0.05) this.time = 0;
+    this.playing = true;
+    this.startWall = performance.now();
+    this.startT = this.time;
+  }
+
+  pause() {
+    this.playing = false;
+    for (const list of this.videos.values()) for (const v of list) v.pause();
+    for (const a of this.audios.values()) a.pause();
+    this.invalidate();
+  }
+
+  seek(t: number) {
+    this.time = Math.max(0, t);
+    if (this.playing) {
+      this.startWall = performance.now();
+      this.startT = this.time;
+    }
+    this.syncMedia(true);
+    this.invalidate();
+  }
+
+  isPlaying() {
+    return this.playing;
+  }
+
+  private syncMedia(force = false) {
+    const doc = this.doc;
+    if (!doc) return;
+    const t = this.time;
+    const clip = clipAt(doc, t);
+    const ordered = sortedClips(doc);
+    const next = clip ? ordered.find((c) => c.start >= clipEnd(clip) - 1e-3 && c.id !== clip.id) : ordered.find((c) => c.start > t);
+    const used = new Set<HTMLVideoElement>();
+    if (clip) {
+      const src = clip.sourceIn + (t - clip.start);
+      const el = this.elementFor(clip.id, clip.assetId, src, next?.assetId === clip.assetId ? next.id : undefined);
+      used.add(el);
+      el.muted = clip.muted;
+      el.volume = Math.max(0, Math.min(1, clip.volume));
+      if (force || Math.abs(el.currentTime - src) > (this.playing ? DRIFT : 0.02)) {
+        if (!el.seeking || force) el.currentTime = src;
+      }
+      if (this.playing && el.paused) void el.play().catch(() => {});
+      if (!this.playing && !el.paused) el.pause();
+      // pre-roll the next clip on the spare element so cuts are seamless
+      if (next && next.assetId === clip.assetId) {
+        const spare = this.elementFor(next.id, next.assetId, next.sourceIn, clip.id);
+        if (spare !== el) {
+          used.add(spare);
+          if (!spare.paused) spare.pause();
+          if (Math.abs(spare.currentTime - next.sourceIn) > 0.05 && !spare.seeking) spare.currentTime = next.sourceIn;
+        }
+      }
+    } else if (next) {
+      const spare = this.elementFor(next.id, next.assetId, next.sourceIn);
+      used.add(spare);
+      if (!spare.paused) spare.pause();
+    }
+    for (const list of this.videos.values()) for (const v of list) if (!used.has(v) && !v.paused) v.pause();
+    for (const c of [...doc.narration, ...doc.music]) this.syncAudio(c, t, force);
+    // clean up audio elements for removed clips
+    const ids = new Set([...doc.narration, ...doc.music].map((c) => c.id));
+    for (const [id, a] of this.audios) {
+      if (!ids.has(id)) {
+        a.pause();
+        a.remove();
+        this.audios.delete(id);
+      }
+    }
+  }
+
+  private syncAudio(c: AudioClip, t: number, force: boolean) {
+    let a = this.audios.get(c.id);
+    const asset = this.assets[c.assetId];
+    if (!asset) return;
+    if (!a) {
+      a = document.createElement("audio");
+      a.preload = "auto";
+      a.src = asset.url;
+      this.container.appendChild(a);
+      this.audios.set(c.id, a);
+    }
+    if (a.src !== asset.url && !a.src.endsWith(asset.url)) a.src = asset.url;
+    const inside = t >= c.start && t < clipEnd(c);
+    if (!inside || c.muted || !this.playing) {
+      if (!a.paused) a.pause();
+      return;
+    }
+    const local = t - c.start;
+    const len = c.sourceOut - c.sourceIn;
+    let gain = c.volume;
+    if (c.fadeIn > 0 && local < c.fadeIn) gain *= local / c.fadeIn;
+    if (c.fadeOut > 0 && len - local < c.fadeOut) gain *= Math.max(0, (len - local) / c.fadeOut);
+    a.volume = Math.max(0, Math.min(1, gain));
+    const src = c.sourceIn + local;
+    if (force || Math.abs(a.currentTime - src) > DRIFT) a.currentTime = src;
+    if (a.paused) void a.play().catch(() => {});
+  }
+
+  private loop(now: number) {
+    this.raf = requestAnimationFrame(this.loop);
+    const doc = this.doc;
+    if (!doc || !this.canvas) return;
+    if (this.playing) {
+      const dur = docDuration(doc);
+      this.time = this.startT + (now - this.startWall) / 1000;
+      if (this.time >= dur) {
+        this.time = dur;
+        this.pause();
+        this.onEnded();
+      }
+      this.syncMedia();
+      this.onTime(this.time);
+      this.needsDraw = true;
+    }
+    if (!this.needsDraw) return;
+    this.needsDraw = false;
+    this.draw();
+  }
+
+  draw() {
+    const doc = this.doc;
+    const canvas = this.canvas;
+    if (!doc || !canvas) return;
+    if (canvas.width !== doc.width || canvas.height !== doc.height) {
+      canvas.width = doc.width;
+      canvas.height = doc.height;
+    }
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    if (!this.playing) this.syncMedia();
+    drawFrame(ctx, doc, this.time, {
+      getFrame: (clipId, assetId) => {
+        const list = this.videos.get(assetId);
+        const el = list?.find((v) => this.assignment.get(v) === clipId);
+        if (!el || el.readyState < 2 || !el.videoWidth) return null;
+        return { image: el, width: el.videoWidth, height: el.videoHeight };
+      },
+      getImage: (id) => {
+        const img = this.image(id);
+        return img ? { image: img, width: img.naturalWidth, height: img.naturalHeight } : null;
+      },
+      includeSuggestedZooms: this.includeSuggested,
+      hideOverlayIds: this.hideOverlayIds,
+    });
+  }
+}

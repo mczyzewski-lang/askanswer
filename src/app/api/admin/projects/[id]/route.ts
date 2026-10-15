@@ -2,8 +2,15 @@ import { prisma } from "@/lib/server/db";
 import { requireAdmin } from "@/lib/server/auth";
 import { json, route } from "@/lib/server/http";
 import { ProjectInput } from "@/lib/server/schemas";
+import { projectData } from "@/lib/server/project-data";
 
 type Ctx = { params: Promise<{ id: string }> };
+
+export const GET = route(async (_req: Request, ctx: Ctx) => {
+  await requireAdmin();
+  const { id } = await ctx.params;
+  return json(await projectData(id));
+});
 
 export const PATCH = route(async (req: Request, ctx: Ctx) => {
   await requireAdmin();

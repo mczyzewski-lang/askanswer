@@ -79,6 +79,18 @@ function withAlpha(color: string, alpha: number): string {
   return color;
 }
 
+/** Relative luminance (0..1) of a #rrggbb colour; used to keep highlighted words readable. */
+export function luminance(color: string): number {
+  const m = /^#([0-9a-f]{6})$/i.exec(color);
+  if (!m) return 0;
+  const n = parseInt(m[1], 16);
+  const ch = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => {
+    const c = v / 255;
+    return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+  });
+  return 0.2126 * ch[0] + 0.7152 * ch[1] + 0.0722 * ch[2];
+}
+
 function setLetterSpacing(ctx: Ctx, px: number) {
   try {
     (ctx as unknown as { letterSpacing: string }).letterSpacing = `${px}px`;
@@ -448,12 +460,12 @@ function drawSubtitles(ctx: Ctx, doc: EditorDocument, t: number) {
         ctx.restore();
       }
       ctx.save();
-      if (st.shadow > 0 && !(st.background && st.backgroundOpacity > 0.5)) {
+      if (st.shadow > 0 && !(st.background && st.backgroundOpacity > 0.5) && !(active && st.highlightMode === "box")) {
         ctx.shadowColor = "rgba(0,0,0,0.6)";
         ctx.shadowBlur = st.shadow * u;
         ctx.shadowOffsetY = 2 * u;
       }
-      ctx.fillStyle = active && st.highlightMode === "color" ? hl : color;
+      ctx.fillStyle = active && st.highlightMode === "color" ? hl : active && st.highlightMode === "box" && luminance(hl) > 0.45 ? "#111111" : color;
       ctx.fillText(w.text, x, y);
       ctx.restore();
       x += w.width + L.spaceW;

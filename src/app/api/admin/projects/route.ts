@@ -3,6 +3,7 @@ import { requireAdmin } from "@/lib/server/auth";
 import { json, route } from "@/lib/server/http";
 import { ProjectInput } from "@/lib/server/schemas";
 import { THEME_PRESETS } from "@/lib/themes";
+import { dashboardData } from "@/lib/server/project-data";
 
 const DEFAULT_CATEGORIES = ["Znaki towarowe", "Upadłość konsumencka", "Restrukturyzacja", "Rozwody", "Psychoterapia", "Ogólne"];
 
@@ -32,4 +33,9 @@ export const POST = route(async (req: Request) => {
     data: { ...body, themeId: theme.id, categories: { create: DEFAULT_CATEGORIES.map((name, order) => ({ name, order })) } },
   });
   return json(project, 201);
+});
+
+export const GET = route(async () => {
+  await requireAdmin();
+  return json(await dashboardData());
 });
