@@ -27,9 +27,11 @@ export function run(cmd: string, args: string[], opts: { onStderr?: (line: strin
       if (opts.onStderr) for (const line of s.split(/\r|\n/)) if (line.trim()) opts.onStderr(line);
     });
     p.on("error", reject);
-    p.on("close", (code) => {
+    p.on("close", (code, signal) => {
       if (code === 0) resolve({ stdout: Buffer.concat(out), stderr: err });
-      else reject(new Error(`${cmd} exited with ${code}: ${err.slice(-2000)}`));
+      else if (signal === "SIGKILL")
+        reject(new Error(`${cmd} został przerwany przez system (SIGKILL) — najpewniej zabrakło pamięci RAM na serwerze. ${err.slice(-500)}`));
+      else reject(new Error(`${cmd} exited with ${code ?? signal}: ${err.slice(-2000)}`));
     });
     if (opts.input) p.stdin.end(opts.input);
     else p.stdin.end();
@@ -118,6 +120,8 @@ export async function normalizeRecording(input: string, output: string, onProgre
       "veryfast",
       "-crf",
       "18",
+      "-threads",
+      process.env.FFMPEG_THREADS ?? "2",
       "-g",
       "30",
       "-keyint_min",
@@ -165,6 +169,8 @@ export async function makePreviewProxy(input: string, output: string): Promise<v
     "realtime",
     "-cpu-used",
     "8",
+    "-threads",
+    process.env.FFMPEG_THREADS ?? "2",
     "-b:v",
     "1500k",
     "-g",

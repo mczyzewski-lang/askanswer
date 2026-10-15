@@ -1,9 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, Camera, Check, CheckCircle2, ChevronLeft, ChevronRight, CloudUpload, Loader2, Mic, Pause, Play, RefreshCw, RotateCcw, Square, SwitchCamera, Volume2, WifiOff } from "lucide-react";
+import { AlertTriangle, Camera, Expand, Shrink, ZoomIn, Check, CheckCircle2, ChevronLeft, ChevronRight, CloudUpload, Loader2, Mic, Pause, Play, RefreshCw, RotateCcw, Square, SwitchCamera, Volume2, WifiOff } from "lucide-react";
 import { cn, formatDuration, plural } from "@/lib/utils";
-import { cameraErrorMessage, detectSupport, openCamera, requestWakeLock, stopStream, type Facing, type RecorderSupport } from "@/lib/client/media";
+import { cameraErrorMessage, detectSupport, openCamera, requestWakeLock, setZoom, stopStream, zoomRange, type Facing, type RecorderSupport } from "@/lib/client/media";
 import { newClientId, pendingTakes, removeTake, saveChunk, saveTake, saveTakeMeta, uploadTake, type PendingTake } from "@/lib/client/take-store";
 
 interface Question {
@@ -46,6 +46,7 @@ export function Recorder({ token }: { token: string }) {
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [facing, setFacing] = useState<Facing>("user");
   const [hasMultipleCameras, setHasMultipleCameras] = useState(false);
+  const [fit, setFit] = useFitPreference();
   const [camError, setCamError] = useState<string | null>(null);
   const [currentId, setCurrentId] = useState<string | null>(null);
   const [uploads, setUploads] = useState<Record<string, UploadState>>({});
@@ -271,11 +272,11 @@ export function Recorder({ token }: { token: string }) {
     return (
       <Shell>
         <div className="relative h-dvh w-full overflow-hidden">
-          <CameraView stream={stream} mirrored={facing === "user"} />
+          <CameraView stream={stream} mirrored={facing === "user"} fit={fit} />
           <FaceGuide />
           <div className="absolute inset-x-0 top-0 bg-gradient-to-b from-black/80 to-transparent px-5 pb-10 safe-top">
             <p className="pt-2 font-display text-xl font-semibold">Przygotuj kamerę</p>
-            <p className="text-sm text-white/70">Ustaw twarz w zaznaczonym obszarze.</p>
+            <p className="text-sm text-white/70">Ustaw twarz w zaznaczonym obszarze. Za blisko? Odsuń telefon lub zmień podgląd poniżej.</p>
           </div>
           {camError ? (
             <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/85 px-8 text-center">
@@ -287,6 +288,7 @@ export function Recorder({ token }: { token: string }) {
             </div>
           ) : null}
           <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/60 to-transparent px-5 pt-16 safe-bottom">
+            <CameraAdjust stream={stream} fit={fit} onFit={setFit} />
             <ul className="mb-5 grid grid-cols-2 gap-2 text-[13px] text-white/85">
               {["Ustaw telefon pionowo", "Kamera na wysokości oczu", "Zadbaj o dobre oświetlenie", "Nagrywaj w cichym miejscu"].map((t) => (
                 <li key={t} className="flex items-center gap-2 rounded-xl bg-white/10 px-3 py-2 backdrop-blur">
@@ -412,6 +414,8 @@ export function Recorder({ token }: { token: string }) {
         total={questions.length}
         stream={stream}
         mirrored={facing === "user"}
+        fit={fit}
+        onFit={setFit}
         support={support!}
         uploads={uploads}
         online={online}
@@ -476,6 +480,8 @@ function RecordScreen(props: {
   total: number;
   stream: MediaStream | null;
   mirrored: boolean;
+  fit: Fit;
+  onFit: (f: Fit) => void;
   support: RecorderSupport;
   uploads: Record<string, UploadState>;
   online: boolean;
@@ -764,7 +770,16 @@ function RecordScreen(props: {
   return (
     <Shell>
       <div className="relative h-dvh w-full overflow-hidden bg-black">
-        <CameraView stream={stream} mirrored={props.mirrored} />
+        <CameraView stream={stream} mirrored={props.mirrored} fit={props.fit} />
+        {phase === "idle" || phase === "review" ? (
+          <button
+            aria-label={props.fit === "cover" ? "Pokaż cały obraz z kamery" : "Wypełnij ekran"}
+            className="absolute right-4 top-1/2 z-10 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-black/45 backdrop-blur active:scale-95"
+            onClick={() => props.onFit(props.fit === "cover" ? "contain" : "cover")}
+          >
+            {props.fit === "cover" ? <Shrink className="h-5 w-5" /> : <Expand className="h-5 w-5" />}
+          </button>
+        ) : null}
         <audio ref={audioRef} preload="auto" playsInline onEnded={onNarrationEnded} />
 
         {/* top: question overlay */}
@@ -914,7 +929,76 @@ function Shell({ children }: { children: React.ReactNode }) {
   return <div className="min-h-dvh bg-[#0c0d10] text-white selection:bg-white/20">{children}</div>;
 }
 
-function CameraView({ stream, mirrored }: { stream: MediaStream | null; mirrored: boolean }) {
+type Fit = "cover" | "contain";
+
+/** Preview fit, remembered on the device. "contain" shows the whole camera frame (nothing cropped). */
+function useFitPreference(): [Fit, (f: Fit) => void] {
+  const [fit, setFitState] = useState<Fit>("contain");
+  useEffect(() => {
+    try {
+      const v = localStorage.getItem("askby-camera-fit");
+      if (v === "cover" || v === "contain") setFitState(v);
+    } catch {
+      /* storage unavailable */
+    }
+  }, []);
+  const setFit = (f: Fit) => {
+    setFitState(f);
+    try {
+      localStorage.setItem("askby-camera-fit", f);
+    } catch {
+      /* ignore */
+    }
+  };
+  return [fit, setFit];
+}
+
+function CameraAdjust({ stream, fit, onFit }: { stream: MediaStream | null; fit: Fit; onFit: (f: Fit) => void }) {
+  const range = zoomRange(stream);
+  const [zoom, setZoomValue] = useState<number | null>(null);
+  const value = zoom ?? range?.value ?? 1;
+  return (
+    <div className="mb-3 space-y-2 rounded-2xl bg-black/45 p-3 backdrop-blur">
+      <div className="flex items-center gap-2 text-[13px]">
+        <span className="flex-1 text-white/80">Podgląd</span>
+        <div className="flex rounded-xl bg-white/10 p-0.5">
+          {(
+            [
+              ["contain", "Cały obraz"],
+              ["cover", "Wypełnij ekran"],
+            ] as const
+          ).map(([v, l]) => (
+            <button key={v} onClick={() => onFit(v)} className={cn("rounded-lg px-3 py-1.5 text-[13px] font-medium", fit === v ? "bg-white text-black" : "text-white/80")}>
+              {l}
+            </button>
+          ))}
+        </div>
+      </div>
+      {range ? (
+        <label className="flex items-center gap-3 text-[13px] text-white/80">
+          <ZoomIn className="h-4 w-4 shrink-0" />
+          <span className="shrink-0">Zoom kamery</span>
+          <input
+            type="range"
+            className="w-full accent-white"
+            min={range.min}
+            max={range.max}
+            step={range.step}
+            value={value}
+            onChange={(e) => {
+              const v = Number(e.target.value);
+              setZoomValue(v);
+              void setZoom(stream, v);
+            }}
+          />
+          <span className="tabular w-10 text-right">{value.toFixed(1)}×</span>
+        </label>
+      ) : null}
+    </div>
+  );
+}
+
+function CameraView({ stream, mirrored, fit = "contain" }: { stream: MediaStream | null; mirrored: boolean; fit?: Fit }) {
   const ref = useRef<HTMLVideoElement>(null);
   useEffect(() => {
     const v = ref.current;
@@ -923,7 +1007,7 @@ function CameraView({ stream, mirrored }: { stream: MediaStream | null; mirrored
     if (stream) void v.play().catch(() => {});
   }, [stream]);
   // preview is mirrored like a mirror for the front camera; the recording itself is not mirrored
-  return <video ref={ref} className={cn("absolute inset-0 h-full w-full object-cover", mirrored && "-scale-x-100")} muted playsInline autoPlay />;
+  return <video ref={ref} className={cn("absolute inset-0 h-full w-full bg-black", fit === "cover" ? "object-cover" : "object-contain", mirrored && "-scale-x-100")} muted playsInline autoPlay />;
 }
 
 function FaceGuide() {

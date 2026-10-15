@@ -455,6 +455,14 @@ function TakeRow({ t, q, refresh, toast, onOpenStudio }: { t: Take; q: Q; onOpen
         </DropdownMenu>
       </div>
       {processing ? <p className="w-full text-xs text-blue-700">{t.processingStep ?? "Przetwarzanie…"}</p> : null}
+      {t.status === "FAILED" ? (
+        <div className="w-full rounded-lg bg-red-50 px-3 py-2 text-xs text-red-800">
+          <p className="font-medium">
+            Błąd przetwarzania{t.processingStep ? ` na etapie „${t.processingStep}”` : ""}. Oryginalne nagranie jest bezpieczne — możesz je pobrać lub kliknąć „Ponów przetwarzanie” w menu ⋯.
+          </p>
+          {t.processingError ? <p className="mt-1 break-words font-mono text-[11px] text-red-700/90">{t.processingError.slice(-400)}</p> : null}
+        </div>
+      ) : null}
       <Dialog open={watch} onOpenChange={setWatch}>
         <DialogContent title={`Ujęcie ${t.takeNumber}`} description={q.text}>
           {t.previewUrl ? (

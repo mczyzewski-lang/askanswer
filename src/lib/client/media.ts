@@ -44,11 +44,16 @@ export function detectSupport(): RecorderSupport {
 
 export type Facing = "user" | "environment";
 
-/** Request camera + mic, preferring 1080p portrait at 30 fps with graceful fallbacks. */
+/**
+ * Request camera + mic. We deliberately do NOT force a 9:16 aspect ratio or a
+ * 1080×1920 size: on many phones (notably iPhone front cameras) that makes the
+ * browser crop the sensor, which looks heavily zoomed in. A 16:9 request keeps
+ * the widest field of view; the 9:16 framing is done later in the editor.
+ */
 export async function openCamera(facing: Facing): Promise<MediaStream> {
   const audio: MediaTrackConstraints = { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 };
   const attempts: MediaStreamConstraints[] = [
-    { video: { facingMode: facing, width: { ideal: 1080 }, height: { ideal: 1920 }, frameRate: { ideal: 30, max: 30 }, aspectRatio: { ideal: 9 / 16 } }, audio },
+    { video: { facingMode: facing, width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30, max: 30 }, resizeMode: "none" } as MediaTrackConstraints, audio },
     { video: { facingMode: facing, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } }, audio },
     { video: { facingMode: facing }, audio: true },
     { video: true, audio: true },
@@ -56,7 +61,9 @@ export async function openCamera(facing: Facing): Promise<MediaStream> {
   let lastErr: unknown = null;
   for (const c of attempts) {
     try {
-      return await navigator.mediaDevices.getUserMedia(c);
+      const s = await navigator.mediaDevices.getUserMedia(c);
+      await setZoom(s, "min");
+      return s;
     } catch (e) {
       lastErr = e;
       const name = (e as DOMException).name;
@@ -65,6 +72,35 @@ export async function openCamera(facing: Facing): Promise<MediaStream> {
     }
   }
   throw lastErr;
+}
+
+export interface ZoomRange {
+  min: number;
+  max: number;
+  step: number;
+  value: number;
+}
+
+/** Optical/digital zoom range of the camera, if the browser exposes it (Chrome on Android does; iOS Safari mostly not). */
+export function zoomRange(s: MediaStream | null): ZoomRange | null {
+  const t = s?.getVideoTracks()[0];
+  if (!t || typeof t.getCapabilities !== "function") return null;
+  const caps = t.getCapabilities() as MediaTrackCapabilities & { zoom?: { min: number; max: number; step?: number } };
+  if (!caps.zoom || caps.zoom.max <= caps.zoom.min) return null;
+  const cur = (t.getSettings() as MediaTrackSettings & { zoom?: number }).zoom ?? caps.zoom.min;
+  return { min: caps.zoom.min, max: caps.zoom.max, step: caps.zoom.step || 0.1, value: cur };
+}
+
+export async function setZoom(s: MediaStream | null, value: number | "min"): Promise<void> {
+  const t = s?.getVideoTracks()[0];
+  const r = zoomRange(s ?? null);
+  if (!t || !r) return;
+  const v = value === "min" ? r.min : Math.min(r.max, Math.max(r.min, value));
+  try {
+    await t.applyConstraints({ advanced: [{ zoom: v } as MediaTrackConstraintSet] });
+  } catch {
+    /* zoom not adjustable on this device */
+  }
 }
 
 export function cameraErrorMessage(e: unknown): string {
