@@ -31,7 +31,12 @@ export function run(cmd: string, args: string[], opts: { onStderr?: (line: strin
       if (code === 0) resolve({ stdout: Buffer.concat(out), stderr: err });
       else if (signal === "SIGKILL")
         reject(new Error(`${cmd} został przerwany przez system (SIGKILL) — najpewniej zabrakło pamięci RAM na serwerze. ${err.slice(-500)}`));
-      else reject(new Error(`${cmd} exited with ${code ?? signal}: ${err.slice(-2000)}`));
+      else {
+        // keep the lines that explain the failure, not the progress spam
+        const lines = err.split(/\r|\n/).filter((l) => l.trim() && !/^\s*(frame=|size=)/.test(l));
+        const reason = lines.filter((l) => /error|invalid|failed|could not|unable|cannot|not found|no such|killed/i.test(l)).slice(-5).join(" | ");
+        reject(new Error(`${cmd} zakończył się kodem ${code ?? signal}${code === null || code === 137 ? " (proces przerwany — prawdopodobnie brak pamięci RAM)" : ""}: ${reason || lines.slice(-3).join(" | ")}`));
+      }
     });
     if (opts.input) p.stdin.end(opts.input);
     else p.stdin.end();

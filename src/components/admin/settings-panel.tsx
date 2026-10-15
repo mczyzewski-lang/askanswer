@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button, Card, Input, Label, NativeSelect, Switch, Textarea } from "@/components/ui";
 import { api } from "@/lib/utils";
 import type { PanelProps } from "./project-view";
-import { VoicePreviewButton } from "@/components/voice-preview";
+import { VoicePicker } from "@/components/voice-picker";
 
 interface VoiceList {
   configured: boolean;
@@ -86,26 +86,8 @@ export function SettingsPanel({ data, refresh, toast }: PanelProps) {
             <p className="text-sm text-red-600">{voices.error}</p>
           ) : null}
           <div className="space-y-1.5">
-            <Label htmlFor="s-voice">Głos</Label>
-            <div className="flex items-start gap-2">
-            <div className="min-w-0 flex-1">
-            {voices?.voices.length ? (
-              <NativeSelect id="s-voice" value={form.voiceId} onChange={(e) => set("voiceId", e.target.value)}>
-                <option value="">Domyślny ({voices.defaultVoiceId})</option>
-                {voices.voices.map((v) => (
-                  <option key={v.id} value={v.id}>
-                    {v.name}
-                    {v.labels.accent ? ` · ${v.labels.accent}` : ""}
-                    {v.labels.gender ? ` · ${v.labels.gender}` : ""}
-                  </option>
-                ))}
-              </NativeSelect>
-            ) : (
-              <Input id="s-voice" placeholder={voices?.defaultVoiceId ?? "voice_id"} value={form.voiceId} onChange={(e) => set("voiceId", e.target.value)} />
-            )}
-            </div>
-            {voices?.configured ? <VoicePreviewButton voiceId={form.voiceId || voices.defaultVoiceId} modelId={form.ttsModel || null} /> : null}
-            </div>
+            <Label>Głos</Label>
+            <VoicePicker value={form.voiceId} onChange={(v) => set("voiceId", v)} modelId={form.ttsModel || null} allowDefault />
             <p className="text-xs text-muted">„Odsłuchaj” odtwarza krótką polską próbkę wybranym głosem i modelem.</p>
           </div>
           <div className="space-y-1.5">

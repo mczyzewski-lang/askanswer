@@ -358,3 +358,24 @@ model Job {
 
   @@index([status, runAt])
 }
+
+// Admin-curated voice collections (e.g. "Lektorki prawnicze"); voices are ElevenLabs voice ids.
+model VoiceCollection {
+  id        String                @id @default(cuid())
+  name      String
+  order     Int                   @default(0)
+  createdAt DateTime              @default(now())
+  items     VoiceCollectionItem[]
+}
+
+model VoiceCollectionItem {
+  id           String          @id @default(cuid())
+  collectionId String
+  collection   VoiceCollection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  voiceId      String
+  label        String?
+  order        Int             @default(0)
+  createdAt    DateTime        @default(now())
+
+  @@unique([collectionId, voiceId])
+}

@@ -460,7 +460,11 @@ function TakeRow({ t, q, refresh, toast, onOpenStudio }: { t: Take; q: Q; onOpen
           <p className="font-medium">
             Błąd przetwarzania{t.processingStep ? ` na etapie „${t.processingStep}”` : ""}. Oryginalne nagranie jest bezpieczne — możesz je pobrać lub kliknąć „Ponów przetwarzanie” w menu ⋯.
           </p>
-          {t.processingError ? <p className="mt-1 break-words font-mono text-[11px] text-red-700/90">{t.processingError.slice(-400)}</p> : null}
+          {t.processingError ? (
+            <p className="mt-1 break-words font-mono text-[11px] text-red-700/90">
+              {t.processingError.length > 520 ? `${t.processingError.slice(0, 220)} … ${t.processingError.slice(-280)}` : t.processingError}
+            </p>
+          ) : null}
         </div>
       ) : null}
       <Dialog open={watch} onOpenChange={setWatch}>

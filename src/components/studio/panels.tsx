@@ -25,7 +25,7 @@ import { cn } from "@/lib/utils";
 import { useStudio } from "./store";
 import { Row, Section, Seg, Select, SButton, Slider, TextField } from "./controls";
 import type { PlaybackEngine } from "./playback";
-import { VoicePreviewButton } from "@/components/voice-preview";
+import { VoicePicker } from "@/components/voice-picker";
 
 export interface StudioMeta {
   compositionId: string;
@@ -526,16 +526,9 @@ export function AudioPanel({ meta, onUpload, onRegenerate }: { meta: StudioMeta;
   const doc = useStudio((s) => s.doc)!;
   const apply = useStudio((s) => s.apply);
   const assets = useStudio((s) => s.assets);
-  const [voices, setVoices] = useState<Array<{ id: string; name: string }>>([]);
   const [voice, setVoice] = useState(meta.project.voiceId);
   const [busy, setBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
-  useEffect(() => {
-    fetch("/api/admin/voices")
-      .then((r) => r.json())
-      .then((d) => setVoices(d.voices ?? []))
-      .catch(() => {});
-  }, []);
   const musicAssets = Object.values(assets).filter((a) => a.kind === "MUSIC");
   const addMusic = (assetId: string) => {
     const a = assets[assetId];
@@ -563,21 +556,7 @@ export function AudioPanel({ meta, onUpload, onRegenerate }: { meta: StudioMeta;
         )}
         {meta.elevenLabs ? (
           <>
-            <Row label="Głos">
-              {voices.length ? (
-                <Select value={voice} onChange={setVoice}>
-                  {!voices.some((v) => v.id === voice) ? <option value={voice}>{voice}</option> : null}
-                  {voices.map((v) => (
-                    <option key={v.id} value={v.id}>
-                      {v.name}
-                    </option>
-                  ))}
-                </Select>
-              ) : (
-                <TextField value={voice} onChange={(e) => setVoice(e.target.value)} />
-              )}
-            </Row>
-            <VoicePreviewButton dark voiceId={voice} text={meta.question?.text} />
+            <VoicePicker dark value={voice} onChange={setVoice} previewText={meta.question?.text} />
             <SButton
               disabled={busy}
               onClick={async () => {
