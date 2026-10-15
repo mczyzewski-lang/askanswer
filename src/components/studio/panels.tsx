@@ -25,6 +25,7 @@ import { cn } from "@/lib/utils";
 import { useStudio } from "./store";
 import { Row, Section, Seg, Select, SButton, Slider, TextField } from "./controls";
 import type { PlaybackEngine } from "./playback";
+import { VoicePreviewButton } from "@/components/voice-preview";
 
 export interface StudioMeta {
   compositionId: string;
@@ -576,6 +577,7 @@ export function AudioPanel({ meta, onUpload, onRegenerate }: { meta: StudioMeta;
                 <TextField value={voice} onChange={(e) => setVoice(e.target.value)} />
               )}
             </Row>
+            <VoicePreviewButton dark voiceId={voice} text={meta.question?.text} />
             <SButton
               disabled={busy}
               onClick={async () => {
