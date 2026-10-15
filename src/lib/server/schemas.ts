@@ -4,6 +4,8 @@ export const QuestionInput = z.object({
   text: z.string().trim().min(3, "Pytanie jest za krótkie").max(400),
   categoryId: z.string().nullable().optional(),
   categoryName: z.string().trim().max(80).optional(),
+  subcategoryId: z.string().nullable().optional(),
+  subcategoryName: z.string().trim().max(80).optional(),
   instructions: z.string().trim().max(1000).nullable().optional(),
   maxDurationSec: z.number().int().min(5).max(1800).nullable().optional(),
   expertId: z.string().nullable().optional(),

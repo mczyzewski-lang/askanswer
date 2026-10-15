@@ -37,12 +37,13 @@ export async function projectData(id: string) {
     where: { id },
     include: {
       theme: true,
-      categories: { orderBy: { order: "asc" } },
+      categories: { orderBy: { order: "asc" }, include: { subcategories: { orderBy: [{ order: "asc" }, { name: "asc" }] } } },
       invitations: { orderBy: { createdAt: "desc" }, include: { expert: true } },
       questions: {
         orderBy: [{ order: "asc" }, { createdAt: "asc" }],
         include: {
           category: true,
+          subcategory: true,
           expert: true,
           recording: { include: { takes: { orderBy: { takeNumber: "desc" }, include: { transcript: { select: { id: true, text: true } } } } } },
           compositions: { orderBy: { updatedAt: "desc" }, select: { id: true, name: true, status: true, takeId: true, updatedAt: true } },
@@ -71,6 +72,8 @@ export async function projectData(id: string) {
       status: q.status,
       categoryId: q.categoryId,
       categoryName: q.category?.name ?? null,
+      subcategoryId: q.subcategoryId,
+      subcategoryName: q.subcategory?.name ?? null,
       expertId: q.expertId,
       expertName: q.expert?.name ?? null,
       selectedTakeId: q.recording?.selectedTakeId ?? null,
@@ -120,7 +123,7 @@ export async function projectData(id: string) {
       themeName: p.theme?.name ?? null,
       theme: p.theme,
     },
-    categories: p.categories.map((c) => ({ id: c.id, name: c.name })),
+    categories: p.categories.map((c) => ({ id: c.id, name: c.name, subcategories: c.subcategories.map((s) => ({ id: s.id, name: s.name })) })),
     experts: experts.map((e) => ({ id: e.id, name: e.name, email: e.email, title: e.title })),
     invitations: p.invitations.map((i) => ({
       id: i.id,

@@ -49,6 +49,7 @@ import { api, cn, formatDate, formatDuration, plural } from "@/lib/utils";
 import { themeFromRow, DEFAULT_THEME } from "@/lib/themes";
 import type { PanelProps } from "./project-view";
 import { QuestionPreview } from "./question-preview";
+import { parseBulk } from "@/lib/bulk-questions";
 
 type Q = PanelProps["data"]["questions"][number];
 type Take = Q["takes"][number];
@@ -77,7 +78,14 @@ export function QuestionsPanel({ data, refresh, toast }: PanelProps) {
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }), useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }));
   const theme = data.project.theme ? themeFromRow(data.project.theme) : DEFAULT_THEME;
 
-  const visible = useMemo(() => (filter === "all" ? items : items.filter((q) => (filter === "none" ? !q.categoryId : q.categoryId === filter))), [items, filter]);
+  const visible = useMemo(
+    () =>
+      filter === "all"
+        ? items
+        : items.filter((q) => (filter === "none" ? !q.categoryId : filter.startsWith("sub:") ? q.subcategoryId === filter.slice(4) : q.categoryId === filter)),
+    [items, filter],
+  );
+  const [catsOpen, setCatsOpen] = useState(false);
 
   const onDragEnd = async (e: DragEndEvent) => {
     if (!e.over || e.active.id === e.over.id) return;
@@ -109,6 +117,7 @@ export function QuestionsPanel({ data, refresh, toast }: PanelProps) {
             return {
               text: get("pytanie", "question", "text", "treść", "tresc"),
               categoryName: get("kategoria", "category") || undefined,
+              subcategoryName: get("podkategoria", "temat", "subcategory") || undefined,
               instructions: get("instrukcje", "instructions", "wskazówki") || null,
               maxDurationSec: Number.isFinite(max) && max > 0 ? Math.round(max) : null,
             };
@@ -156,13 +165,21 @@ export function QuestionsPanel({ data, refresh, toast }: PanelProps) {
         <div className="ml-auto flex items-center gap-2">
           <NativeSelect className="h-9 w-48" value={filter} onChange={(e) => setFilter(e.target.value)} aria-label="Filtr kategorii">
             <option value="all">Wszystkie kategorie</option>
-            {data.categories.map((c) => (
+            {data.categories.map((c) => [
               <option key={c.id} value={c.id}>
                 {c.name}
-              </option>
-            ))}
+              </option>,
+              ...c.subcategories.map((sc) => (
+                <option key={sc.id} value={`sub:${sc.id}`}>
+                  {"\u00a0\u00a0\u00a0"}› {sc.name}
+                </option>
+              )),
+            ])}
             <option value="none">Bez kategorii</option>
           </NativeSelect>
+          <Button size="sm" variant="outline" onClick={() => setCatsOpen(true)}>
+            Kategorie i tematy
+          </Button>
           <form
             className="flex items-center gap-1"
             onSubmit={async (e) => {
@@ -204,6 +221,7 @@ export function QuestionsPanel({ data, refresh, toast }: PanelProps) {
 
       <QuestionDialog open={editing !== null} question={editing === "new" ? null : editing} data={data} onClose={() => setEditing(null)} refresh={refresh} toast={toast} />
       <BulkDialog open={bulk} onClose={() => setBulk(false)} data={data} refresh={refresh} toast={toast} />
+      <CategoriesDialog open={catsOpen} onClose={() => setCatsOpen(false)} data={data} refresh={refresh} toast={toast} />
       <Dialog open={!!preview} onOpenChange={(o) => !o && setPreview(null)}>
         <DialogContent title="Podgląd pytania na wideo" description="Tak pytanie pojawi się w górnej części filmu (motyw projektu).">
           {preview ? (
@@ -261,7 +279,12 @@ function QuestionRow({ q, index, data, refresh, toast, onEdit, onPreview }: { q:
           <div className="min-w-0 flex-1">
             <p className="font-medium leading-snug">{q.text}</p>
             <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-muted">
-              {q.categoryName ? <Badge>{q.categoryName}</Badge> : null}
+              {q.categoryName ? (
+                <Badge>
+                  {q.categoryName}
+                  {q.subcategoryName ? <span className="text-ink/50">› {q.subcategoryName}</span> : null}
+                </Badge>
+              ) : null}
               <span>{q.expertName ?? "Brak eksperta"}</span>
               {q.maxDurationSec ? <span>· do {formatDuration(q.maxDurationSec)}</span> : null}
               {q.instructions ? <span className="truncate">· {q.instructions}</span> : null}
@@ -524,6 +547,8 @@ function TakeStatus({ t }: { t: Take }) {
 function QuestionDialog({ open, question, data, onClose, refresh, toast }: { open: boolean; question: Q | null; onClose: () => void } & PanelProps) {
   const [text, setText] = useState("");
   const [categoryId, setCategoryId] = useState<string>("");
+  const [subcategoryId, setSubcategoryId] = useState<string>("");
+  const [newSub, setNewSub] = useState("");
   const [expertId, setExpertId] = useState<string>("");
   const [instructions, setInstructions] = useState("");
   const [max, setMax] = useState<string>("");
@@ -533,6 +558,8 @@ function QuestionDialog({ open, question, data, onClose, refresh, toast }: { ope
     setLastKey(key);
     setText(question?.text ?? "");
     setCategoryId(question?.categoryId ?? data.categories[0]?.id ?? "");
+    setSubcategoryId(question?.subcategoryId ?? "");
+    setNewSub("");
     setExpertId(question?.expertId ?? data.experts[0]?.id ?? "");
     setInstructions(question?.instructions ?? "");
     setMax(question?.maxDurationSec ? String(question.maxDurationSec) : "");
@@ -547,7 +574,12 @@ function QuestionDialog({ open, question, data, onClose, refresh, toast }: { ope
             className="space-y-4"
             onSubmit={async (e) => {
               e.preventDefault();
-              const body = { text, categoryId: categoryId || null, expertId: expertId || null, instructions: instructions || null, maxDurationSec: max ? Number(max) : null };
+              const body = {
+                text,
+                categoryId: categoryId || null,
+                subcategoryId: subcategoryId && subcategoryId !== "__new" ? subcategoryId : null,
+                ...(subcategoryId === "__new" && newSub.trim() ? { subcategoryName: newSub.trim() } : {}),
+                expertId: expertId || null, instructions: instructions || null, maxDurationSec: max ? Number(max) : null };
               try {
                 if (question) await api(`/api/admin/questions/${question.id}`, { method: "PATCH", json: body });
                 else await api(`/api/admin/projects/${data.project.id}/questions`, { method: "POST", json: body });
@@ -566,7 +598,14 @@ function QuestionDialog({ open, question, data, onClose, refresh, toast }: { ope
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label htmlFor="qcat">Kategoria</Label>
-                <NativeSelect id="qcat" value={categoryId} onChange={(e) => setCategoryId(e.target.value)}>
+                <NativeSelect
+                  id="qcat"
+                  value={categoryId}
+                  onChange={(e) => {
+                    setCategoryId(e.target.value);
+                    setSubcategoryId("");
+                  }}
+                >
                   <option value="">— brak —</option>
                   {data.categories.map((c) => (
                     <option key={c.id} value={c.id}>
@@ -587,6 +626,23 @@ function QuestionDialog({ open, question, data, onClose, refresh, toast }: { ope
                 </NativeSelect>
               </div>
             </div>
+            {categoryId ? (
+              <div className="space-y-1.5">
+                <Label htmlFor="qsub">Podkategoria / temat (opcjonalnie)</Label>
+                <div className="flex gap-2">
+                  <NativeSelect id="qsub" value={subcategoryId} onChange={(e) => setSubcategoryId(e.target.value)}>
+                    <option value="">— brak —</option>
+                    {(data.categories.find((c) => c.id === categoryId)?.subcategories ?? []).map((sc) => (
+                      <option key={sc.id} value={sc.id}>
+                        {sc.name}
+                      </option>
+                    ))}
+                    <option value="__new">+ Nowa podkategoria…</option>
+                  </NativeSelect>
+                  {subcategoryId === "__new" ? <Input placeholder="np. dzieci" value={newSub} onChange={(e) => setNewSub(e.target.value)} aria-label="Nazwa nowej podkategorii" /> : null}
+                </div>
+              </div>
+            ) : null}
             <div className="space-y-1.5">
               <Label htmlFor="qinst">Wskazówki do nagrania (opcjonalnie)</Label>
               <Input id="qinst" value={instructions} onChange={(e) => setInstructions(e.target.value)} placeholder="np. Odpowiedz w 3–4 zdaniach" />
@@ -613,15 +669,43 @@ function BulkDialog({ open, onClose, data, refresh, toast }: { open: boolean; on
   const [text, setText] = useState("");
   const [categoryId, setCategoryId] = useState(data.categories[0]?.id ?? "");
   const [expertId, setExpertId] = useState(data.experts[0]?.id ?? "");
-  const lines = text
-    .split(/\n+/)
-    .map((l) => l.replace(/^\s*(\d+[.)]|[-•*])\s*/, "").trim())
-    .filter((l) => l.length >= 3);
+  const lines = parseBulk(text);
+  const catName = data.categories.find((c) => c.id === categoryId)?.name ?? null;
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent title="Wklej wiele pytań" description="Jedno pytanie w każdej linii. Numeracja i punktory są usuwane automatycznie.">
+      <DialogContent
+        title="Wklej wiele pytań"
+        description="Jedno pytanie w każdej linii. Temat (podkategorię) podaj w nawiasie na początku: [dzieci] Kto decyduje o opiece? — wiersz bez nawiasu nie ma podkategorii. Numeracja i punktory są usuwane automatycznie."
+        className="max-w-2xl"
+      >
         <div className="space-y-4">
-          <Textarea rows={8} value={text} onChange={(e) => setText(e.target.value)} placeholder={"1. Dlaczego warto zastrzec znak towarowy?\n2. Ile kosztuje rejestracja znaku?"} aria-label="Pytania" />
+          <Textarea rows={8} value={text} onChange={(e) => setText(e.target.value)} placeholder={"[dzieci] Kto decyduje o opiece nad dzieckiem?\n[dzieci] Jak ustala się wysokość alimentów?\n[majątek] Jak dzieli się majątek po rozwodzie?\nIle trwa sprawa rozwodowa?"} aria-label="Pytania" />
+          {lines.length ? (
+            <div className="max-h-48 overflow-y-auto rounded-xl border border-line">
+              <table className="w-full text-left text-xs">
+                <thead className="sticky top-0 bg-paper text-muted">
+                  <tr>
+                    <th className="px-3 py-1.5 font-medium">Kategoria</th>
+                    <th className="px-3 py-1.5 font-medium">Podkategoria</th>
+                    <th className="px-3 py-1.5 font-medium">Pytanie</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {lines.map((l, i) => {
+                    const cat = l.category ?? catName ?? (l.subcategory ? l.subcategory : null);
+                    const sub = l.category || catName ? l.subcategory : undefined;
+                    return (
+                      <tr key={i} className="border-t border-line">
+                        <td className="px-3 py-1.5 text-muted">{cat ?? "—"}</td>
+                        <td className="px-3 py-1.5">{sub ? <Badge tone="violet">{sub}</Badge> : <span className="text-muted">—</span>}</td>
+                        <td className="px-3 py-1.5">{l.text}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
           <div className="grid grid-cols-2 gap-3">
             <NativeSelect value={categoryId} onChange={(e) => setCategoryId(e.target.value)} aria-label="Kategoria">
               <option value="">— bez kategorii —</option>
@@ -647,7 +731,14 @@ function BulkDialog({ open, onClose, data, refresh, toast }: { open: boolean; on
               try {
                 const r = await api<{ created: number }>(`/api/admin/projects/${data.project.id}/questions`, {
                   method: "POST",
-                  json: { items: lines.map((l) => ({ text: l, categoryId: categoryId || null, expertId: expertId || null })) },
+                  json: {
+                    items: lines.map((l) => {
+                      // [Kategoria/temat] wins; [temat] goes under the chosen category; with no category chosen [temat] becomes the category
+                      if (l.category) return { text: l.text, categoryName: l.category, subcategoryName: l.subcategory, expertId: expertId || null };
+                      if (categoryId) return { text: l.text, categoryId, subcategoryName: l.subcategory, expertId: expertId || null };
+                      return { text: l.text, categoryName: l.subcategory, expertId: expertId || null };
+                    }),
+                  },
                 });
                 toast(`Dodano ${r.created} ${plural(r.created, "pytanie", "pytania", "pytań")}`);
                 setText("");
@@ -660,6 +751,73 @@ function BulkDialog({ open, onClose, data, refresh, toast }: { open: boolean; on
           >
             Dodaj {lines.length || ""} {plural(lines.length, "pytanie", "pytania", "pytań")}
           </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function CategoriesDialog({ open, onClose, data, refresh, toast }: { open: boolean; onClose: () => void } & PanelProps) {
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const counts = (catId: string, subId?: string) => data.questions.filter((q) => q.categoryId === catId && (subId === undefined || q.subcategoryId === subId)).length;
+  const call = async (url: string, method: string, json?: unknown, ok?: string) => {
+    try {
+      await api(url, { method, json });
+      if (ok) toast(ok);
+      refresh();
+    } catch (err) {
+      toast((err as Error).message, "err");
+    }
+  };
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent title="Kategorie i tematy" description="Podkategorie (tematy) porządkują pytania w kategorii, np. Rozwody › dzieci, Rozwody › majątek." className="max-w-xl">
+        <div className="space-y-3">
+          {data.categories.map((c) => (
+            <div key={c.id} className="rounded-xl border border-line p-3">
+              <div className="flex items-center justify-between gap-2">
+                <p className="font-medium">
+                  {c.name} <span className="text-xs font-normal text-muted">({counts(c.id)})</span>
+                </p>
+                <Button
+                  size="iconSm"
+                  variant="ghost"
+                  aria-label={`Usuń kategorię ${c.name}`}
+                  onClick={() => {
+                    if (confirm(`Usunąć kategorię „${c.name}” razem z jej tematami? Pytania zostaną, ale bez kategorii.`)) void call(`/api/admin/categories/${c.id}`, "DELETE", undefined, "Usunięto kategorię");
+                  }}
+                >
+                  <Trash2 />
+                </Button>
+              </div>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {c.subcategories.map((sc) => (
+                  <span key={sc.id} className="inline-flex items-center gap-1 rounded-full bg-brand-soft px-2.5 py-1 text-xs text-brand">
+                    {sc.name} <span className="opacity-60">({counts(c.id, sc.id)})</span>
+                    <button aria-label={`Usuń temat ${sc.name}`} className="ml-0.5 opacity-60 hover:opacity-100" onClick={() => call(`/api/admin/subcategories/${sc.id}`, "DELETE", undefined, "Usunięto temat")}>
+                      ×
+                    </button>
+                  </span>
+                ))}
+                {c.subcategories.length === 0 ? <span className="text-xs text-muted">Brak tematów</span> : null}
+              </div>
+              <form
+                className="mt-2 flex gap-2"
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  const name = (drafts[c.id] ?? "").trim();
+                  if (!name) return;
+                  await call(`/api/admin/categories/${c.id}/subcategories`, "POST", { name }, "Dodano temat");
+                  setDrafts((d) => ({ ...d, [c.id]: "" }));
+                }}
+              >
+                <Input className="h-9" placeholder="Nowy temat, np. dzieci" value={drafts[c.id] ?? ""} onChange={(e) => setDrafts((d) => ({ ...d, [c.id]: e.target.value }))} aria-label={`Nowy temat w kategorii ${c.name}`} />
+                <Button type="submit" size="sm" variant="subtle" disabled={!(drafts[c.id] ?? "").trim()}>
+                  Dodaj
+                </Button>
+              </form>
+            </div>
+          ))}
         </div>
       </DialogContent>
     </Dialog>

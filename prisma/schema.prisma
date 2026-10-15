@@ -147,8 +147,22 @@ model Category {
   project   Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
   order     Int        @default(0)
   questions Question[]
+  subcategories Subcategory[]
 
   @@unique([projectId, name])
+}
+
+// Thematic subcategory inside a category, e.g. Rozwody › dzieci
+model Subcategory {
+  id         String     @id @default(cuid())
+  categoryId String
+  category   Category   @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  name       String
+  order      Int        @default(0)
+  createdAt  DateTime   @default(now())
+  questions  Question[]
+
+  @@unique([categoryId, name])
 }
 
 model Question {
@@ -157,6 +171,8 @@ model Question {
   project        Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
   categoryId     String?
   category       Category?          @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  subcategoryId  String?
+  subcategory    Subcategory?       @relation(fields: [subcategoryId], references: [id], onDelete: SetNull)
   expertId       String?
   expert         Expert?            @relation(fields: [expertId], references: [id], onDelete: SetNull)
   text           String

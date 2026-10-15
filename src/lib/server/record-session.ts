@@ -12,6 +12,7 @@ export async function recordSession(token: string) {
     orderBy: [{ order: "asc" }, { createdAt: "asc" }],
     include: {
       category: true,
+      subcategory: true,
       recording: { include: { takes: { where: { status: { not: "UPLOADING" } }, orderBy: { takeNumber: "asc" }, select: { id: true, takeNumber: true, status: true, durationSec: true, createdAt: true } } } },
     },
   });
@@ -28,6 +29,7 @@ export async function recordSession(token: string) {
       instructions: q.instructions,
       maxDurationSec: q.maxDurationSec,
       category: q.category?.name ?? "Ogólne",
+      subcategory: q.subcategory?.name ?? null,
       status: q.status,
       takes: q.recording?.takes ?? [],
     })),

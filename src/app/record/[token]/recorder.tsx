@@ -12,6 +12,7 @@ interface Question {
   instructions: string | null;
   maxDurationSec: number | null;
   category: string;
+  subcategory?: string | null;
   status: string;
   takes: Array<{ id: string; takeNumber: number; status: string }>;
 }
@@ -366,6 +367,7 @@ export function Recorder({ token }: { token: string }) {
                         {recorded ? <Check className="h-4 w-4" /> : n}
                       </span>
                       <span className="flex-1">
+                        {q.subcategory ? <span className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.12em] text-white/45">{q.subcategory}</span> : null}
                         <span className="block text-[16px] font-medium leading-snug">{q.text}</span>
                         <span className="mt-1.5 block text-[12.5px] text-white/50">
                           {uploadingNow

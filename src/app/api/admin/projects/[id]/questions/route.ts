@@ -29,9 +29,23 @@ export const POST = route(async (req: Request, ctx: { params: Promise<{ id: stri
         const ok = await tx.category.findFirst({ where: { id: categoryId, projectId } });
         if (!ok) categoryId = null;
       }
+      // thematic subcategory (e.g. "[dzieci]" when pasting), always inside the chosen category
+      let subcategoryId: string | null = null;
+      if (categoryId && it.subcategoryId) {
+        const sc = await tx.subcategory.findFirst({ where: { id: it.subcategoryId, categoryId } });
+        subcategoryId = sc?.id ?? null;
+      } else if (categoryId && it.subcategoryName) {
+        const n = await tx.subcategory.count({ where: { categoryId } });
+        const sc = await tx.subcategory.upsert({
+          where: { categoryId_name: { categoryId, name: it.subcategoryName } },
+          create: { categoryId, name: it.subcategoryName, order: n },
+          update: {},
+        });
+        subcategoryId = sc.id;
+      }
       out.push(
         await tx.question.create({
-          data: { projectId, text: it.text, categoryId, instructions: it.instructions ?? null, maxDurationSec: it.maxDurationSec ?? null, expertId: it.expertId ?? null, order: order++ },
+          data: { projectId, text: it.text, categoryId, subcategoryId, instructions: it.instructions ?? null, maxDurationSec: it.maxDurationSec ?? null, expertId: it.expertId ?? null, order: order++ },
         }),
       );
     }
