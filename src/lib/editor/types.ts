@@ -236,7 +236,25 @@ export interface EditorDocument {
     pauseSensitivity: "gentle" | "standard" | "dynamic";
     pausePadding: number;
     showSafeArea?: "tiktok" | "reels" | "shorts" | "none";
+    /** AI B-roll proposals and generations (Higgsfield), kept with the video so they survive a reload. */
+    aiBroll?: AiBrollItem[];
   };
+}
+
+export interface AiBrollItem {
+  id: string;
+  start: number; // timeline seconds
+  end: number;
+  quote: string;
+  title: string;
+  reason: string;
+  prompt: string;
+  duration: number; // seconds requested from the video model
+  model: string;
+  status: "suggested" | "generating" | "done" | "failed";
+  jobId?: string | null;
+  overlayId?: string | null;
+  error?: string | null;
 }
 
 export interface AssetInfo {

@@ -67,6 +67,39 @@ function voicedRegions(audio: Buffer): Array<[number, number]> {
   return merged;
 }
 
+const hfRequests = new Map<string, { polls: number; prompt: string }>();
+let hfClip: Buffer | null = null;
+async function higgsfield(req: http.IncomingMessage, res: http.ServerResponse, p: string, json: (c: number, d: unknown) => void) {
+  if (p.startsWith("/files/")) {
+    // a 9:16 colour-bars clip standing in for the generated video
+    hfClip ??= (() => {
+      const f = path.join(os.tmpdir(), `mock-hf-${process.pid}.mp4`);
+      execFileSync(ff, ["-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=size=720x1280:rate=30:duration=5", "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", f]);
+      return fs.readFileSync(f);
+    })();
+    res.writeHead(200, { "content-type": "video/mp4" });
+    return res.end(hfClip);
+  }
+  if (!/^Key [^:\s]+:\S+$/.test(String(req.headers.authorization ?? ""))) return json(401, { detail: "Invalid credentials" });
+  const m = p.match(/^\/requests\/([\w-]+)\/status$/);
+  if (req.method === "GET" && m) {
+    const r = hfRequests.get(m[1]);
+    if (!r) return json(404, { detail: "not found" });
+    r.polls++;
+    const base = { request_id: m[1], status_url: `http://127.0.0.1:${PORT}/hf/requests/${m[1]}/status` };
+    if (r.polls < 2) return json(200, { ...base, status: "in_progress" });
+    return json(200, { ...base, status: "completed", video: { url: `http://127.0.0.1:${PORT}/hf/files/${m[1]}.mp4` } });
+  }
+  if (req.method === "POST" && p.endsWith("/text-to-video")) {
+    const body = JSON.parse((await readBody(req)).toString() || "{}");
+    if (!body.prompt || !body.aspect_ratio || !body.duration) return json(422, { detail: "prompt, duration and aspect_ratio are required" });
+    const id = `mock-${Date.now().toString(36)}-${hfRequests.size}`;
+    hfRequests.set(id, { polls: 0, prompt: body.prompt });
+    return json(200, { status: "queued", request_id: id, status_url: `http://127.0.0.1:${PORT}/hf/requests/${id}/status` });
+  }
+  return json(404, { detail: "unknown endpoint" });
+}
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url ?? "/", `http://localhost:${PORT}`);
   const json = (code: number, data: unknown) => {
@@ -74,6 +107,8 @@ const server = http.createServer(async (req, res) => {
     res.end(JSON.stringify(data));
   };
   try {
+    // ---- MOCK Higgsfield (text-to-video): POST /{model} → request_id; GET /requests/:id/status ----
+    if (url.pathname.startsWith("/hf/")) return higgsfield(req, res, url.pathname.slice(3), json);
     if (!req.headers["xi-api-key"]) return json(401, { detail: "missing api key" });
     if (req.method === "GET" && url.pathname === "/v1/voices") {
       return json(200, { voices: [{ voice_id: "mock-voice-pl", name: "Mock — Polski lektor", labels: { accent: "polish", gender: "female" } }, { voice_id: "mock-voice-2", name: "Mock — Drugi głos", labels: {} }] });

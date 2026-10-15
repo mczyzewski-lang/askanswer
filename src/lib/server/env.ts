@@ -35,6 +35,26 @@ export const env = {
   get sttModel() {
     return str("ELEVENLABS_STT_MODEL", "scribe_v2");
   },
+  /** Higgsfield API credentials in the form KEY_ID:KEY_SECRET. */
+  get higgsfieldCredentials() {
+    const both = str("HIGGSFIELD_CREDENTIALS") || str("HF_CREDENTIALS");
+    if (both) return both;
+    const id = str("HIGGSFIELD_API_KEY") || str("HF_API_KEY");
+    const secret = str("HIGGSFIELD_API_SECRET") || str("HF_API_SECRET");
+    return id && secret ? `${id}:${secret}` : "";
+  },
+  get higgsfieldBaseUrl() {
+    return str("HIGGSFIELD_BASE_URL", "https://api.higgsfield.ai").replace(/\/$/, "");
+  },
+  get higgsfieldModel() {
+    return str("HIGGSFIELD_MODEL", "kling-video/v3.0/pro/text-to-video");
+  },
+  get anthropicConfigured() {
+    return Boolean(str("ANTHROPIC_API_KEY") || str("ANTHROPIC_AUTH_TOKEN"));
+  },
+  get claudeModel() {
+    return str("CLAUDE_MODEL", "claude-opus-5-5");
+  },
   get storageDriver(): "local" | "s3" {
     return str("STORAGE_DRIVER", "local") === "s3" ? "s3" : "local";
   },
@@ -77,4 +97,8 @@ export const env = {
 
 export function elevenLabsConfigured(): boolean {
   return env.elevenLabsKey.length > 0;
+}
+
+export function higgsfieldConfigured(): boolean {
+  return env.higgsfieldCredentials.includes(":");
 }

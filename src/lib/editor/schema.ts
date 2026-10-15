@@ -153,5 +153,25 @@ export const EditorDocumentSchema = z.object({
     pauseSensitivity: z.enum(["gentle", "standard", "dynamic"]),
     pausePadding: num.min(0).max(2),
     showSafeArea: z.enum(["tiktok", "reels", "shorts", "none"]).optional(),
+    aiBroll: z
+      .array(
+        z.object({
+          id: z.string().max(64),
+          start: num.min(0),
+          end: num.min(0),
+          quote: z.string().max(2000),
+          title: z.string().max(200),
+          reason: z.string().max(1000),
+          prompt: z.string().max(2500),
+          duration: num.min(1).max(30),
+          model: z.string().max(120),
+          status: z.enum(["suggested", "generating", "done", "failed"]),
+          jobId: z.string().max(64).nullable().optional(),
+          overlayId: z.string().max(64).nullable().optional(),
+          error: z.string().max(1000).nullable().optional(),
+        }),
+      )
+      .max(50)
+      .optional(),
   }),
 });

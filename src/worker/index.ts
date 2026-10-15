@@ -9,6 +9,8 @@ import { processTake, transcribeTake, PermanentError } from "../lib/server/pipel
 import { runRender } from "../lib/server/render-job";
 import { enhanceComposition } from "../lib/server/enhance";
 import { ElevenLabsError } from "../lib/server/elevenlabs";
+import { generateBroll } from "../lib/server/broll";
+import { HiggsfieldError } from "../lib/server/higgsfield";
 
 const workerId = `${os.hostname()}-${process.pid}`;
 let stopping = false;
@@ -24,6 +26,8 @@ async function handle(job: { id: string; type: string; payload: unknown }) {
       return runRender(p.renderJobId);
     case "enhance-audio":
       return { map: await enhanceComposition(p.compositionId, p.mode as "podcast" | "isolator", (p.strength as "natural" | "podcast" | "radio") ?? "podcast") };
+    case "generate-broll":
+      return generateBroll(job.id, job.payload as Parameters<typeof generateBroll>[1]);
     default:
       throw new PermanentError(`Unknown job type ${job.type}`);
   }
@@ -55,7 +59,7 @@ async function loop() {
     } catch (e) {
       stopBeat();
       const err = e as Error;
-      const retryable = !(err instanceof PermanentError) && !(err instanceof ElevenLabsError && !err.retryable);
+      const retryable = !(err instanceof PermanentError) && !(err instanceof ElevenLabsError && !err.retryable) && !(err instanceof HiggsfieldError && !err.retryable);
       const gaveUp = await failJob(job.id, err.message, retryable);
       console.error(`[worker] ✗ ${job.type} ${job.id}: ${err.message}${gaveUp ? " (giving up)" : " (will retry)"}`);
       if (gaveUp && job.type === "render") {

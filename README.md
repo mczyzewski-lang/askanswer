@@ -48,6 +48,10 @@ All variables are listed in `.env.example`.
 | `ELEVENLABS_VOICE_ID` | no | Default narrator voice (each project can override it) |
 | `ELEVENLABS_TTS_MODEL` | no | Default `eleven_multilingual_v2` (Polish-capable) |
 | `ELEVENLABS_STT_MODEL` | no | Default `scribe_v2` |
+| `HIGGSFIELD_CREDENTIALS` | for AI B-roll | `KEY_ID:KEY_SECRET`; Studio → AI generates clips with Higgsfield (server-side only) |
+| `HIGGSFIELD_MODEL` | no | Default `kling-video/v3.0/pro/text-to-video` (Kling 3.0 Pro, 9:16); also `bytedance/seedance-2.5/text-to-video`, `kling-video/v3.0/std/text-to-video` |
+| `ANTHROPIC_API_KEY` | no | Claude writes the B-roll proposals and prompts from the transcript; without it a basic heuristic is used |
+| `CLAUDE_MODEL` | no | Default `claude-opus-5-5` |
 | `ELEVENLABS_BASE_URL` | no | Default `https://api.elevenlabs.io` (the tests point it at a mock) |
 | `STORAGE_DRIVER` | no | `local` (default) or `s3` |
 | `STORAGE_LOCAL_DIR` | no | Private directory used by the local driver (default `./storage`) |

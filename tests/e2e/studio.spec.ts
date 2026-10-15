@@ -79,6 +79,17 @@ test("studio: pauses, cuts, subtitles, zoom, theme, persistence and real MP4 exp
   await expect(page.getByText(/Aktywny ulepszony dźwięk/)).toBeVisible({ timeout: 90_000 });
   await waitSaved(page);
 
+  // AI B-roll: proposals from the transcript → accept → Higgsfield (mock) clip lands on the timeline
+  await page.getByTestId("tab-ai").click();
+  await page.getByTestId("ai-suggest").click();
+  await expect(page.getByTestId("ai-item").first()).toBeVisible({ timeout: 30_000 });
+  await page.getByTestId("ai-accept").first().click();
+  await expect(page.getByTestId("ai-done")).toBeVisible({ timeout: 120_000 });
+  await waitSaved(page);
+  const saved = await (await request.get(`/api/admin/compositions/${compId}`)).json();
+  const doc = saved.document ?? saved.composition?.document;
+  expect(doc.overlays.some((o: { kind: string; w: number }) => o.kind === "video" && o.w === 1)).toBeTruthy();
+
   // Test 12 — theme accent/highlight change propagates (stored on the project theme)
   await page.getByTestId("tab-theme").click();
   await page.getByTestId("theme-highlight").evaluate((el: HTMLInputElement) => {

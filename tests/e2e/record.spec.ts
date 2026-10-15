@@ -76,7 +76,8 @@ test("expert records answers on a phone via the invitation link", async ({ page,
   await expect(start).toBeEnabled();
   await start.click();
   await expect(page.getByText("Twoja kolej — odpowiedz")).toBeVisible({ timeout: 15_000 });
-  await page.waitForTimeout(3000);
+  // > the longest pause in the fake microphone signal (2 s), so the answer always contains speech
+  await page.waitForTimeout(5000);
   await page.getByRole("button", { name: "Zatrzymaj" }).click();
   await expect(page.getByText("Nagranie bezpiecznie zapisane")).toBeVisible({ timeout: 60_000 });
   await page.getByRole("button", { name: "Zakończ nagrywanie" }).click();

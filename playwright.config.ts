@@ -15,6 +15,10 @@ const testEnv = {
   ELEVENLABS_API_KEY: "mock-key",
   ELEVENLABS_BASE_URL: "http://127.0.0.1:4010",
   ELEVENLABS_VOICE_ID: "mock-voice-pl",
+  // Higgsfield text-to-video is mocked by the same server (tests/mock/elevenlabs-mock.ts → /hf/*)
+  HIGGSFIELD_CREDENTIALS: "mock-key-id:mock-key-secret",
+  HIGGSFIELD_BASE_URL: "http://127.0.0.1:4010/hf",
+  ANTHROPIC_API_KEY: "",
   NEXT_TELEMETRY_DISABLED: "1",
 };
 Object.assign(process.env, testEnv);

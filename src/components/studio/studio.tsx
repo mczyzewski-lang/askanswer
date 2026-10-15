@@ -26,6 +26,7 @@ import {
   Trash2,
   Type,
   Undo2,
+  Sparkles,
   WandSparkles,
   ZoomIn,
 } from "lucide-react";
@@ -43,6 +44,7 @@ import { Timeline } from "./timeline";
 import { Properties } from "./properties";
 import { AudioPanel, GraphicsPanel, PausesPanel, QuestionPanel, SubtitlesPanel, TakesPanel, TemplatesPanel, TextPanel, ZoomPanel, type StudioMeta } from "./panels";
 import { Row, Section, Select, SButton } from "./controls";
+import { AiPanel, useBrollJobs, type AiConfig } from "./ai-panel";
 
 interface StudioPayload {
   composition: { id: string; name: string; version: number; status: string; document: EditorDocument };
@@ -53,10 +55,12 @@ interface StudioPayload {
   assets: AssetInfo[];
   renders: RenderInfo[];
   elevenLabs: boolean;
+  ai: AiConfig;
 }
 
 const TABS = [
   { key: "question", label: "Pytanie", icon: HelpCircle },
+  { key: "ai", label: "AI", icon: Sparkles },
   { key: "takes", label: "Nagrania", icon: Film },
   { key: "subs", label: "Napisy", icon: Captions },
   { key: "pauses", label: "Pauzy", icon: AudioLines },
@@ -73,6 +77,8 @@ export function Studio({ id }: { id: string }) {
   const [payload, setPayload] = useState<StudioPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [engine, setEngine] = useState<PlaybackEngine | null>(null);
+  // AI clips keep generating in the background and land on the timeline when ready
+  useBrollJobs();
   const [tab, setTab] = useState<TabKey>("subs");
   const [exportOpen, setExportOpen] = useState(false);
   const [notice, setNotice] = useState<{ text: string; tone: "ok" | "err" } | null>(null);
@@ -388,6 +394,7 @@ export function Studio({ id }: { id: string }) {
         </nav>
         <aside className="scroll-thin w-[300px] shrink-0 overflow-y-auto border-r border-studio-line bg-studio-2">
           {tab === "question" ? <QuestionPanel meta={meta} /> : null}
+          {tab === "ai" ? <AiPanel engine={engine} compositionId={id} ai={payload.ai} /> : null}
           {tab === "takes" ? <TakesPanel meta={meta} onReplaceTake={replaceTake} /> : null}
           {tab === "subs" ? <SubtitlesPanel engine={engine} meta={meta} onRetranscribe={retranscribe} /> : null}
           {tab === "pauses" ? <PausesPanel engine={engine} /> : null}

@@ -4,7 +4,8 @@ import { themeFromRow } from "../themes";
 import { referencedAssetIds } from "./render-job";
 import type { EditorDocument } from "../editor/types";
 import { signedUrl } from "./storage";
-import { elevenLabsConfigured, env } from "./env";
+import { elevenLabsConfigured, env, higgsfieldConfigured } from "./env";
+import { VIDEO_MODELS, videoModel } from "./higgsfield";
 
 /** Everything the Studio needs to open a composition. */
 export async function loadStudio(id: string) {
@@ -60,5 +61,11 @@ export async function loadStudio(id: string) {
     assets,
     renders: renderInfos,
     elevenLabs: elevenLabsConfigured(),
+    ai: {
+      higgsfield: higgsfieldConfigured(),
+      claude: env.anthropicConfigured,
+      models: VIDEO_MODELS.map((m) => ({ id: m.id, label: m.label, description: m.description, durations: m.durations })),
+      defaultModel: videoModel(null).id,
+    },
   };
 }
