@@ -63,10 +63,10 @@ export function Timeline({ engine }: { engine: PlaybackEngine | null }) {
     { key: "overlays", label: "Tekst i grafika", icon: <Type className="h-3.5 w-3.5" />, h: 10 + overlayLanes * 24 },
     { key: "subs", label: "Napisy", icon: <Captions className="h-3.5 w-3.5" />, h: 30 },
     { key: "zoom", label: "Zbliżenia", icon: <ZoomIn className="h-3.5 w-3.5" />, h: 8 + zoomLanes * 22 },
-    { key: "video", label: "Wideo", icon: <Film className="h-3.5 w-3.5" />, h: 46 },
+    { key: "video", label: "Wideo", icon: <Film className="h-3.5 w-3.5" />, h: 42 },
     { key: "audio", label: "Głos eksperta", icon: <AudioLines className="h-3.5 w-3.5" />, h: 64 },
-    { key: "narr", label: "Lektor", icon: <Mic2 className="h-3.5 w-3.5" />, h: 34 },
-    { key: "music", label: "Muzyka", icon: <Music className="h-3.5 w-3.5" />, h: 34 },
+    { key: "narr", label: "Lektor", icon: <Mic2 className="h-3.5 w-3.5" />, h: 32 },
+    { key: "music", label: "Muzyka", icon: <Music className="h-3.5 w-3.5" />, h: 32 },
   ];
   const rowTop: Record<string, number> = {};
   let acc = RULER_H;
@@ -228,8 +228,8 @@ export function Timeline({ engine }: { engine: PlaybackEngine | null }) {
   for (let t = 0; t <= duration + 4; t += step) ticks.push(t);
 
   return (
-    <div className="flex min-h-0 flex-1 select-none overflow-hidden" data-testid="timeline">
-      <div className="shrink-0 border-r border-studio-line bg-studio-2" style={{ width: LABEL_W }}>
+    <div className="scroll-thin flex min-h-0 flex-1 select-none overflow-y-auto overflow-x-hidden" data-testid="timeline">
+      <div className="sticky left-0 shrink-0 border-r border-studio-line bg-studio-2" style={{ width: LABEL_W, height: totalH + 12 }}>
         <div style={{ height: RULER_H }} className="border-b border-studio-line" />
         {rows.map((r) => (
           <div key={r.key} style={{ height: r.h }} className="flex items-center gap-2 border-b border-studio-line/60 px-3 text-[11.5px] text-studio-muted">
@@ -238,7 +238,7 @@ export function Timeline({ engine }: { engine: PlaybackEngine | null }) {
           </div>
         ))}
       </div>
-      <div ref={scrollRef} className="scroll-thin relative min-w-0 flex-1 overflow-x-auto overflow-y-hidden" onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}>
+      <div ref={scrollRef} className="scroll-thin relative min-w-0 flex-1 overflow-x-auto overflow-y-hidden" style={{ height: totalH + 12 }} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp}>
         <div className="relative" style={{ width: contentW, height: totalH }}>
           {/* ruler */}
           <div className="absolute left-0 top-0 cursor-ew-resize border-b border-studio-line bg-studio-2" style={{ width: contentW, height: RULER_H }} onPointerDown={(e) => begin(e, { kind: "scrub" }, { start: 0, end: 0 })} data-testid="ruler">
@@ -304,7 +304,7 @@ export function Timeline({ engine }: { engine: PlaybackEngine | null }) {
               left={x(c.start)}
               width={x(c.sourceOut - c.sourceIn)}
               top={rowTop.video + 4}
-              height={38}
+              height={34}
               selected={isSel("clip", c.id)}
               color="bg-[#3b4a6b]"
               label={`${c.label ?? "Klip"} · ${(c.sourceOut - c.sourceIn).toFixed(1)} s`}
@@ -359,7 +359,7 @@ export function Timeline({ engine }: { engine: PlaybackEngine | null }) {
               left={x(c.start)}
               width={x(c.sourceOut - c.sourceIn)}
               top={rowTop.narr + 4}
-              height={26}
+              height={24}
               selected={isSel("narration", c.id)}
               color={c.muted ? "bg-fuchsia-500/25" : "bg-fuchsia-500/70"}
               label={`${c.label ?? "Lektor"}${c.muted ? " (wyciszony)" : ""}`}
@@ -373,7 +373,7 @@ export function Timeline({ engine }: { engine: PlaybackEngine | null }) {
               left={x(c.start)}
               width={x(c.sourceOut - c.sourceIn)}
               top={rowTop.music + 4}
-              height={26}
+              height={24}
               selected={isSel("music", c.id)}
               color={c.muted ? "bg-emerald-500/25" : "bg-emerald-600/70"}
               label={c.label ?? "Muzyka"}

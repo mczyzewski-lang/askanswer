@@ -457,7 +457,12 @@ function TakeRow({ t, q, refresh, toast, onOpenStudio }: { t: Take; q: Q; onOpen
       {processing ? <p className="w-full text-xs text-blue-700">{t.processingStep ?? "Przetwarzanie…"}</p> : null}
       <Dialog open={watch} onOpenChange={setWatch}>
         <DialogContent title={`Ujęcie ${t.takeNumber}`} description={q.text}>
-          {t.previewUrl ? <video src={t.previewUrl} controls playsInline autoPlay className="mx-auto max-h-[70vh] rounded-xl bg-black" /> : null}
+          {t.previewUrl ? (
+            <video controls playsInline autoPlay className="mx-auto max-h-[70vh] rounded-xl bg-black">
+              <source src={t.previewUrl} type="video/mp4" />
+              {t.proxyUrl ? <source src={t.proxyUrl} type="video/webm" /> : null}
+            </video>
+          ) : null}
         </DialogContent>
       </Dialog>
       <Dialog open={transcript} onOpenChange={setTranscript}>

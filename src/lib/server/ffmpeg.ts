@@ -147,6 +147,36 @@ export async function normalizeRecording(input: string, output: string, onProgre
   );
 }
 
+/**
+ * Lightweight WebM (VP8/Opus) preview proxy, ≤960 px on the long side. Used by the
+ * Studio preview in browsers without H.264 decoding; exports always use the master.
+ */
+export async function makePreviewProxy(input: string, output: string): Promise<void> {
+  await run(env.ffmpeg, [
+    "-hide_banner",
+    "-y",
+    "-i",
+    input,
+    "-vf",
+    "scale='if(gt(iw,ih),min(960,iw),-2)':'if(gt(iw,ih),-2,min(960,ih))'",
+    "-c:v",
+    "libvpx",
+    "-deadline",
+    "realtime",
+    "-cpu-used",
+    "8",
+    "-b:v",
+    "1500k",
+    "-g",
+    "30",
+    "-c:a",
+    "libopus",
+    "-b:a",
+    "96k",
+    output,
+  ]);
+}
+
 /** Decode audio to mono float32 PCM for analysis. */
 export async function decodePcm(input: string, sampleRate = 16000): Promise<Float32Array> {
   const { stdout } = await run(env.ffmpeg, ["-hide_banner", "-v", "error", "-i", input, "-vn", "-ac", "1", "-ar", String(sampleRate), "-f", "f32le", "-"]);

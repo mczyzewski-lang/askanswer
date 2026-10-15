@@ -157,7 +157,7 @@ export function SButton({
       disabled={disabled}
       onClick={onClick}
       className={cn(
-        "inline-flex h-8 items-center justify-center gap-1.5 rounded-lg px-3 text-[12.5px] font-medium transition disabled:pointer-events-none disabled:opacity-40 [&_svg]:size-3.5",
+        "inline-flex h-8 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg px-3 text-[12.5px] font-medium transition disabled:pointer-events-none disabled:opacity-40 [&_svg]:size-3.5",
         variant === "primary" && "bg-white text-black hover:bg-white/90",
         variant === "default" && "border border-studio-line bg-studio-3 text-studio-text hover:bg-studio-line",
         variant === "ghost" && "text-studio-muted hover:bg-studio-3 hover:text-studio-text",

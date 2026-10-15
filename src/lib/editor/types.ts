@@ -227,6 +227,8 @@ export interface AssetInfo {
   id: string;
   kind: string;
   url: string;
+  /** WebM preview proxy for browsers without H.264 decoding (never used for export). */
+  proxyUrl?: string | null;
   durationSec: number | null;
   width: number | null;
   height: number | null;

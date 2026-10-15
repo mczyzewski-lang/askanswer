@@ -9,7 +9,7 @@ import fsp from "node:fs/promises";
 import path from "node:path";
 import { Prisma } from "@prisma/client";
 import { prisma } from "./db";
-import { decodeDuration, decodePcm, extractSpeechAudio, normalizeRecording, probe } from "./ffmpeg";
+import { decodeDuration, decodePcm, extractSpeechAudio, makePreviewProxy, normalizeRecording, probe } from "./ffmpeg";
 import { makeTempDir, putFile, toLocalFile } from "./storage";
 import { computeWaveform, detectPauses } from "../editor/silence";
 import { buildSegments } from "../editor/subtitles";
@@ -19,7 +19,6 @@ import type { EditorDocument, Waveform } from "../editor/types";
 import { ElevenLabsError, transcribe } from "./elevenlabs";
 import { elevenLabsConfigured } from "./env";
 import { enqueue } from "./jobs";
-import { uid } from "../editor/id";
 
 async function step(takeId: string, name: string) {
   await prisma.recordingTake.update({ where: { id: takeId }, data: { processingStep: name } });
@@ -89,6 +88,22 @@ export async function processTake(takeId: string): Promise<void> {
         const pcm = normalized.hasAudio ? await decodePcm(nLocal.path, 16000) : new Float32Array(0);
         const wf = computeWaveform(pcm, 16000, 100);
         await prisma.mediaAsset.update({ where: { id: normalized.id }, data: { waveform: wf as unknown as Prisma.InputJsonValue } });
+      }
+
+      // preview proxy for browsers that cannot decode H.264 (the export always uses the master)
+      const nMeta = (normalized.meta ?? {}) as { proxyAssetId?: string };
+      if (!nMeta.proxyAssetId) {
+        await step(takeId, "Przygotowanie podglądu");
+        const proxy = path.join(work, "proxy.webm");
+        await makePreviewProxy(nLocal.path, proxy);
+        const key = `projects/${take.recording.projectId}/takes/${takeId}/proxy.webm`;
+        const size = await putFile(key, proxy, "video/webm");
+        const pa = await prisma.mediaAsset.upsert({
+          where: { storageKey: key },
+          create: { kind: "PREVIEW_PROXY", projectId: take.recording.projectId, storageKey: key, mimeType: "video/webm", sizeBytes: size, durationSec: normalized.durationSec, hasAudio: normalized.hasAudio, hasVideo: true },
+          update: { sizeBytes: size },
+        });
+        await prisma.mediaAsset.update({ where: { id: normalized.id }, data: { meta: { ...nMeta, proxyAssetId: pa.id } } });
       }
 
       // speech audio for transcription (small mp3)
@@ -261,4 +276,3 @@ export async function ensureComposition(takeId: string) {
   });
 }
 
-export { uid };

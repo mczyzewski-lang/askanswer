@@ -413,7 +413,7 @@ export function Studio({ id }: { id: string }) {
       </div>
 
       {/* bottom: transport + timeline */}
-      <div className="flex h-[330px] shrink-0 flex-col border-t border-studio-line bg-studio-2">
+      <div className="flex h-[350px] shrink-0 flex-col border-t border-studio-line bg-studio-2">
         <div className="flex h-11 shrink-0 items-center gap-1 border-b border-studio-line px-3">
           <Tip label="Na początek (Home)">
             <button className="rounded-lg p-2 hover:bg-studio-3" onClick={() => seek(0)} aria-label="Na początek">

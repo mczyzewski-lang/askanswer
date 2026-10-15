@@ -357,7 +357,7 @@ export function PausesPanel({ engine }: { engine: PlaybackEngine | null }) {
         <p className="text-[12.5px] text-studio-text" data-testid="pause-summary">
           {pending.length ? `Znaleziono ${pending.length} potencjalnych pauz — łącznie ${total.toFixed(1).replace(".", ",")} s.` : "Brak pauz do przejrzenia."}
         </p>
-        <div className="flex gap-2">
+        <div className="flex flex-col gap-2">
           <SButton
             disabled={!selected || selected.status === "applied"}
             onClick={() => {
@@ -447,7 +447,7 @@ export function ZoomPanel({ engine }: { engine: PlaybackEngine | null }) {
     <div>
       <Section title="Dynamiczne zbliżenia">
         <p className="text-[12px] text-studio-muted">Dodaj efekt w miejscu głowicy odtwarzania:</p>
-        <div className="grid grid-cols-2 gap-1.5">
+        <div className="grid grid-cols-1 gap-1.5">
           {Object.entries(ZOOM_PRESETS).map(([k, v]) => (
             <SButton key={k} onClick={() => add(k as keyof typeof ZOOM_PRESETS)}>
               {v.label}
@@ -456,9 +456,8 @@ export function ZoomPanel({ engine }: { engine: PlaybackEngine | null }) {
         </div>
       </Section>
       <Section title="Automatyczne propozycje">
-        <Row label="Intensywność">
-          <Seg value={intensity} onChange={setIntensity} options={[["minimal", "Minimal"], ["standard", "Standard"], ["dynamic", "Dynamic"]]} />
-        </Row>
+        <p className="text-[12px] text-studio-muted">Intensywność</p>
+        <Seg value={intensity} onChange={setIntensity} options={[["minimal", "Minimal"], ["standard", "Standard"], ["dynamic", "Dynamic"]]} />
         <SButton
           variant="primary"
           className="w-full"
@@ -489,7 +488,7 @@ export function ZoomPanel({ engine }: { engine: PlaybackEngine | null }) {
                 </IconBtn>
               </div>
             ))}
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <SButton onClick={() => apply((d) => ({ ...d, zooms: d.zooms.map((z) => ({ ...z, suggested: false })) }))}>
                 <Check /> Akceptuj wszystkie
               </SButton>

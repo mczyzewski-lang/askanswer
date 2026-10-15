@@ -11,6 +11,13 @@ import { drawFrame } from "@/lib/render/compositor";
 
 const DRIFT = 0.25;
 
+let h264: boolean | null = null;
+/** Use the H.264 master when the browser can decode it, otherwise the WebM preview proxy. */
+export function playableUrl(a: AssetInfo): string {
+  if (h264 === null) h264 = typeof document !== "undefined" && document.createElement("video").canPlayType('video/mp4; codecs="avc1.42E01E, mp4a.40.2"') !== "";
+  return !h264 && a.proxyUrl ? a.proxyUrl : a.url;
+}
+
 export class PlaybackEngine {
   private container: HTMLDivElement;
   private videos = new Map<string, HTMLVideoElement[]>(); // per asset, 2 elements
@@ -59,7 +66,7 @@ export class PlaybackEngine {
         const v = document.createElement("video");
         v.preload = "auto";
         v.playsInline = true;
-        if (a) v.src = a.url;
+        if (a) v.src = playableUrl(a);
         v.addEventListener("seeked", () => this.invalidate());
         v.addEventListener("loadeddata", () => this.invalidate());
         this.container.appendChild(v);

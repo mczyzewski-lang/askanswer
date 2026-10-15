@@ -78,6 +78,8 @@ export async function projectData(id: string) {
         (q.recording?.takes ?? []).map(async (t) => {
           const norm = t.normalizedAssetId ? await prisma.mediaAsset.findUnique({ where: { id: t.normalizedAssetId } }) : null;
           const comp = q.compositions.find((c) => c.takeId === t.id);
+          const proxyId = (norm?.meta as { proxyAssetId?: string } | null)?.proxyAssetId;
+          const proxy = proxyId ? await prisma.mediaAsset.findUnique({ where: { id: proxyId } }) : null;
           return {
             id: t.id,
             takeNumber: t.takeNumber,
@@ -91,6 +93,7 @@ export async function projectData(id: string) {
             transcriptText: t.transcript?.text ?? null,
             createdAt: t.createdAt.toISOString(),
             previewUrl: norm ? await signedUrl(norm.storageKey) : null,
+            proxyUrl: proxy ? await signedUrl(proxy.storageKey) : null,
             compositionId: comp?.id ?? null,
             compositionStatus: comp?.status ?? null,
             editedDownload: comp ? (renderOut.get(comp.id)?.url ?? null) : null,

@@ -1,0 +1,2 @@
+-- AlterEnum
+ALTER TYPE "AssetKind" ADD VALUE 'PREVIEW_PROXY';
