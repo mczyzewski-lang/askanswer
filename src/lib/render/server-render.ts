@@ -84,7 +84,7 @@ class FrameReader {
     this.proc.stdout.on("data", (d: Buffer) => {
       this.chunks.push(d);
       this.buffered += d.length;
-      if (this.buffered > frameBytes * 4) this.proc.stdout.pause();
+      if (this.buffered > frameBytes * 2) this.proc.stdout.pause();
       this.wake();
     });
     this.proc.stdout.on("end", () => {
@@ -109,7 +109,7 @@ class FrameReader {
     const rest = all.subarray(this.frameBytes);
     this.chunks = rest.length ? [rest] : [];
     this.buffered = rest.length;
-    if (this.buffered <= this.frameBytes * 4) this.proc.stdout.resume();
+    if (this.buffered <= this.frameBytes * 2) this.proc.stdout.resume();
     return Buffer.from(frame);
   }
   /** Advance to frame n (0-based within the clip). Repeats the last frame if the stream ended early. */
@@ -129,9 +129,11 @@ class FrameReader {
 }
 
 function qualityArgs(q: RenderOptions["quality"]) {
-  if (q === "high") return ["-preset", "medium", "-crf", "18"];
-  if (q === "draft") return ["-preset", "ultrafast", "-crf", "27"];
-  return ["-preset", "veryfast", "-crf", "21"];
+  // short lookahead + capped threads keep x264's memory small on modest servers
+  const lean = ["-x264-params", "rc-lookahead=12", "-threads", process.env.FFMPEG_THREADS ?? "2"];
+  if (q === "high") return ["-preset", "fast", "-crf", "18", ...lean];
+  if (q === "draft") return ["-preset", "ultrafast", "-crf", "27", ...lean];
+  return ["-preset", "veryfast", "-crf", "21", ...lean];
 }
 
 /** Build the FFmpeg audio mix (expert audio, narration, music) following the same clip decisions. */
@@ -226,7 +228,7 @@ export async function renderVideoSegment(job: SegmentJob, onFrame?: (done: numbe
   const encoder = spawn(env.ffmpeg, [
     "-hide_banner", "-v", "error", "-y",
     "-f", "rawvideo", "-pix_fmt", "rgba", "-s", `${job.width}x${job.height}`, "-r", String(fps), "-i", "-",
-    "-an", "-c:v", "libx264", ...qualityArgs(job.quality), "-threads", "2",
+    "-an", "-c:v", "libx264", ...qualityArgs(job.quality),
     "-pix_fmt", "yuv420p", "-profile:v", "high", "-r", String(fps), job.out,
   ]);
   let encErr = "";

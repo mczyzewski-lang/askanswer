@@ -664,6 +664,14 @@ function ExportDialog({
                 <div className={cn("h-full rounded-full transition-all", job.status === "FAILED" ? "bg-red-500" : "bg-white")} style={{ width: `${Math.round((job.progress ?? 0) * 100)}%` }} />
               </div>
               {job.error && job.status !== "SUCCEEDED" ? <p className="mt-2 text-[12px] text-red-300">{job.error}</p> : null}
+              {job.status === "RUNNING" && ((job as { stalledSec?: number }).stalledSec ?? 0) > 150 ? (
+                <p className="mt-2 text-[12px] text-amber-200">
+                  Brak postępu od {Math.round(((job as { stalledSec?: number }).stalledSec ?? 0) / 60)} min. Jeśli serwer przerwał render, zostanie on automatycznie wznowiony w ciągu kilku minut.
+                </p>
+              ) : null}
+              {(job as { attempts?: number }).attempts && ((job as { attempts?: number }).attempts ?? 0) > 1 && job.status !== "SUCCEEDED" ? (
+                <p className="mt-1 text-[11.5px] text-studio-muted">Ponowna próba renderowania ({(job as { attempts?: number }).attempts}).</p>
+              ) : null}
               {job.status === "FAILED" ? (
                 <SButton
                   className="mt-2"

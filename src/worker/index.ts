@@ -4,7 +4,7 @@
  */
 import os from "node:os";
 import { prisma } from "../lib/server/db";
-import { claimJob, completeJob, failJob } from "../lib/server/jobs";
+import { claimJob, completeJob, failJob, startHeartbeat } from "../lib/server/jobs";
 import { processTake, transcribeTake, PermanentError } from "../lib/server/pipeline";
 import { runRender } from "../lib/server/render-job";
 import { ElevenLabsError } from "../lib/server/elevenlabs";
@@ -43,11 +43,14 @@ async function loop() {
     }
     const t0 = Date.now();
     console.log(`[worker] ${job.type} ${job.id} (attempt ${job.attempts})`);
+    const stopBeat = startHeartbeat(job.id);
     try {
       await handle(job);
+      stopBeat();
       await completeJob(job.id);
       console.log(`[worker] ✓ ${job.type} ${job.id} in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
     } catch (e) {
+      stopBeat();
       const err = e as Error;
       const retryable = !(err instanceof PermanentError) && !(err instanceof ElevenLabsError && !err.retryable);
       const gaveUp = await failJob(job.id, err.message, retryable);

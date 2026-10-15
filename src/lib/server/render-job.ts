@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import fsp from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -12,6 +13,33 @@ import { probe } from "./ffmpeg";
 export interface RenderSettings {
   format: ExportFormat;
   quality: "draft" | "standard" | "high";
+}
+
+/** Container memory limit in bytes (cgroup v2/v1), falling back to total RAM. */
+function memoryLimit(): number {
+  for (const f of ["/sys/fs/cgroup/memory.max", "/sys/fs/cgroup/memory/memory.limit_in_bytes"]) {
+    try {
+      const v = fs.readFileSync(f, "utf8").trim();
+      const n = Number(v);
+      if (v !== "max" && Number.isFinite(n) && n > 0 && n < 1e15) return n;
+    } catch {
+      /* not available */
+    }
+  }
+  return os.totalmem();
+}
+
+/**
+ * How many frame ranges to render in parallel. Each renderer process needs roughly
+ * 650 MB at 1080p, and the web app + worker need ~800 MB, so small servers render
+ * in a single process (slower, but it never runs out of memory).
+ */
+export function renderConcurrency(): number {
+  const gb = memoryLimit() / 1024 ** 3;
+  const byMemory = Math.max(1, Math.floor((gb - 0.8) / 0.65));
+  const byCpu = Math.max(1, Math.min(3, os.cpus().length - 1));
+  const requested = Number(process.env.RENDER_CONCURRENCY) || byCpu;
+  return Math.max(1, Math.min(requested, byMemory, byCpu));
 }
 
 export function referencedAssetIds(doc: EditorDocument): string[] {
@@ -54,7 +82,7 @@ async function renderOne(doc: EditorDocument, out: string, settings: RenderSetti
     const missing = doc.clips.filter((c) => !assets.has(c.assetId));
     if (missing.length) throw new Error("Brak pliku źródłowego dla części klipów — nie można wyrenderować");
     const fmt = EXPORT_FORMATS[settings.format] ?? EXPORT_FORMATS["1080x1920"];
-    const parallel = Math.max(1, Number(process.env.RENDER_CONCURRENCY) || Math.min(3, os.cpus().length - 1));
+    const parallel = renderConcurrency();
     return await renderComposition(doc, assets, out, { width: fmt.width, height: fmt.height, quality: settings.quality, parallel, onProgress });
   } finally {
     for (const l of locals) await l.cleanup();

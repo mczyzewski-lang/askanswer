@@ -14,9 +14,11 @@ export const GET = route(async (_req: Request, ctx: Ctx) => {
   const job = await prisma.job.findUnique({ where: { idempotencyKey: `render:${r.id}` } });
   return json({
     id: r.id,
-    status: r.status === "QUEUED" && job?.status === "FAILED" ? "FAILED" : r.status,
+    status: (r.status === "QUEUED" || r.status === "RUNNING") && job?.status === "FAILED" ? "FAILED" : r.status,
     progress: r.progress,
-    error: r.error,
+    error: r.error ?? job?.error ?? null,
+    // seconds since the last progress update — lets the UI explain a stall
+    stalledSec: r.status === "RUNNING" ? Math.round((Date.now() - r.updatedAt.getTime()) / 1000) : 0,
     attempts: r.attempts,
     downloadUrl: out ? await signedUrl(out.storageKey, { download: out.originalName ?? "wideo.mp4" }) : null,
     previewUrl: out ? await signedUrl(out.storageKey) : null,

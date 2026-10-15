@@ -30,13 +30,31 @@ export async function enqueue(type: JobType, payload: Record<string, unknown>, o
   }
 }
 
+export const DIED_MESSAGE = "Proces przetwarzania został przerwany przez serwer (najczęściej z braku pamięci RAM). Spróbuj niższej jakości lub zwiększ pamięć usługi w Railway (Settings → Resources).";
+
+/** Jobs whose worker died and that already used all attempts are marked FAILED (no endless crash loop). */
+export async function reapDeadJobs() {
+  const dead = await prisma.$queryRaw<Array<{ id: string; type: string; payload: unknown }>>`
+    UPDATE "Job" SET status = 'FAILED', error = ${DIED_MESSAGE}, "lockedAt" = NULL, "updatedAt" = now()
+    WHERE status = 'RUNNING' AND "lockedAt" < now() - interval '3 minutes' AND attempts >= "maxAttempts"
+    RETURNING id, type, payload`;
+  for (const j of dead) {
+    if (j.type === "render") {
+      const rid = (j.payload as { renderJobId?: string }).renderJobId;
+      if (rid) await prisma.renderJob.update({ where: { id: rid }, data: { status: "FAILED", error: DIED_MESSAGE } }).catch(() => {});
+    }
+  }
+  return dead.length;
+}
+
 export async function claimJob(workerId: string) {
+  await reapDeadJobs();
   const rows = await prisma.$queryRaw<Array<{ id: string }>>`
     UPDATE "Job" SET status = 'RUNNING', "lockedAt" = now(), "lockedBy" = ${workerId}, attempts = attempts + 1, "updatedAt" = now()
     WHERE id = (
       SELECT id FROM "Job"
       WHERE (status = 'QUEUED' AND "runAt" <= now())
-         OR (status = 'RUNNING' AND "lockedAt" < now() - interval '30 minutes')
+         OR (status = 'RUNNING' AND "lockedAt" < now() - interval '3 minutes')
       ORDER BY "runAt" ASC
       FOR UPDATE SKIP LOCKED
       LIMIT 1
@@ -44,6 +62,14 @@ export async function claimJob(workerId: string) {
     RETURNING id`;
   if (!rows.length) return null;
   return prisma.job.findUnique({ where: { id: rows[0].id } });
+}
+
+/** Keep a running job's lock fresh; a job without heartbeat for 3 minutes is considered dead and retried. */
+export function startHeartbeat(id: string): () => void {
+  const t = setInterval(() => {
+    prisma.job.update({ where: { id }, data: { lockedAt: new Date() } }).catch(() => {});
+  }, 30_000);
+  return () => clearInterval(t);
 }
 
 export async function completeJob(id: string, result?: unknown) {
