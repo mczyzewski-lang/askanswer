@@ -68,7 +68,9 @@ export function VoicePicker({
   allowDefault?: boolean;
 }) {
   const { voices, collections, reload } = useVoiceData();
-  const [mode, setModeState] = useState<"collections" | "all">("collections");
+  const [mode, setModeState] = useState<"collections" | "all" | "custom">("collections");
+  const [customId, setCustomId] = useState("");
+  const [customErr, setCustomErr] = useState<string | null>(null);
   const [collectionId, setCollectionId] = useState<string>("");
   const [starOpen, setStarOpen] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
@@ -76,12 +78,16 @@ export function VoicePicker({
   useEffect(() => {
     try {
       const m = localStorage.getItem(MODE_KEY);
-      if (m === "all" || m === "collections") setModeState(m);
+      if (m === "all" || m === "collections" || m === "custom") setModeState(m);
     } catch {
       /* ignore */
     }
   }, []);
-  const setMode = (m: "collections" | "all") => {
+  // show the saved voice id when the picker opens in "Własne ID" mode
+  useEffect(() => {
+    if (mode === "custom" && !customId && value) setCustomId(value);
+  }, [mode, value, customId]);
+  const setMode = (m: "collections" | "all" | "custom") => {
     setModeState(m);
     try {
       localStorage.setItem(MODE_KEY, m);
@@ -97,7 +103,8 @@ export function VoicePicker({
   const nameOf = (id: string, label?: string | null) => label || (byId.get(id) ? voiceLabel(byId.get(id)!) : id);
   const inCollections = collections.filter((c) => c.items.some((i) => i.voiceId === value));
   const defaultId = voices?.defaultVoiceId ?? "";
-  const current = value || defaultId;
+  const typed = mode === "custom" && /^[A-Za-z0-9_-]{8,64}$/.test(customId.trim()) ? customId.trim() : null;
+  const current = typed ?? (value || defaultId);
 
   const selectCls = dark
     ? "h-8 w-full rounded-lg border border-studio-line bg-studio-3 px-2 text-[12.5px] text-studio-text outline-none"
@@ -143,9 +150,60 @@ export function VoicePicker({
         <button type="button" className={segCls(effectiveMode === "all")} onClick={() => setMode("all")}>
           Wszystkie głosy
         </button>
+        <button
+          type="button"
+          className={segCls(effectiveMode === "custom")}
+          onClick={() => {
+            setMode("custom");
+            setCustomId(value);
+          }}
+        >
+          Własne ID
+        </button>
       </div>
 
-      {effectiveMode === "collections" && activeCollection ? (
+      {effectiveMode === "custom" ? (
+        <form
+          className="space-y-1"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const id = customId.trim();
+            if (!/^[A-Za-z0-9_-]{8,64}$/.test(id)) {
+              setCustomErr("Nieprawidłowe ID — skopiuj identyfikator głosu z ElevenLabs (np. pNInz6obpgDQGcFmaJgB).");
+              return;
+            }
+            setCustomErr(null);
+            onChange(id);
+            setMsg("Ustawiono głos o podanym ID");
+            setTimeout(() => setMsg(null), 2500);
+          }}
+        >
+          <div className="flex gap-2">
+            <input
+              className={cn(selectCls, "font-mono")}
+              placeholder="np. pNInz6obpgDQGcFmaJgB"
+              value={customId}
+              onChange={(e) => setCustomId(e.target.value)}
+              aria-label="Własne ID głosu"
+              spellCheck={false}
+              autoComplete="off"
+            />
+            <button
+              type="submit"
+              className={cn(
+                "shrink-0 whitespace-nowrap px-3 font-medium",
+                dark ? "h-8 rounded-lg bg-white text-[12.5px] text-black" : "h-10 rounded-xl bg-ink text-sm text-white",
+              )}
+            >
+              Użyj
+            </button>
+          </div>
+          <p className={cn("text-xs", dark ? "text-studio-muted" : "text-muted")}>
+            {value && value === customId.trim() ? `Aktywny głos: ${nameOf(value)}. ` : ""}ID znajdziesz w ElevenLabs: Voices → wybrany głos → „Copy voice ID”. Głos musi być dostępny na Twoim koncie (np. dodany z Voice Library).
+          </p>
+          {customErr ? <p className="text-xs text-red-500">{customErr}</p> : null}
+        </form>
+      ) : effectiveMode === "collections" && activeCollection ? (
         <>
           {collections.filter((c) => c.items.length).length > 1 ? (
             <select className={selectCls} value={activeCollection.id} onChange={(e) => setCollectionId(e.target.value)} aria-label="Kolekcja">
