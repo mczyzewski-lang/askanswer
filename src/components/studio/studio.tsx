@@ -373,12 +373,12 @@ export function Studio({ id }: { id: string }) {
 
       <div className="flex min-h-0 flex-1">
         {/* left: assets & tools */}
-        <nav className="flex w-[62px] shrink-0 flex-col items-center gap-0.5 border-r border-studio-line py-2">
+        <nav className="scroll-thin flex w-[62px] shrink-0 flex-col items-center gap-0.5 overflow-y-auto border-r border-studio-line py-1.5">
           {TABS.map((t) => (
             <button
               key={t.key}
               onClick={() => setTab(t.key)}
-              className={cn("flex w-[54px] flex-col items-center gap-1 rounded-lg py-2 text-[10px] transition", tab === t.key ? "bg-studio-3 text-white" : "text-studio-muted hover:text-studio-text")}
+              className={cn("flex w-[54px] shrink-0 flex-col items-center gap-0.5 rounded-lg py-1.5 text-[10px] transition", tab === t.key ? "bg-studio-3 text-white" : "text-studio-muted hover:text-studio-text")}
               data-testid={`tab-${t.key}`}
             >
               <t.icon className="h-4 w-4" />
