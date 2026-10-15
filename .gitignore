@@ -1,0 +1,11 @@
+node_modules
+.next
+out
+storage
+.env
+.env.local
+*.tsbuildinfo
+next-env.d.ts
+test-results
+playwright-report
+tests/fixtures/generated

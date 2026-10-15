@@ -1,0 +1,66 @@
+@import "tailwindcss";
+
+/* Openly licensed (SIL OFL) fonts, shared with the server renderer for preview/export parity */
+@font-face { font-family: "Inter"; src: url("/fonts/Inter-400.ttf") format("truetype"); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: "Inter"; src: url("/fonts/Inter-500.ttf") format("truetype"); font-weight: 500; font-style: normal; font-display: swap; }
+@font-face { font-family: "Inter"; src: url("/fonts/Inter-600.ttf") format("truetype"); font-weight: 600; font-style: normal; font-display: swap; }
+@font-face { font-family: "Inter"; src: url("/fonts/Inter-700.ttf") format("truetype"); font-weight: 700; font-style: normal; font-display: swap; }
+@font-face { font-family: "Inter"; src: url("/fonts/Inter-800.ttf") format("truetype"); font-weight: 800; font-style: normal; font-display: swap; }
+@font-face { font-family: "Manrope"; src: url("/fonts/Manrope-400.ttf") format("truetype"); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: "Manrope"; src: url("/fonts/Manrope-500.ttf") format("truetype"); font-weight: 500; font-style: normal; font-display: swap; }
+@font-face { font-family: "Manrope"; src: url("/fonts/Manrope-600.ttf") format("truetype"); font-weight: 600; font-style: normal; font-display: swap; }
+@font-face { font-family: "Manrope"; src: url("/fonts/Manrope-700.ttf") format("truetype"); font-weight: 700; font-style: normal; font-display: swap; }
+@font-face { font-family: "Manrope"; src: url("/fonts/Manrope-800.ttf") format("truetype"); font-weight: 800; font-style: normal; font-display: swap; }
+@font-face { font-family: "Montserrat"; src: url("/fonts/Montserrat-400.ttf") format("truetype"); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: "Montserrat"; src: url("/fonts/Montserrat-500.ttf") format("truetype"); font-weight: 500; font-style: normal; font-display: swap; }
+@font-face { font-family: "Montserrat"; src: url("/fonts/Montserrat-600.ttf") format("truetype"); font-weight: 600; font-style: normal; font-display: swap; }
+@font-face { font-family: "Montserrat"; src: url("/fonts/Montserrat-700.ttf") format("truetype"); font-weight: 700; font-style: normal; font-display: swap; }
+@font-face { font-family: "Montserrat"; src: url("/fonts/Montserrat-800.ttf") format("truetype"); font-weight: 800; font-style: normal; font-display: swap; }
+@font-face { font-family: "Poppins"; src: url("/fonts/Poppins-400.ttf") format("truetype"); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: "Poppins"; src: url("/fonts/Poppins-500.ttf") format("truetype"); font-weight: 500; font-style: normal; font-display: swap; }
+@font-face { font-family: "Poppins"; src: url("/fonts/Poppins-600.ttf") format("truetype"); font-weight: 600; font-style: normal; font-display: swap; }
+@font-face { font-family: "Poppins"; src: url("/fonts/Poppins-700.ttf") format("truetype"); font-weight: 700; font-style: normal; font-display: swap; }
+@font-face { font-family: "Poppins"; src: url("/fonts/Poppins-800.ttf") format("truetype"); font-weight: 800; font-style: normal; font-display: swap; }
+@font-face { font-family: "DM Sans"; src: url("/fonts/DMSans-400.ttf") format("truetype"); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: "DM Sans"; src: url("/fonts/DMSans-500.ttf") format("truetype"); font-weight: 500; font-style: normal; font-display: swap; }
+@font-face { font-family: "DM Sans"; src: url("/fonts/DMSans-600.ttf") format("truetype"); font-weight: 600; font-style: normal; font-display: swap; }
+@font-face { font-family: "DM Sans"; src: url("/fonts/DMSans-700.ttf") format("truetype"); font-weight: 700; font-style: normal; font-display: swap; }
+@font-face { font-family: "DM Sans"; src: url("/fonts/DMSans-800.ttf") format("truetype"); font-weight: 800; font-style: normal; font-display: swap; }
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Manrope", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --color-ink: #0f1115;
+  --color-paper: #fbfaf8;
+  --color-line: #ebe8e3;
+  --color-muted: #6b6f76;
+  --color-brand: #5b5bd6;
+  --color-brand-soft: #eeeefc;
+  --color-studio: #121316;
+  --color-studio-2: #191a1e;
+  --color-studio-3: #222328;
+  --color-studio-line: #2b2c32;
+  --color-studio-text: #e8e8ea;
+  --color-studio-muted: #8d8f98;
+  --color-rec: #ef4444;
+}
+
+html, body { height: 100%; }
+body { background: var(--color-paper); color: var(--color-ink); font-family: var(--font-sans); -webkit-font-smoothing: antialiased; }
+.font-display { font-family: var(--font-display); letter-spacing: -0.02em; }
+.tabular { font-variant-numeric: tabular-nums; }
+
+/* range inputs used in property panels */
+input[type="range"].range { -webkit-appearance: none; appearance: none; height: 4px; border-radius: 999px; background: var(--color-studio-line); outline: none; width: 100%; }
+input[type="range"].range::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 999px; background: #fff; border: 0; box-shadow: 0 1px 3px rgba(0,0,0,.4); cursor: pointer; }
+input[type="range"].range::-moz-range-thumb { width: 14px; height: 14px; border-radius: 999px; background: #fff; border: 0; }
+input[type="range"].range-light { background: var(--color-line); }
+
+.scroll-thin::-webkit-scrollbar { width: 8px; height: 8px; }
+.scroll-thin::-webkit-scrollbar-thumb { background: rgba(127,127,127,.35); border-radius: 8px; }
+.scroll-thin::-webkit-scrollbar-track { background: transparent; }
+
+@keyframes pulse-rec { 0%,100% { opacity: 1 } 50% { opacity: .35 } }
+.pulse-rec { animation: pulse-rec 1.2s ease-in-out infinite; }
+.safe-bottom { padding-bottom: max(16px, env(safe-area-inset-bottom)); }
+.safe-top { padding-top: max(12px, env(safe-area-inset-top)); }

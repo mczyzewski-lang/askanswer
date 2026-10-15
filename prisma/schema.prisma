@@ -1,0 +1,359 @@
+// AskBy Studio — data model
+// Editing decisions are stored as a versioned, validated JSON document on
+// VideoComposition (see src/lib/editor/types.ts). Source media is immutable:
+// MediaAsset rows are never rewritten by editing operations.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  EDITOR
+}
+
+enum QuestionStatus {
+  TO_RECORD // Do nagrania
+  IN_PROGRESS // W trakcie
+  RECORDED // Nagrane
+  NEEDS_FIX // Do poprawy
+  APPROVED // Zatwierdzone
+}
+
+enum RecordingMode {
+  CONTINUOUS // Tryb A — ciągły wywiad
+  ANSWER_ONLY // Tryb B — tylko odpowiedź
+}
+
+enum QuestionVisibility {
+  NARRATION_ONLY
+  FIRST_SECONDS
+  FULL
+}
+
+enum TakeStatus {
+  UPLOADING
+  UPLOADED
+  PROCESSING
+  READY
+  FAILED
+}
+
+enum AssetKind {
+  RECORDING_ORIGINAL
+  RECORDING_NORMALIZED
+  AUDIO_ANALYSIS
+  NARRATION
+  MUSIC
+  IMAGE
+  LOGO
+  RENDER
+}
+
+enum JobStatus {
+  QUEUED
+  RUNNING
+  SUCCEEDED
+  FAILED
+}
+
+enum CompositionStatus {
+  PROCESSING
+  READY_TO_EDIT // Gotowe do edycji
+  EDITED
+  EXPORTED
+}
+
+enum SuggestionStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  APPLIED
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  passwordHash String
+  role         UserRole @default(ADMIN)
+  createdAt    DateTime @default(now())
+}
+
+model Expert {
+  id          String       @id @default(cuid())
+  name        String
+  email       String?
+  title       String? // np. "Radca prawny"
+  createdAt   DateTime     @default(now())
+  questions   Question[]
+  invitations Invitation[]
+  recordings  Recording[]
+}
+
+model Theme {
+  id              String    @id @default(cuid())
+  name            String
+  presetKey       String?
+  isPreset        Boolean   @default(false)
+  primaryColor    String
+  accentColor     String
+  secondaryColor  String
+  textColor       String
+  highlightColor  String
+  backgroundColor String
+  questionFont    String    @default("Manrope")
+  subtitleFont    String    @default("Inter")
+  labelFont       String    @default("Inter")
+  logoAssetId     String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  projects        Project[]
+}
+
+model Project {
+  id                 String             @id @default(cuid())
+  name               String
+  description        String?
+  themeId            String?
+  theme              Theme?             @relation(fields: [themeId], references: [id], onDelete: SetNull)
+  voiceId            String?
+  ttsModel           String?
+  recordingMode      RecordingMode      @default(CONTINUOUS)
+  sequential         Boolean            @default(false)
+  questionVisibility QuestionVisibility @default(FULL)
+  questionSeconds    Float              @default(4)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  categories         Category[]
+  questions          Question[]
+  invitations        Invitation[]
+  recordings         Recording[]
+  compositions       VideoComposition[]
+  renderJobs         RenderJob[]
+}
+
+model Category {
+  id        String     @id @default(cuid())
+  name      String
+  projectId String
+  project   Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  order     Int        @default(0)
+  questions Question[]
+
+  @@unique([projectId, name])
+}
+
+model Question {
+  id             String             @id @default(cuid())
+  projectId      String
+  project        Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  categoryId     String?
+  category       Category?          @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  expertId       String?
+  expert         Expert?            @relation(fields: [expertId], references: [id], onDelete: SetNull)
+  text           String
+  instructions   String?
+  maxDurationSec Int?
+  order          Int                @default(0)
+  status         QuestionStatus     @default(TO_RECORD)
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  recording      Recording?
+  compositions   VideoComposition[]
+
+  @@index([projectId, order])
+}
+
+model Invitation {
+  id         String    @id @default(cuid())
+  projectId  String
+  project    Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  expertId   String
+  expert     Expert    @relation(fields: [expertId], references: [id], onDelete: Cascade)
+  tokenHash  String    @unique
+  tokenEnc   String // AES-GCM encrypted token so admins can copy the link again
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  lastUsedAt DateTime?
+  consentAt  DateTime?
+  createdAt  DateTime  @default(now())
+}
+
+model Recording {
+  id         String          @id @default(cuid())
+  projectId  String
+  project    Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  questionId String          @unique
+  question   Question        @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  expertId   String
+  expert     Expert          @relation(fields: [expertId], references: [id], onDelete: Cascade)
+  selectedTakeId String?
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+  takes      RecordingTake[]
+}
+
+model RecordingTake {
+  id                String        @id @default(cuid())
+  recordingId       String
+  recording         Recording     @relation(fields: [recordingId], references: [id], onDelete: Cascade)
+  clientId          String        @unique // idempotency key generated on the device
+  takeNumber        Int
+  mode              RecordingMode
+  status            TakeStatus    @default(UPLOADING)
+  mimeType          String
+  totalChunks       Int?
+  receivedChunks    Int[]         @default([])
+  bytesReceived     Int           @default(0)
+  originalAssetId   String?
+  normalizedAssetId String?
+  analysisAssetId   String?
+  narrationAssetId  String?
+  markers           Json? // { narrationStart, narrationEnd, pauses: [...] } in seconds of recorded media
+  durationSec       Float?
+  processingStep    String?
+  processingError   String?
+  transcriptionError String?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  transcript        Transcript?
+  silences          SilenceSuggestion[]
+  compositions      VideoComposition[]
+
+  @@unique([recordingId, takeNumber])
+}
+
+model MediaAsset {
+  id          String    @id @default(cuid())
+  kind        AssetKind
+  projectId   String?
+  storageKey  String    @unique
+  mimeType    String
+  sizeBytes   Int       @default(0)
+  durationSec Float?
+  width       Int?
+  height      Int?
+  fps         Float?
+  hasAudio    Boolean   @default(false)
+  hasVideo    Boolean   @default(false)
+  contentHash String?   @unique // e.g. TTS cache key, avoids paying twice for identical narration
+  originalName String?
+  meta        Json?
+  waveform    Json? // { rate, peaks[], rmsDb[] } computed from the real audio
+  createdAt   DateTime  @default(now())
+}
+
+model Transcript {
+  id           String           @id @default(cuid())
+  takeId       String           @unique
+  take         RecordingTake    @relation(fields: [takeId], references: [id], onDelete: Cascade)
+  mediaAssetId String
+  provider     String
+  model        String
+  languageCode String
+  text         String
+  raw          Json
+  createdAt    DateTime         @default(now())
+  words        TranscriptWord[]
+  segments     SubtitleSegment[]
+}
+
+model TranscriptWord {
+  id           String     @id @default(cuid())
+  transcriptId String
+  transcript   Transcript @relation(fields: [transcriptId], references: [id], onDelete: Cascade)
+  index        Int
+  text         String
+  start        Float
+  end          Float
+  type         String // word | spacing | audio_event
+  logprob      Float?
+
+  @@index([transcriptId, index])
+}
+
+// Auto-generated subtitle grouping (source time). The editable copy lives in the
+// composition document so editing never touches the original transcript.
+model SubtitleSegment {
+  id           String     @id @default(cuid())
+  transcriptId String
+  transcript   Transcript @relation(fields: [transcriptId], references: [id], onDelete: Cascade)
+  index        Int
+  text         String
+  start        Float
+  end          Float
+  wordIndexes  Int[]
+}
+
+model SilenceSuggestion {
+  id          String           @id @default(cuid())
+  takeId      String
+  take        RecordingTake    @relation(fields: [takeId], references: [id], onDelete: Cascade)
+  start       Float
+  end         Float
+  sensitivity String
+  confidence  Float
+  status      SuggestionStatus @default(PENDING)
+  createdAt   DateTime         @default(now())
+}
+
+model VideoComposition {
+  id         String            @id @default(cuid())
+  projectId  String
+  project    Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  questionId String?
+  question   Question?         @relation(fields: [questionId], references: [id], onDelete: SetNull)
+  takeId     String?
+  take       RecordingTake?    @relation(fields: [takeId], references: [id], onDelete: SetNull)
+  name       String
+  status     CompositionStatus @default(PROCESSING)
+  document   Json // timeline: tracks, clips, effects, layers (see EditorDocument)
+  version    Int               @default(1)
+  createdAt  DateTime          @default(now())
+  updatedAt  DateTime          @updatedAt
+  renderJobs RenderJob[]
+}
+
+model RenderJob {
+  id             String            @id @default(cuid())
+  projectId      String
+  project        Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  compositionId  String?
+  composition    VideoComposition? @relation(fields: [compositionId], references: [id], onDelete: SetNull)
+  compositionIds String[]          @default([]) // combined interview export
+  kind           String            @default("single") // single | combined
+  settings       Json
+  status         JobStatus         @default(QUEUED)
+  progress       Float             @default(0)
+  error          String?
+  outputAssetId  String?
+  attempts       Int               @default(0)
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+}
+
+// Generic Postgres-backed background job queue (FOR UPDATE SKIP LOCKED).
+model Job {
+  id             String    @id @default(cuid())
+  type           String
+  payload        Json
+  status         JobStatus @default(QUEUED)
+  idempotencyKey String?   @unique
+  attempts       Int       @default(0)
+  maxAttempts    Int       @default(3)
+  runAt          DateTime  @default(now())
+  lockedAt       DateTime?
+  lockedBy       String?
+  error          String?
+  result         Json?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([status, runAt])
+}
