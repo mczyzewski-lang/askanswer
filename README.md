@@ -14,6 +14,8 @@ The whole user interface is in Polish.
 
 ---
 
+> **Wdrożenie na Railway:** zobacz [DEPLOY_RAILWAY.md](DEPLOY_RAILWAY.md).
+
 ## Running locally
 
 Requirements: Node 20+ (tested on 22), PostgreSQL 14+, FFmpeg/ffprobe built with `libx264`, `libvpx`, `libopus` and `libmp3lame`. Docker is optional (it provides Postgres and MinIO).

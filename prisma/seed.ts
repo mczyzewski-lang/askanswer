@@ -14,6 +14,9 @@ const prisma = new PrismaClient();
 async function main() {
   const email = (process.env.ADMIN_EMAIL ?? "admin@askby.local").toLowerCase();
   const password = process.env.ADMIN_PASSWORD ?? "askby-admin";
+  if (process.env.NODE_ENV === "production" && (!process.env.ADMIN_PASSWORD || password.length < 10)) {
+    throw new Error("Ustaw ADMIN_PASSWORD (min. 10 znaków) w zmiennych środowiskowych przed pierwszym uruchomieniem.");
+  }
   await prisma.user.upsert({
     where: { email },
     create: { email, name: "Administrator", passwordHash: await hashPassword(password) },

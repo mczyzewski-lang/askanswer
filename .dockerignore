@@ -1,0 +1,10 @@
+node_modules
+.next
+storage
+storage-test
+test-results
+playwright-report
+tests/fixtures/generated
+.env
+.env.local
+.git

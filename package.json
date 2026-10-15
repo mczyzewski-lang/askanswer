@@ -6,7 +6,7 @@
     "dev": "concurrently -n web,worker -c blue,magenta \"next dev\" \"tsx watch --env-file-if-exists=.env src/worker/index.ts\"",
     "dev:web": "next dev",
     "build": "next build",
-    "start": "concurrently -n web,worker \"next start\" \"tsx --env-file-if-exists=.env src/worker/index.ts\"",
+    "start": "concurrently --kill-others -n web,worker \"next start\" \"tsx --env-file-if-exists=.env src/worker/index.ts\"",
     "worker": "tsx --env-file-if-exists=.env src/worker/index.ts",
     "lint": "tsc --noEmit",
     "typecheck": "tsc --noEmit",

@@ -50,7 +50,7 @@ async function renderOne(doc: EditorDocument, out: string, settings: RenderSetti
     const missing = doc.clips.filter((c) => !assets.has(c.assetId));
     if (missing.length) throw new Error("Brak pliku źródłowego dla części klipów — nie można wyrenderować");
     const fmt = EXPORT_FORMATS[settings.format] ?? EXPORT_FORMATS["1080x1920"];
-    const parallel = Math.max(1, Math.min(4, os.cpus().length - 1));
+    const parallel = Math.max(1, Number(process.env.RENDER_CONCURRENCY) || Math.min(3, os.cpus().length - 1));
     return await renderComposition(doc, assets, out, { width: fmt.width, height: fmt.height, quality: settings.quality, parallel, onProgress });
   } finally {
     for (const l of locals) await l.cleanup();
