@@ -16,7 +16,7 @@ export const maxDuration = 600;
 export const POST = route(async (req: Request, ctx: { params: Promise<{ id: string }> }) => {
   const user = await requireAdmin();
   const { id } = await ctx.params;
-  const { mode } = z.object({ mode: z.enum(["podcast", "isolator"]) }).parse(await req.json());
+  const { mode, strength } = z.object({ mode: z.enum(["podcast", "isolator"]), strength: z.enum(["natural", "podcast", "radio"]).default("podcast") }).parse(await req.json());
   if (mode === "isolator" && !elevenLabsConfigured()) return json({ error: "Voice Isolator wymaga konfiguracji ElevenLabs (ELEVENLABS_API_KEY)." }, 503);
   if (!rateLimit(`enhance:${user.id}`, { capacity: 6, perMinute: 6 })) return json({ error: "Zbyt wiele żądań — spróbuj za chwilę." }, 429);
   const comp = await prisma.videoComposition.findUniqueOrThrow({ where: { id } });
@@ -24,7 +24,7 @@ export const POST = route(async (req: Request, ctx: { params: Promise<{ id: stri
   const sources = [...new Set(doc.clips.map((c) => c.assetId))];
   try {
     const map: Record<string, string> = {};
-    for (const s of sources) map[s] = await enhanceAudio(s, mode);
+    for (const s of sources) map[s] = await enhanceAudio(s, mode, strength);
     const assets = (await Promise.all(Object.values(map).map((a) => assetInfo(a)))).filter(Boolean);
     return json({ map, assets });
   } catch (e) {

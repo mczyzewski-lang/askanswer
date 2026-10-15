@@ -842,6 +842,7 @@ export { Split };
 // "Ulepsz głos" — podcast-style enhancement that keeps the expert's own voice
 // ---------------------------------------------------------------------------
 type EnhanceMode = "original" | "podcast" | "isolator";
+type Strength = "natural" | "podcast" | "radio";
 
 function VoiceEnhanceSection({ meta }: { meta: StudioMeta }) {
   const doc = useStudio((s) => s.doc)!;
@@ -851,8 +852,10 @@ function VoiceEnhanceSection({ meta }: { meta: StudioMeta }) {
   const firstAudio = doc.clips.find((c) => c.audioAssetId)?.audioAssetId;
   const currentMode: EnhanceMode = firstAudio ? (assets[firstAudio]?.variant === "isolator" ? "isolator" : "podcast") : "original";
   const [mode, setMode] = useState<EnhanceMode>(currentMode);
+  const currentStrength = (firstAudio ? assets[firstAudio]?.strength : null) as Strength | null;
+  const [strength, setStrength] = useState<Strength>(currentStrength ?? "podcast");
 
-  const applyMode = async (m: EnhanceMode) => {
+  const applyMode = async (m: EnhanceMode, level: Strength = strength) => {
     setErr(null);
     setMode(m);
     if (m === "original") {
@@ -861,7 +864,7 @@ function VoiceEnhanceSection({ meta }: { meta: StudioMeta }) {
     }
     setBusy(m);
     try {
-      const res = await fetch(`/api/admin/compositions/${meta.compositionId}/enhance-audio`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ mode: m }) });
+      const res = await fetch(`/api/admin/compositions/${meta.compositionId}/enhance-audio`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ mode: m, strength: level }) });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Nie udało się ulepszyć dźwięku");
       const st = useStudio.getState();
@@ -877,11 +880,22 @@ function VoiceEnhanceSection({ meta }: { meta: StudioMeta }) {
 
   const options: Array<[EnhanceMode, string, string]> = [
     ["original", "Oryginał", "Dźwięk dokładnie taki, jak nagrał telefon."],
-    ["podcast", "Podcast", "Mastering: wyrównana głośność (−16 LUFS), kompresja, czytelniejszy głos, lekka redukcja szumu. Bez kosztów."],
+    ["podcast", "Podcast", "Redukcja szumu, ciepło i czytelność głosu (EQ), de-esser, kompresja, głośność −16 LUFS i wyciszenie tła w przerwach. Bez kosztów."],
     ["isolator", "Podcast + ElevenLabs", "ElevenLabs Voice Isolator usuwa szumy, pogłos pomieszczenia i tło, zostawiając Twój głos, a potem mastering. Zużywa kredyty ElevenLabs."],
   ];
   return (
     <Section title="Ulepsz głos eksperta">
+      <div>
+        <p className="mb-1.5 text-[11.5px] text-studio-muted">Siła efektu</p>
+        <Seg<Strength>
+          value={strength}
+          onChange={(v) => {
+            setStrength(v);
+            if (mode !== "original") void applyMode(mode, v);
+          }}
+          options={[["natural", "Naturalna"], ["podcast", "Podcast"], ["radio", "Radio"]]}
+        />
+      </div>
       <div className="space-y-1.5">
         {options.map(([m, label, desc]) => (
           <button
@@ -901,6 +915,9 @@ function VoiceEnhanceSection({ meta }: { meta: StudioMeta }) {
         ))}
       </div>
       {busy ? <p className="text-[11.5px] text-studio-muted">Przetwarzanie dźwięku… dłuższe nagrania mogą potrwać do minuty.</p> : null}
+      {!busy && mode !== "original" && firstAudio ? (
+        <p className="text-[11.5px] text-emerald-300">Aktywny ulepszony dźwięk — porównaj, przełączając na „Oryginał” podczas odtwarzania.</p>
+      ) : null}
       {err ? <p className="text-[12px] text-red-300">{err}</p> : null}
       <p className="text-[11.5px] text-studio-muted">Ulepszony dźwięk ma identyczny czas trwania — cięcia, pauzy i napisy zostają bez zmian. Oryginał jest zawsze zachowany; możesz wrócić jednym kliknięciem. Zmiana obejmuje podgląd i eksport.</p>
     </Section>

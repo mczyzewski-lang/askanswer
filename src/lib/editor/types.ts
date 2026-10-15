@@ -254,6 +254,8 @@ export interface AssetInfo {
   label?: string;
   /** For enhanced audio: which enhancement produced it ("podcast" | "isolator"). */
   variant?: string | null;
+  /** For enhanced audio: strength of the mastering ("natural" | "podcast" | "radio"). */
+  strength?: string | null;
   /** For narration: the ElevenLabs voice it was generated with. */
   voiceId?: string | null;
 }
