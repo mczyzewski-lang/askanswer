@@ -118,3 +118,16 @@ export async function transcribe(filePath: string, opts: { language?: string; mo
   if (!Array.isArray(data.words)) throw new ElevenLabsError("Nieoczekiwana odpowiedź transkrypcji (brak znaczników czasu słów)", 502, true);
   return { ...data, model };
 }
+
+/**
+ * Voice Isolator: removes background noise, room echo and other sounds while
+ * keeping the speaker's own voice (comparable to "enhance speech" tools).
+ * Output duration matches the input.
+ */
+export async function isolateVoice(filePath: string): Promise<Buffer> {
+  const buf = await fs.readFile(filePath);
+  const form = new FormData();
+  form.set("audio", new Blob([new Uint8Array(buf)], { type: "audio/mpeg" }), path.basename(filePath));
+  const res = await call("/v1/audio-isolation", { method: "POST", body: form }, 600_000);
+  return Buffer.from(await res.arrayBuffer());
+}

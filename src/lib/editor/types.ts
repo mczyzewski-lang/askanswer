@@ -51,6 +51,8 @@ export interface AVClip {
   /** Base framing (crop/reposition). scale >= 1, centre in normalized source coords. */
   framing: { scale: number; cx: number; cy: number };
   label?: string;
+  /** Optional replacement audio with identical timing (e.g. enhanced voice). Video stays from assetId. */
+  audioAssetId?: string | null;
 }
 
 export interface AudioClip {
@@ -236,6 +238,8 @@ export interface AssetInfo {
   hasVideo: boolean;
   waveform?: Waveform | null;
   label?: string;
+  /** For enhanced audio: which enhancement produced it ("podcast" | "isolator"). */
+  variant?: string | null;
 }
 
 export interface Waveform {

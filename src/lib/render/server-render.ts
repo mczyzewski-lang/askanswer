@@ -162,7 +162,7 @@ export async function mixAudio(doc: EditorDocument, assets: Map<string, RenderAs
     labels.push(`[a${k}]`);
     k++;
   };
-  for (const c of doc.clips) if (!c.muted) addClip(c.assetId, c.sourceIn, c.sourceOut, c.start, c.volume);
+  for (const c of doc.clips) if (!c.muted) addClip(c.audioAssetId ?? c.assetId, c.sourceIn, c.sourceOut, c.start, c.volume);
   for (const c of doc.narration) if (!c.muted) addClip(c.assetId, c.sourceIn, c.sourceOut, c.start, c.volume, c.fadeIn, c.fadeOut);
   for (const c of doc.music) {
     if (c.muted) continue;

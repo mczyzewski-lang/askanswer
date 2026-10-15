@@ -235,11 +235,11 @@ export function Preview({ engine }: { engine: PlaybackEngine | null }) {
           {!clean && safe ? (
             <svg className="pointer-events-none absolute inset-0 h-full w-full" viewBox="0 0 1 1" preserveAspectRatio="none" aria-hidden>
               {safe.zones.map(([x, y, w, h], i) => (
-                <rect key={i} x={x} y={y} width={w} height={h} fill="rgba(255,64,64,.12)" stroke="rgba(255,96,96,.55)" strokeWidth={0.002} strokeDasharray="0.01 0.006" vectorEffect="non-scaling-stroke" />
+                <rect key={i} x={x} y={y} width={w} height={h} fill="rgba(255,255,255,.04)" stroke="rgba(255,255,255,.45)" strokeWidth={1} strokeDasharray="4 4" vectorEffect="non-scaling-stroke" />
               ))}
             </svg>
           ) : null}
-          {!clean && safe ? <span className="pointer-events-none absolute bottom-1.5 left-2 text-[10px] font-medium text-red-300/80">Strefa UI {safe.label} (przybliżona)</span> : null}
+          {!clean && safe ? <span className="pointer-events-none absolute bottom-1.5 left-2 rounded bg-black/50 px-1.5 py-0.5 text-[10px] font-medium text-white/70">Przerywane pola: strefy przycisków {safe.label} — tylko w edytorze</span> : null}
           {!clean
             ? selRects.map(({ o, r }) => (
                 <div key={o.id} className="pointer-events-none absolute border border-sky-400" style={{ left: r.x * scale, top: r.y * scale, width: r.w * scale, height: Math.max(r.h, 8) * scale }}>

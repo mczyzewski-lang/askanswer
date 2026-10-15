@@ -144,7 +144,8 @@ export class PlaybackEngine {
       const src = clip.sourceIn + (t - clip.start);
       const el = this.elementFor(clip.id, clip.assetId, src, next?.assetId === clip.assetId ? next.id : undefined);
       used.add(el);
-      el.muted = clip.muted;
+      // enhanced voice: the video element is muted and a synced <audio> plays the replacement track
+      el.muted = clip.muted || !!clip.audioAssetId;
       el.volume = Math.max(0, Math.min(1, clip.volume));
       if (force || Math.abs(el.currentTime - src) > (this.playing ? DRIFT : 0.02)) {
         if (!el.seeking || force) el.currentTime = src;
@@ -166,16 +167,42 @@ export class PlaybackEngine {
       if (!spare.paused) spare.pause();
     }
     for (const list of this.videos.values()) for (const v of list) if (!used.has(v) && !v.paused) v.pause();
+    this.syncLinkedAudio(clip, t, force);
     for (const c of [...doc.narration, ...doc.music]) this.syncAudio(c, t, force);
     // clean up audio elements for removed clips
     const ids = new Set([...doc.narration, ...doc.music].map((c) => c.id));
     for (const [id, a] of this.audios) {
-      if (!ids.has(id)) {
+      if (!ids.has(id) && !id.startsWith("av:")) {
         a.pause();
         a.remove();
         this.audios.delete(id);
       }
     }
+  }
+
+  /** Replacement audio (e.g. enhanced voice) for the active AV clip, kept in sync with the video's source time. */
+  private syncLinkedAudio(clip: ReturnType<typeof clipAt>, t: number, force: boolean) {
+    const activeKey = clip?.audioAssetId ? `av:${clip.audioAssetId}` : null;
+    for (const [key, a] of this.audios) if (key.startsWith("av:") && key !== activeKey && !a.paused) a.pause();
+    if (!clip || !clip.audioAssetId || !activeKey) return;
+    const asset = this.assets[clip.audioAssetId];
+    if (!asset) return;
+    let a = this.audios.get(activeKey);
+    if (!a) {
+      a = document.createElement("audio");
+      a.preload = "auto";
+      a.src = asset.url;
+      this.container.appendChild(a);
+      this.audios.set(activeKey, a);
+    }
+    if (clip.muted || !this.playing) {
+      if (!a.paused) a.pause();
+      return;
+    }
+    a.volume = Math.max(0, Math.min(1, clip.volume));
+    const src = clip.sourceIn + (t - clip.start);
+    if (force || Math.abs(a.currentTime - src) > DRIFT) a.currentTime = src;
+    if (a.paused) void a.play().catch(() => {});
   }
 
   private syncAudio(c: AudioClip, t: number, force: boolean) {

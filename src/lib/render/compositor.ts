@@ -169,7 +169,8 @@ export function overlayRect(ctx: Ctx, doc: EditorDocument, o: Overlay): Rect {
 
 function animState(o: Overlay, t: number, duration: number): { alpha: number; scale: number; dy: number } {
   const end = overlayEnd(o, duration);
-  const inP = Math.min(1, Math.max(0, (t - o.start) / 0.35));
+  // elements present from the first frame are fully visible immediately (no fade-in from 0)
+  const inP = o.start <= 0.001 ? 1 : Math.min(1, Math.max(0, (t - o.start) / 0.35));
   const outP = o.end == null ? 1 : Math.min(1, Math.max(0, (end - t) / 0.3));
   const p = Math.min(inP, outP);
   switch (o.animation) {

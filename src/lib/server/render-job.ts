@@ -16,7 +16,10 @@ export interface RenderSettings {
 
 export function referencedAssetIds(doc: EditorDocument): string[] {
   const ids = new Set<string>();
-  for (const c of doc.clips) ids.add(c.assetId);
+  for (const c of doc.clips) {
+    ids.add(c.assetId);
+    if (c.audioAssetId) ids.add(c.audioAssetId);
+  }
   for (const c of doc.narration) ids.add(c.assetId);
   for (const c of doc.music) ids.add(c.assetId);
   for (const o of doc.overlays) {

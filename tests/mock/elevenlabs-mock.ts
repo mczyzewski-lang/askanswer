@@ -86,6 +86,19 @@ const server = http.createServer(async (req, res) => {
       res.writeHead(200, { "content-type": "audio/mpeg" });
       return res.end(tone(seconds));
     }
+    if (req.method === "POST" && url.pathname === "/v1/audio-isolation") {
+      // mock: returns the uploaded audio re-encoded (real API removes noise/echo)
+      const raw = await readBody(req);
+      const request = new Request("http://x", { method: "POST", headers: { "content-type": String(req.headers["content-type"]) }, body: new Uint8Array(raw) });
+      const file = (await request.formData()).get("audio") as File | null;
+      if (!file) return json(400, { detail: "audio required" });
+      const f = path.join(os.tmpdir(), `mock-iso-${Date.now()}`);
+      fs.writeFileSync(f, Buffer.from(await file.arrayBuffer()));
+      const out = execFileSync(ff, ["-v", "error", "-i", f, "-f", "mp3", "-"], { maxBuffer: 1 << 30 });
+      fs.rmSync(f, { force: true });
+      res.writeHead(200, { "content-type": "audio/mpeg" });
+      return res.end(out);
+    }
     if (req.method === "POST" && url.pathname === "/v1/speech-to-text") {
       sttCalls++;
       const raw = await readBody(req);

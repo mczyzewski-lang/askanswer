@@ -574,6 +574,7 @@ export function AudioPanel({ meta, onUpload, onRegenerate }: { meta: StudioMeta;
         ) : null}
         <p className="text-[11.5px] text-studio-muted">Głos lektora to osobny plik audio — nigdy nie jest nagrywany przez mikrofon telefonu.</p>
       </Section>
+      <VoiceEnhanceSection meta={meta} />
       <Section title="Muzyka w tle">
         {doc.music.map((m) => (
           <button key={m.id} className="flex w-full items-center gap-2 text-left text-[12.5px] hover:underline" onClick={() => useStudio.getState().select({ kind: "music", id: m.id })}>
@@ -814,3 +815,72 @@ function PresetSample({ k, highlight }: { k: keyof typeof SUBTITLE_PRESETS; high
 }
 
 export { Split };
+
+// ---------------------------------------------------------------------------
+// "Ulepsz głos" — podcast-style enhancement that keeps the expert's own voice
+// ---------------------------------------------------------------------------
+type EnhanceMode = "original" | "podcast" | "isolator";
+
+function VoiceEnhanceSection({ meta }: { meta: StudioMeta }) {
+  const doc = useStudio((s) => s.doc)!;
+  const assets = useStudio((s) => s.assets);
+  const [busy, setBusy] = useState<EnhanceMode | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const firstAudio = doc.clips.find((c) => c.audioAssetId)?.audioAssetId;
+  const currentMode: EnhanceMode = firstAudio ? (assets[firstAudio]?.variant === "isolator" ? "isolator" : "podcast") : "original";
+  const [mode, setMode] = useState<EnhanceMode>(currentMode);
+
+  const applyMode = async (m: EnhanceMode) => {
+    setErr(null);
+    setMode(m);
+    if (m === "original") {
+      useStudio.getState().apply((d) => ({ ...d, clips: d.clips.map((c) => ({ ...c, audioAssetId: null })) }));
+      return;
+    }
+    setBusy(m);
+    try {
+      const res = await fetch(`/api/admin/compositions/${meta.compositionId}/enhance-audio`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ mode: m }) });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Nie udało się ulepszyć dźwięku");
+      const st = useStudio.getState();
+      st.addAssets(data.assets);
+      st.apply((d) => ({ ...d, clips: d.clips.map((c) => ({ ...c, audioAssetId: data.map[c.assetId] ?? c.audioAssetId ?? null })) }));
+    } catch (e) {
+      setErr((e as Error).message);
+      setMode(currentMode);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const options: Array<[EnhanceMode, string, string]> = [
+    ["original", "Oryginał", "Dźwięk dokładnie taki, jak nagrał telefon."],
+    ["podcast", "Podcast", "Mastering: wyrównana głośność (−16 LUFS), kompresja, czytelniejszy głos, lekka redukcja szumu. Bez kosztów."],
+    ["isolator", "Podcast + ElevenLabs", "ElevenLabs Voice Isolator usuwa szumy, pogłos pomieszczenia i tło, zostawiając Twój głos, a potem mastering. Zużywa kredyty ElevenLabs."],
+  ];
+  return (
+    <Section title="Ulepsz głos eksperta">
+      <div className="space-y-1.5">
+        {options.map(([m, label, desc]) => (
+          <button
+            key={m}
+            type="button"
+            disabled={!!busy || (m === "isolator" && !meta.elevenLabs)}
+            onClick={() => applyMode(m)}
+            className={cn("w-full rounded-lg border px-3 py-2 text-left transition disabled:opacity-50", mode === m ? "border-white/60 bg-studio-3" : "border-studio-line hover:bg-studio-3")}
+            data-testid={`enhance-${m}`}
+          >
+            <span className="flex items-center gap-2 text-[12.5px] font-medium">
+              {busy === m ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <span className={cn("h-3 w-3 rounded-full border", mode === m ? "border-white bg-white" : "border-studio-muted")} />}
+              {label}
+            </span>
+            <span className="mt-0.5 block text-[11.5px] leading-snug text-studio-muted">{desc}</span>
+          </button>
+        ))}
+      </div>
+      {busy ? <p className="text-[11.5px] text-studio-muted">Przetwarzanie dźwięku… dłuższe nagrania mogą potrwać do minuty.</p> : null}
+      {err ? <p className="text-[12px] text-red-300">{err}</p> : null}
+      <p className="text-[11.5px] text-studio-muted">Ulepszony dźwięk ma identyczny czas trwania — cięcia, pauzy i napisy zostają bez zmian. Oryginał jest zawsze zachowany; możesz wrócić jednym kliknięciem. Zmiana obejmuje podgląd i eksport.</p>
+    </Section>
+  );
+}
