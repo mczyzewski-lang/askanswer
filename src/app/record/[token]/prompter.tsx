@@ -112,7 +112,7 @@ class RealtimeStt {
       }
       pending.push(out);
       pendingLen += n;
-      if (pendingLen < target / 4) return; // ~250 ms per message
+      if (pendingLen < target / 10) return; // ~100 ms per message: lower follow latency
       const all = new Int16Array(pendingLen);
       let o = 0;
       for (const p of pending) {
@@ -147,15 +147,18 @@ class RealtimeStt {
 }
 
 type Mode = "voice" | "tempo";
-const ANCHOR = 0.3; // the line being read sits at 30% of the prompter height
+// the line being read sits near the top edge of the prompter — right under the front camera
+const ANCHOR = 0.16;
 
 export function Prompter(props: {
   hook: string;
   script: string | null;
   /** changes for every new take: resets to the beginning */
   takeKey: number;
-  /** listening (countdown + recording) */
+  /** listening (connecting + countdown + recording) */
   armed: boolean;
+  /** called once per arming when the text can follow: ElevenLabs is listening (or tempo mode) */
+  onReady?: () => void;
   /** text moves (recording, not paused) */
   running: boolean;
   voiceAvailable: boolean;
@@ -216,8 +219,34 @@ export function Prompter(props: {
     };
   }, [props.armed, mode, props.stream, props.voiceAvailable, props.recordToken]);
   useEffect(() => {
-    if (sttRef.current) sttRef.current.paused = !props.running;
-  }, [props.running]);
+    if (sttRef.current) sttRef.current.paused = !props.running && !props.armed;
+  }, [props.running, props.armed]);
+
+  // recording may start only once the voice follower really listens (no lag on the first words)
+  const fired = useRef(false);
+  const onReady = useRef(props.onReady);
+  onReady.current = props.onReady;
+  useEffect(() => {
+    if (!props.armed) {
+      fired.current = false;
+      return;
+    }
+    if (fired.current) return;
+    const ready = mode === "tempo" || !props.voiceAvailable || stt.state === "listening";
+    if (ready) {
+      fired.current = true;
+      // a short warm-up so the first audio chunks are already on their way
+      const t = setTimeout(() => onReady.current?.(), mode === "voice" && props.voiceAvailable ? 350 : 0);
+      return () => clearTimeout(t);
+    }
+    // ElevenLabs does not answer → do not keep the expert waiting
+    const t = setTimeout(() => {
+      if (fired.current) return;
+      setStt({ state: "error", msg: "Śledzenie głosu nie odpowiada" });
+      setMode("tempo");
+    }, 8000);
+    return () => clearTimeout(t);
+  }, [props.armed, mode, stt.state, props.voiceAvailable]);
 
   // constant tempo (fallback or chosen)
   useEffect(() => {
@@ -282,11 +311,11 @@ export function Prompter(props: {
         </div>
         <div
           ref={box}
-          className="scroll-thin h-full overflow-y-auto px-5 [mask-image:linear-gradient(to_bottom,transparent,black_12%,black_82%,transparent)]"
+          className="scroll-thin h-full overflow-y-auto px-5 [mask-image:linear-gradient(to_bottom,transparent,black_6%,black_80%,transparent)]"
           onWheel={onManualScroll}
           onTouchMove={onManualScroll}
         >
-          <div style={{ height: "28%" }} />
+          <div style={{ height: `${ANCHOR * 100 - 2}%` }} />
           {paras.map((p) => (
             <p
               key={`${p.para}-${p.items[0].i}`}

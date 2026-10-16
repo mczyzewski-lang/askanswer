@@ -44,7 +44,12 @@ test("prompter: script scrolls with the expert's voice, recording is saved", asy
   await expect(prompter).toBeVisible();
   await expect(prompter).toHaveAttribute("data-pos", "0");
   await page.getByRole("button", { name: "Rozpocznij nagrywanie odpowiedzi" }).click();
+  // recording waits until ElevenLabs listens (mock starts the session after 1.5 s): no REC yet
+  await expect(page.getByTestId("prompter-connecting")).toBeVisible();
+  await expect(page.getByText(/^REC /)).toHaveCount(0);
   await expect(page.getByTestId("stt-state")).toHaveText("Słucham", { timeout: 15_000 });
+  await expect(page.getByTestId("prompter-connecting")).toHaveCount(0);
+  await expect(page.getByText(/REC \d/)).toBeVisible({ timeout: 10_000 });
 
   // the last word of the mock speech is the last word of the script → position reaches the end
   const total = await prompter.locator("[data-i]").count();

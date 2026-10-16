@@ -232,7 +232,12 @@ server.on("upgrade", (req, socket) => {
   }
   const accept = crypto.createHash("sha1").update(`${req.headers["sec-websocket-key"]}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`).digest("base64");
   socket.write(`HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${accept}\r\n\r\n`);
-  wsSend(socket, { message_type: "session_started", session_id: "mock" });
+  // like the real service, the session starts listening only after a moment
+  let started = false;
+  setTimeout(() => {
+    started = true;
+    wsSend(socket, { message_type: "session_started", session_id: "mock" });
+  }, Number(process.env.MOCK_RT_START_MS ?? 1500));
   const words = MOCK_SPEECH.split(" ");
   let spoken = 0;
   let committedAt = 0;
@@ -272,6 +277,7 @@ server.on("upgrade", (req, socket) => {
         continue;
       }
       if (msg.message_type !== "input_audio_chunk" || !msg.audio_base_64 || msg.sample_rate !== 16000) continue;
+      if (!started) continue; // audio before the session started is not transcribed
       if (spoken >= words.length) continue;
       spoken++;
       if (spoken - committedAt >= 6 || spoken === words.length) {

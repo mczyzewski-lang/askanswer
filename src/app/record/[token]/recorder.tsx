@@ -35,7 +35,7 @@ interface Session {
 }
 
 type Screen = "loading" | "error" | "welcome" | "setup" | "list" | "record" | "done";
-type Phase = "idle" | "narrating" | "countdown" | "recording" | "paused" | "review";
+type Phase = "idle" | "connecting" | "narrating" | "countdown" | "recording" | "paused" | "review";
 
 interface UploadState {
   questionId: string;
@@ -719,11 +719,12 @@ function RecordScreen(props: {
   const start = async () => {
     setRecError(null);
     if (isPrompter) {
-      // Prompter: no narration — countdown, then the script scrolls with the expert's voice
+      // Prompter: no narration. First connect the voice follower; the countdown starts only once
+      // ElevenLabs is really listening (onPrompterReady), so the first words are not missed.
       modeRef.current = "ANSWER_ONLY";
       if (session.voiceFollow) primeAudio();
       setTakeKey((k) => k + 1);
-      await runCountdown();
+      setPhase("connecting");
       return;
     }
     const withNarration = narrationState === "ready" && !!narration;
@@ -760,6 +761,10 @@ function RecordScreen(props: {
     }
     modeRef.current = "ANSWER_ONLY";
     await runCountdown();
+  };
+
+  const onPrompterReady = () => {
+    if (phase === "connecting") void runCountdown();
   };
 
   const pause = () => {
@@ -803,6 +808,24 @@ function RecordScreen(props: {
   const up = lastClientId ? props.uploads[lastClientId] : null;
   const recordingLike = phase === "recording" || phase === "paused" || (phase === "narrating" && modeRef.current === "CONTINUOUS");
   const accent = session.theme?.accent ?? "#ffffff";
+  const headerRow = (
+    <div className="flex items-center justify-between pt-1">
+      <button aria-label="Wróć do listy" className="-ml-2 flex h-10 items-center gap-1 rounded-xl px-2 text-sm text-white/80 disabled:opacity-30" disabled={recordingLike || phase === "countdown" || phase === "connecting"} onClick={props.onBack}>
+        <ChevronLeft className="h-5 w-5" /> {isPrompter ? "Lista" : "Pytania"}
+      </button>
+      <span className="tabular text-xs font-medium text-white/60">
+        {isPrompter ? "Skrypt" : "Pytanie"} {props.index + 1} z {props.total}
+      </span>
+      {recordingLike ? (
+        <span className="flex items-center gap-1.5 rounded-full bg-black/40 px-2.5 py-1 text-xs font-semibold tabular backdrop-blur">
+          <span className={cn("h-2 w-2 rounded-full bg-rec", phase !== "paused" && "pulse-rec")} />
+          {phase === "paused" ? "PAUZA" : "REC"} {formatDuration(elapsed)}
+        </span>
+      ) : (
+        <span className="w-16" />
+      )}
+    </div>
+  );
 
   return (
     <Shell>
@@ -819,31 +842,20 @@ function RecordScreen(props: {
         ) : null}
         <audio ref={audioRef} preload="auto" playsInline onEnded={onNarrationEnded} />
 
-        {/* top: question overlay */}
-        <div className="absolute inset-x-0 top-0 bg-gradient-to-b from-black/85 via-black/45 to-transparent px-5 pb-16 safe-top">
-          <div className="flex items-center justify-between pt-1">
-            <button aria-label="Wróć do listy" className="-ml-2 flex h-10 items-center gap-1 rounded-xl px-2 text-sm text-white/80 disabled:opacity-30" disabled={recordingLike || phase === "countdown"} onClick={props.onBack}>
-              <ChevronLeft className="h-5 w-5" /> {isPrompter ? "Lista" : "Pytania"}
-            </button>
-            <span className="tabular text-xs font-medium text-white/60">
-              {isPrompter ? "Skrypt" : "Pytanie"} {props.index + 1} z {props.total}
-            </span>
-            {recordingLike ? (
-              <span className="flex items-center gap-1.5 rounded-full bg-black/40 px-2.5 py-1 text-xs font-semibold tabular backdrop-blur">
-                <span className={cn("h-2 w-2 rounded-full bg-rec", phase !== "paused" && "pulse-rec")} />
-                {phase === "paused" ? "PAUZA" : "REC"} {formatDuration(elapsed)}
-              </span>
-            ) : (
-              <span className="w-16" />
-            )}
-          </div>
+        {/* top: question overlay — in Prompter mode the text sits at the very top, right under the front camera */}
+        <div
+          className={cn("absolute inset-x-0 top-0 bg-gradient-to-b from-black/85 via-black/45 to-transparent pb-16", isPrompter ? "px-3" : "px-5 safe-top")}
+          style={isPrompter ? { paddingTop: "max(4px, env(safe-area-inset-top))" } : undefined}
+        >
+          {isPrompter ? null : headerRow}
           {isPrompter ? (
-            <div className="mt-3 h-[44dvh]">
+            <div className="h-[46dvh]">
               <Prompter
                 hook={question.text}
                 script={question.script ?? null}
                 takeKey={takeKey}
-                armed={phase === "countdown" || recordingLike}
+                armed={phase === "connecting" || phase === "countdown" || recordingLike}
+                onReady={onPrompterReady}
                 running={phase === "recording"}
                 voiceAvailable={session.voiceFollow}
                 recordToken={props.token}
@@ -860,6 +872,7 @@ function RecordScreen(props: {
               {question.text}
             </h1>
           )}
+          {isPrompter ? <div className="mt-1 px-2">{headerRow}</div> : null}
           {question.instructions && phase === "idle" ? <p className="mx-auto mt-3 max-w-sm text-center text-[13px] text-white/75">{question.instructions}</p> : null}
         </div>
 
@@ -916,6 +929,16 @@ function RecordScreen(props: {
                 <span className="h-14 w-14 rounded-full bg-rec" />
               </button>
               <span className="text-sm font-medium">{!isPrompter && narrationState === "loading" ? <Loader2 className="h-4 w-4 animate-spin" /> : "Start"}</span>
+            </div>
+          ) : null}
+          {phase === "connecting" ? (
+            <div className="flex flex-col items-center gap-3 pb-2" data-testid="prompter-connecting">
+              <p className="flex items-center gap-2 text-center text-[14px] text-white/85">
+                <Loader2 className="h-4 w-4 shrink-0 animate-spin" /> Łączę ze śledzeniem głosu… nagrywanie ruszy, gdy ElevenLabs zacznie słuchać.
+              </p>
+              <button className="h-11 rounded-2xl bg-white/10 px-5 text-sm font-medium backdrop-blur" onClick={() => setPhase("idle")}>
+                Anuluj
+              </button>
             </div>
           ) : null}
           {phase === "narrating" || phase === "recording" || phase === "paused" ? (
