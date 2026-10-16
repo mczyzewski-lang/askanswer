@@ -209,11 +209,15 @@ export async function transcribeTake(takeId: string, force = false): Promise<voi
   const comps = await prisma.videoComposition.findMany({ where: { takeId } });
   for (const c of comps) {
     const doc = c.document as unknown as EditorDocument;
-    if (doc.subtitles.source !== "none" && !force) continue;
-    if (doc.subtitles.source === "edited") continue;
+    // subtitles already there: the illustrations can be made now (once per composition)
+    if ((doc.subtitles.source !== "none" && !force) || doc.subtitles.source === "edited") {
+      await queueAutoVisuals(c.id);
+      continue;
+    }
     const assetIdForSubs = doc.clips[0]?.assetId ?? take.normalizedAssetId!;
     const next: EditorDocument = { ...doc, subtitles: { ...doc.subtitles, segments: buildSegments(assetIdForSubs, words), source: "transcript" } };
     await prisma.videoComposition.update({ where: { id: c.id }, data: { document: next as unknown as Prisma.InputJsonValue, version: { increment: 1 } } });
+    // only after the subtitles are saved: the AI reads them to pick the moments
     await queueAutoVisuals(c.id);
   }
 }

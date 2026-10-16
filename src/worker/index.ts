@@ -55,14 +55,13 @@ async function sweepTemp() {
   }
 }
 
-async function loop() {
-  console.log(`[worker] ${workerId} started`);
-  void sweepTemp();
-  setInterval(() => void sweepTemp(), 3600_000).unref();
+/** Two lanes in one process: FFmpeg/transcription work, and AI jobs that mostly wait on APIs. */
+async function loop(lane: "media" | "ai") {
+  console.log(`[worker] ${workerId} ${lane} lane started`);
   while (!stopping) {
     let job;
     try {
-      job = await claimJob(workerId);
+      job = await claimJob(workerId, lane);
     } catch (e) {
       console.error("[worker] claim failed", (e as Error).message);
       await new Promise((r) => setTimeout(r, 3000));
@@ -101,7 +100,10 @@ for (const sig of ["SIGINT", "SIGTERM"] as const) {
   });
 }
 
-loop().catch((e) => {
-  console.error(e);
-  process.exit(1);
-});
+void sweepTemp();
+setInterval(() => void sweepTemp(), 3600_000).unref();
+for (const lane of ["media", "ai"] as const)
+  loop(lane).catch((e) => {
+    console.error(e);
+    process.exit(1);
+  });

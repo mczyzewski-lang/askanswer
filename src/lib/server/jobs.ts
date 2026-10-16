@@ -47,14 +47,23 @@ export async function reapDeadJobs() {
   return dead.length;
 }
 
-export async function claimJob(workerId: string) {
+/**
+ * Jobs that mostly wait on AI APIs (OpenAI, Higgsfield, Claude): they run in their own lane, so an
+ * expert's new recording gets its illustrations right away instead of queueing behind renders.
+ */
+export const AI_JOB_TYPES: JobType[] = ["auto-visuals", "generate-infographic", "generate-broll"];
+
+/** `lane` "ai" claims only AI jobs, "media" everything else (CPU: FFmpeg, transcription, masks). */
+export async function claimJob(workerId: string, lane?: "ai" | "media") {
   await reapDeadJobs();
+  const ai = AI_JOB_TYPES as string[];
+  const inLane = lane === "ai" ? Prisma.sql`AND type = ANY(${ai})` : lane === "media" ? Prisma.sql`AND NOT (type = ANY(${ai}))` : Prisma.empty;
   const rows = await prisma.$queryRaw<Array<{ id: string }>>`
     UPDATE "Job" SET status = 'RUNNING', "lockedAt" = now(), "lockedBy" = ${workerId}, attempts = attempts + 1, "updatedAt" = now()
     WHERE id = (
       SELECT id FROM "Job"
-      WHERE (status = 'QUEUED' AND "runAt" <= now())
-         OR (status = 'RUNNING' AND "lockedAt" < now() - interval '3 minutes')
+      WHERE ((status = 'QUEUED' AND "runAt" <= now())
+         OR (status = 'RUNNING' AND "lockedAt" < now() - interval '3 minutes')) ${inLane}
       ORDER BY "runAt" ASC
       FOR UPDATE SKIP LOCKED
       LIMIT 1
