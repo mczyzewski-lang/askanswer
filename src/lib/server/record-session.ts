@@ -3,6 +3,7 @@ import { signedUrl } from "./storage";
 import { elevenLabsConfigured } from "./env";
 import { resolveToken } from "./invitations";
 import { dailyPlan, startOfDay } from "../daily-plan";
+import { effectiveKind } from "../question-kinds";
 
 /** Everything the expert recorder needs — limited strictly to questions assigned to this expert. */
 export async function recordSession(token: string) {
@@ -42,8 +43,9 @@ export async function recordSession(token: string) {
     expert: { name: inv.expert.name },
     consentGiven: !!inv.consentAt,
     expiresAt: inv.expiresAt.toISOString(),
-    narrationAvailable: elevenLabsConfigured() && inv.project.format !== "PROMPTER",
-    voiceFollow: elevenLabsConfigured() && inv.project.format === "PROMPTER",
+    // per item: the narrator for the question kinds, the voice-following prompter for the prompter kinds
+    narrationAvailable: elevenLabsConfigured(),
+    voiceFollow: elevenLabsConfigured(),
     theme: inv.project.theme ? { primary: inv.project.theme.primaryColor, accent: inv.project.theme.accentColor, font: inv.project.theme.questionFont } : null,
     questions: listed.map((q) => ({
       id: q.id,
@@ -54,6 +56,7 @@ export async function recordSession(token: string) {
       category: q.category?.name ?? "Ogólne",
       subcategory: q.subcategory?.name ?? null,
       status: q.status,
+      kind: effectiveKind(q.kind, inv.project.format),
       takes: q.recording?.takes ?? [],
     })),
     // films in editing / approved (watched on demand: GET /api/record/[token]/videos/[questionId])

@@ -9,6 +9,8 @@ export const QuestionInput = z.object({
   instructions: z.string().trim().max(1000).nullable().optional(),
   /** Prompter projects: script body read from the teleprompter (text = hook) */
   script: z.string().trim().max(8000).nullable().optional(),
+  /** QUESTION | PROMPTER | QUESTION_PROMPTER (hybrid projects); null = from the project format */
+  kind: z.enum(["QUESTION", "PROMPTER", "QUESTION_PROMPTER"]).nullable().optional(),
   maxDurationSec: z.number().int().min(5).max(1800).nullable().optional(),
   expertId: z.string().nullable().optional(),
   /** CSV "Ekspert" column: matched by name to an existing expert */
@@ -31,7 +33,11 @@ export const ProjectInput = z.object({
   autoImageEnhance: z.boolean().optional(),
   recordingMode: z.enum(["CONTINUOUS", "ANSWER_ONLY"]).optional(),
   sequential: z.boolean().optional(),
-  format: z.enum(["ANSWERS", "PROMPTER"]).optional(),
+  format: z.enum(["ANSWERS", "PROMPTER", "HYBRID"]).optional(),
+  ctaEnabled: z.boolean().optional(),
+  ctaUrl: z.string().trim().max(200).nullable().optional(),
+  ctaText: z.string().trim().max(200).nullable().optional(),
+  ctaSeconds: z.number().int().min(1).max(10).optional(),
   dailyQuestionLimit: z.number().int().min(0).max(500).optional(),
   questionVisibility: z.enum(["NARRATION_ONLY", "FIRST_SECONDS", "FULL"]).optional(),
   questionSeconds: z.number().min(1).max(60).optional(),

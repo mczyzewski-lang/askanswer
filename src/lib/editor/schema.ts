@@ -157,6 +157,7 @@ export const EditorDocumentSchema = z.object({
   pauses: z
     .array(z.object({ id: z.string().max(64), assetId: z.string().max(64), start: num, end: num, confidence: num, status: z.enum(["pending", "accepted", "rejected", "applied"]) }))
     .max(5000),
+  endCard: z.object({ seconds: num.min(1).max(10), url: z.string().max(200), text: z.string().max(200).nullable() }).optional(),
   meta: z.object({
     questionText: z.string().max(2000),
     mode: z.enum(["CONTINUOUS", "ANSWER_ONLY"]),

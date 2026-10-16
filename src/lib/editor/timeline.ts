@@ -16,11 +16,18 @@ export function clipEnd(c: { start: number; sourceIn: number; sourceOut: number 
   return c.start + (c.sourceOut - c.sourceIn);
 }
 
-export function docDuration(doc: EditorDocument): number {
+/** End of the recorded content (clips and narration). */
+export function contentDuration(doc: EditorDocument): number {
   let d = 0;
   for (const c of doc.clips) d = Math.max(d, clipEnd(c));
   for (const c of doc.narration) d = Math.max(d, clipEnd(c));
   return d;
+}
+
+/** Whole video: the content plus the CTA end card, when the project has one. */
+export function docDuration(doc: EditorDocument): number {
+  const d = contentDuration(doc);
+  return d > 0 && doc.endCard ? d + doc.endCard.seconds : d;
 }
 
 export function overlayEnd(o: Overlay, duration: number): number {

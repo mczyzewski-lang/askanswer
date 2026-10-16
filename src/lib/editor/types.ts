@@ -251,6 +251,12 @@ export interface PauseSuggestion {
   status: "pending" | "accepted" | "rejected" | "applied";
 }
 
+export interface EndCard {
+  seconds: number;
+  url: string;
+  text: string | null;
+}
+
 export interface EditorDocument {
   version: number;
   width: number;
@@ -265,6 +271,8 @@ export interface EditorDocument {
   overlays: Overlay[];
   subtitles: SubtitleTrack;
   pauses: PauseSuggestion[];
+  /** CTA end card after the last frame (project setting, synced on load / export) */
+  endCard?: EndCard;
   meta: {
     questionText: string;
     mode: "CONTINUOUS" | "ANSWER_ONLY";

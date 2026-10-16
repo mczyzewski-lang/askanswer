@@ -9,6 +9,7 @@ import type { EditorDocument } from "../editor/types";
 import { EXPORT_FORMATS, type ExportFormat } from "../editor/factory";
 import { themeFromRow } from "../themes";
 import { syncTheme } from "../question-styles";
+import { applyEndCard } from "../end-card";
 import { probe } from "./ffmpeg";
 
 export interface RenderSettings {
@@ -66,6 +67,7 @@ export async function loadDocForRender(compositionId: string): Promise<{ doc: Ed
   const comp = await prisma.videoComposition.findUniqueOrThrow({ where: { id: compositionId }, include: { project: { include: { theme: true } } } });
   const doc = comp.document as unknown as EditorDocument;
   if (comp.project.theme) syncTheme(doc, themeFromRow(comp.project.theme));
+  applyEndCard(doc, comp.project);
   return { doc, name: comp.name, projectId: comp.projectId };
 }
 
@@ -123,6 +125,8 @@ export async function runRender(renderJobId: string): Promise<void> {
       const parts: string[] = [];
       for (let i = 0; i < ids.length; i++) {
         const { doc } = await loadDocForRender(ids[i]);
+        // one CTA end card, after the last film only
+        if (i < ids.length - 1) delete doc.endCard;
         const part = path.join(dir, `part-${i}.mp4`);
         await renderOne(doc, part, settings, progress(i / ids.length, 0.97 / ids.length));
         parts.push(part);

@@ -82,3 +82,59 @@ test("prompter: script scrolls with the expert's voice, recording is saved", asy
   }
   throw new Error("composition was not created");
 });
+
+/**
+ * Hybrid project: the narrator reads the client's question, then the expert answers from the
+ * prompter; the video gets the narration, the question as its title and the CTA end card.
+ */
+test("hybrid: question read by the narrator, answer from the prompter, CTA end card", async ({ page, request, browserName }) => {
+  test.skip(browserName !== "chromium", "fake media devices are Chromium-only");
+  await adminRequest(request);
+  const QUESTION = "Jak klient może szybciej dostać odpowiedź?";
+  const project = await (await request.post("/api/admin/projects", { data: { name: "Hybryda — rolki", format: "HYBRID", preset: "pravna" } })).json();
+  const cta = await request.patch(`/api/admin/projects/${project.id}`, { data: { ctaEnabled: true, ctaUrl: "kancelaria.pl", ctaText: "Umów konsultację", ctaSeconds: 3 } });
+  expect(cta.ok()).toBeTruthy();
+  const expert = (await (await request.post(`/api/admin/projects/${project.id}/experts`, { data: { name: "Ewa Hybryda" } })).json()).expert;
+  const q = await (
+    await request.post(`/api/admin/projects/${project.id}/questions`, {
+      data: { items: [{ kind: "QUESTION_PROMPTER", text: QUESTION, script: SCRIPT }, { kind: "PROMPTER", text: HOOK, script: SCRIPT }, { kind: "QUESTION", text: "Czy to pytanie ma lektora?" }] },
+    })
+  ).json();
+  const { url, token } = await newInvitation(request, project.id, expert.id);
+  const session = await (await request.get(`/api/record/${token}`)).json();
+  expect(session.questions.map((x: { kind: string }) => x.kind)).toEqual(["QUESTION_PROMPTER", "PROMPTER", "QUESTION"]);
+
+  await page.goto(url);
+  await page.getByRole("checkbox").check();
+  await page.getByRole("button", { name: "Rozpocznij nagrywanie" }).click();
+  await page.getByRole("button", { name: /Gotowe/ }).click();
+  await page.getByText(QUESTION).click();
+  await expect(page.getByTestId("qp-question")).toHaveText(QUESTION);
+  const prompter = page.getByTestId("prompter");
+  await expect(prompter).toBeVisible();
+  await page.getByRole("button", { name: "Rozpocznij nagrywanie odpowiedzi" }).click();
+  // the narrator reads the question first, then the prompter connects and the recording starts
+  await expect(page.getByText("Lektor czyta pytanie…")).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId("stt-state")).toHaveText("Słucham", { timeout: 30_000 });
+  await expect(page.getByText(/REC \d/)).toBeVisible({ timeout: 10_000 });
+  const total = await prompter.locator("[data-i]").count();
+  await expect.poll(async () => Number(await prompter.getAttribute("data-pos")), { timeout: 40_000 }).toBe(total);
+  await page.getByRole("button", { name: "Zatrzymaj" }).click();
+  await expect(page.getByText("Nagranie bezpiecznie zapisane")).toBeVisible({ timeout: 60_000 });
+
+  for (let i = 0; i < 90; i++) {
+    const d = await (await request.get(`/api/admin/projects/${project.id}`)).json();
+    const take = d.questions.find((x: { id: string }) => x.id === q.items[0].id).takes[0];
+    if (take?.status === "FAILED") throw new Error("take failed");
+    if (take?.compositionId) {
+      const comp = await (await request.get(`/api/admin/compositions/${take.compositionId}`)).json();
+      const doc = comp.composition.document;
+      expect(doc.narration).toHaveLength(1); // the narrator's question is in the video
+      expect(doc.overlays.find((o: { role?: string }) => o.role === "question").text).toBe(QUESTION);
+      expect(doc.endCard).toMatchObject({ url: "kancelaria.pl", text: "Umów konsultację", seconds: 3 });
+      return;
+    }
+    await page.waitForTimeout(2000);
+  }
+  throw new Error("composition was not created");
+});

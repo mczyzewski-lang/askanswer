@@ -131,6 +131,8 @@ model Theme {
 enum ProjectFormat {
   ANSWERS
   PROMPTER
+  /// each item has its own kind: question, prompter script, or question + prompter answer
+  HYBRID
 }
 
 /// experts taking part in a project (shown in "Eksperci i linki", offered when assigning questions)
@@ -167,6 +169,11 @@ model Project {
   autoZooms          Boolean            @default(true)
   /// right after processing: automatic picture correction (brightness, contrast, colour)
   autoImageEnhance   Boolean            @default(false)
+  /// end card (CTA) after every video: website + caption, centred, in the theme colours
+  ctaEnabled         Boolean            @default(false)
+  ctaUrl             String?
+  ctaText            String?
+  ctaSeconds         Int                @default(3)
   recordingMode      RecordingMode      @default(CONTINUOUS)
   sequential         Boolean            @default(false)
   /// questions on the expert's list per day, mixed evenly across categories (0 = whole list)
@@ -226,6 +233,8 @@ model Question {
   subcategory    Subcategory?       @relation(fields: [subcategoryId], references: [id], onDelete: SetNull)
   /// PROMPTER projects: the script the expert reads (text = the hook)
   script         String?
+  /// QUESTION | PROMPTER | QUESTION_PROMPTER; null = from the project format
+  kind           String?
   expertId       String?
   expert         Expert?            @relation(fields: [expertId], references: [id], onDelete: SetNull)
   text           String

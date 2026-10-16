@@ -18,11 +18,13 @@ interface Question {
   /** Prompter projects: the script read after the hook (text) */
   script?: string | null;
   status: string;
+  /** QUESTION (narrator) | PROMPTER | QUESTION_PROMPTER (narrator + prompter) */
+  kind?: "QUESTION" | "PROMPTER" | "QUESTION_PROMPTER";
   takes: Array<{ id: string; takeNumber: number; status: string }>;
 }
 
 interface Session {
-  project: { id: string; name: string; description: string | null; mode: "CONTINUOUS" | "ANSWER_ONLY"; sequential: boolean; format: "ANSWERS" | "PROMPTER" };
+  project: { id: string; name: string; description: string | null; mode: "CONTINUOUS" | "ANSWER_ONLY"; sequential: boolean; format: "ANSWERS" | "PROMPTER" | "HYBRID" };
   expert: { name: string };
   consentGiven: boolean;
   narrationAvailable: boolean;
@@ -555,14 +557,17 @@ function RecordScreen(props: {
   const modeRef = useRef<"CONTINUOUS" | "ANSWER_ONLY">(session.project.mode);
   const wakeLock = useRef<{ release: () => Promise<void> } | null>(null);
   const cancelCountdown = useRef(false);
-  const isPrompter = session.project.format === "PROMPTER";
+  // what this item is: the narrator reads the question and/or the expert reads from the prompter
+  const kind = question.kind ?? (session.project.format === "PROMPTER" ? "PROMPTER" : "QUESTION");
+  const isPrompter = kind !== "QUESTION";
+  const withNarrator = kind !== "PROMPTER" && session.narrationAvailable;
   const [takeKey, setTakeKey] = useState(0);
 
   const now = () => (clock.current.running ? clock.current.acc + (performance.now() - clock.current.since) / 1000 : clock.current.acc);
 
   // fetch (or generate once) the ElevenLabs narration for this question
   useEffect(() => {
-    if (!session.narrationAvailable) return;
+    if (!withNarrator) return;
     let cancelled = false;
     (async () => {
       try {
@@ -588,7 +593,7 @@ function RecordScreen(props: {
     return () => {
       cancelled = true;
     };
-  }, [question.id, props.token, session.narrationAvailable]);
+  }, [question.id, props.token, withNarrator]);
 
   useEffect(() => {
     const id = setInterval(() => setElapsed(now()), 200);
@@ -713,7 +718,9 @@ function RecordScreen(props: {
       setAnswerCue(true);
       setTimeout(() => setAnswerCue(false), 2500);
     } else if (phase === "narrating" && modeRef.current === "ANSWER_ONLY") {
-      void runCountdown();
+      // question + prompter: after the question the prompter connects, then the countdown
+      if (isPrompter) connectPrompter();
+      else void runCountdown();
     }
   };
 
@@ -733,15 +740,24 @@ function RecordScreen(props: {
     } else setPhase("idle");
   };
 
+  /** First connect the voice follower; the countdown starts only once ElevenLabs is really listening (onPrompterReady). */
+  const connectPrompter = () => {
+    modeRef.current = "ANSWER_ONLY";
+    setTakeKey((k) => k + 1);
+    setPhase("connecting");
+  };
+
   const start = async () => {
     setRecError(null);
     if (isPrompter) {
-      // Prompter: no narration. First connect the voice follower; the countdown starts only once
-      // ElevenLabs is really listening (onPrompterReady), so the first words are not missed.
       modeRef.current = "ANSWER_ONLY";
       if (session.voiceFollow) primeAudio();
-      setTakeKey((k) => k + 1);
-      setPhase("connecting");
+      // question + prompter: the narrator reads the client's question first (not recorded)
+      if (kind === "QUESTION_PROMPTER" && narrationState === "ready" && narration && (await playNarration())) {
+        setPhase("narrating");
+        return;
+      }
+      connectPrompter();
       return;
     }
     const withNarration = narrationState === "ready" && !!narration;
@@ -867,8 +883,13 @@ function RecordScreen(props: {
           {isPrompter ? null : headerRow}
           {isPrompter ? (
             <div className="h-[46dvh]">
+              {kind === "QUESTION_PROMPTER" ? (
+                <p className="px-2 pb-1 pt-1 text-center text-[13px] font-semibold uppercase leading-snug text-white/75" data-testid="qp-question">
+                  {question.text}
+                </p>
+              ) : null}
               <Prompter
-                hook={question.text}
+                hook={kind === "QUESTION_PROMPTER" ? "" : question.text}
                 script={question.script ?? null}
                 takeKey={takeKey}
                 armed={phase === "connecting" || phase === "countdown" || recordingLike}
@@ -923,7 +944,11 @@ function RecordScreen(props: {
           {phase === "idle" ? (
             <div className="flex flex-col items-center gap-3">
               <p className="text-center text-[13px] text-white/70">
-                {isPrompter
+                {kind === "QUESTION_PROMPTER"
+                  ? narrationState === "ready"
+                    ? "Lektor przeczyta pytanie, potem odliczanie 3‑2‑1 i odpowiadasz z promptera — tekst przewija się za Twoim głosem."
+                    : "Przeczytaj pytanie u góry, potem odliczanie 3‑2‑1 i odpowiadasz z promptera."
+                  : isPrompter
                   ? session.voiceFollow
                     ? "Po odliczaniu 3‑2‑1 tekst przewija się za Twoim głosem. Stuknij słowo albo przewiń, żeby przeskoczyć."
                     : "Po odliczaniu 3‑2‑1 tekst przewija się w stałym tempie. Stuknij słowo albo przewiń, żeby przeskoczyć."
@@ -940,12 +965,12 @@ function RecordScreen(props: {
               <button
                 aria-label="Rozpocznij nagrywanie odpowiedzi"
                 className="flex h-20 w-20 items-center justify-center rounded-full border-4 border-white/90 transition active:scale-95 disabled:opacity-40"
-                disabled={(!isPrompter && narrationState === "loading") || !stream}
+                disabled={(withNarrator && narrationState === "loading") || !stream}
                 onClick={start}
               >
                 <span className="h-14 w-14 rounded-full bg-rec" />
               </button>
-              <span className="text-sm font-medium">{!isPrompter && narrationState === "loading" ? <Loader2 className="h-4 w-4 animate-spin" /> : "Start"}</span>
+              <span className="text-sm font-medium">{withNarrator && narrationState === "loading" ? <Loader2 className="h-4 w-4 animate-spin" /> : "Start"}</span>
             </div>
           ) : null}
           {phase === "connecting" ? (

@@ -8,7 +8,7 @@
  * safe-area guides) is never drawn here.
  */
 import type { CalloutOverlay, ColorRef, EditorDocument, FaceBubble, FontRef, ImageOverlay, Overlay, ShapeOverlay, TextOverlay, ThemeTokens, VideoOverlay } from "../editor/types";
-import { clipAt, docDuration, overlayEnd, segmentAt, timedSegments, type TimedSegment } from "../editor/timeline";
+import { clipAt, contentDuration, docDuration, overlayEnd, segmentAt, timedSegments, type TimedSegment } from "../editor/timeline";
 import { zoomAt } from "../editor/zoom";
 
 // Minimal structural type satisfied by both DOM and @napi-rs/canvas contexts.
@@ -776,6 +776,78 @@ function drawWithBlurredBackground(ctx: Ctx, doc: EditorDocument, frame: FrameSo
   ctx.drawImage(person.canvas, 0, 0);
 }
 
+/**
+ * CTA end card: full frame in the theme colours, the logo (if any), the caption and the website
+ * address on an accent pill, centred; fades in.
+ */
+export function drawEndCard(ctx: Ctx, doc: EditorDocument, local: number, env: RenderEnv) {
+  const card = doc.endCard!;
+  const W = doc.width;
+  const H = doc.height;
+  const u = unit(doc);
+  const th = doc.theme;
+  const k = Math.min(1, Math.max(0, local / 0.35));
+  ctx.save();
+  ctx.globalAlpha = k;
+  const g = ctx.createLinearGradient(0, 0, W * 0.4, H);
+  g.addColorStop(0, resolveColor("$background", th));
+  g.addColorStop(1, resolveColor("$primary", th));
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H);
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  const blocks: Array<{ h: number; draw: (y: number) => void }> = [];
+  const logo = th.logoAssetId ? env.getImage(th.logoAssetId) : null;
+  if (logo) {
+    const lh = 150 * u;
+    const lw = Math.min(W * 0.5, (logo.width / logo.height) * lh);
+    blocks.push({ h: (lw * logo.height) / logo.width, draw: (y) => ctx.drawImage(logo.image, (W - lw) / 2, y, lw, (lw * logo.height) / logo.width) });
+  }
+  if (card.text) {
+    ctx.font = fontString(700, 54 * u, resolveFont("$label", th));
+    const lines = wrapText(ctx, card.text, W * 0.8).slice(0, 3);
+    const lh = 66 * u;
+    blocks.push({
+      h: lines.length * lh,
+      draw: (y) => {
+        ctx.font = fontString(700, 54 * u, resolveFont("$label", th));
+        ctx.fillStyle = resolveColor("$text", th);
+        lines.forEach((l, i) => ctx.fillText(l, W / 2, y + lh * (i + 0.5)));
+      },
+    });
+  }
+  if (card.url) {
+    let size = 72 * u;
+    ctx.font = fontString(800, size, resolveFont("$question", th));
+    while (ctx.measureText(card.url).width > W * 0.78 && size > 30 * u) {
+      size -= 2 * u;
+      ctx.font = fontString(800, size, resolveFont("$question", th));
+    }
+    const tw = ctx.measureText(card.url).width;
+    const padX = 44 * u;
+    const ph = size * 1.9;
+    blocks.push({
+      h: ph,
+      draw: (y) => {
+        ctx.fillStyle = resolveColor("$accent", th);
+        roundRect(ctx, (W - tw) / 2 - padX, y, tw + padX * 2, ph, ph / 2);
+        ctx.fill();
+        ctx.font = fontString(800, size, resolveFont("$question", th));
+        ctx.fillStyle = resolveColor("$background", th);
+        ctx.fillText(card.url, W / 2, y + ph / 2);
+      },
+    });
+  }
+  const gap = 46 * u;
+  const total = blocks.reduce((n, b) => n + b.h, 0) + gap * Math.max(0, blocks.length - 1);
+  let y = (H - total) / 2 - H * 0.04 + (1 - k) * 30 * u;
+  for (const b of blocks) {
+    b.draw(y);
+    y += b.h + gap;
+  }
+  ctx.restore();
+}
+
 export function drawFrame(ctx: Ctx, doc: EditorDocument, t: number, env: RenderEnv) {
   const W = doc.width;
   const H = doc.height;
@@ -825,5 +897,10 @@ export function drawFrame(ctx: Ctx, doc: EditorDocument, t: number, env: RenderE
     drawOverlay(ctx, doc, o, t, env, duration, main);
   }
   drawSubtitles(ctx, doc, t);
+  // CTA end card after the last frame of the content
+  if (doc.endCard) {
+    const c0 = contentDuration(doc);
+    if (c0 > 0 && t >= c0) drawEndCard(ctx, doc, t - c0, env);
+  }
   ctx.restore();
 }

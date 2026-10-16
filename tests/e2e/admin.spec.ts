@@ -180,3 +180,21 @@ test("recordings list: statuses stand apart, sorting and status filter", async (
   await expect(page.locator("[data-status]").first()).toHaveAttribute("data-status", "APPROVED");
   expect(await page.locator('[data-status]:not([data-status="APPROVED"])').count()).toBe(0);
 });
+
+test("hybrid project: mixed CSV (typ;kategoria;podkategoria;tytuł wideo;treść) and kind per item", async ({ page, request }) => {
+  await adminRequest(request);
+  const project = await (await request.post("/api/admin/projects", { data: { name: "Hybryda CSV", format: "HYBRID", preset: "pravna" } })).json();
+  await login(page);
+  await page.goto(`/admin/projects/${project.id}`);
+  const csv = "pytania;Rozwody;dzieci;Kto decyduje o opiece?;Odpowiedz krótko\nprompter;Growth;;3 błędy sprzedaży;\"Pierwszy błąd.\nDrugi błąd.\"\npytaniazprompterem;Growth;ceny;Jak podnieść ceny?;Zacznij od nowych klientów.\n";
+  await page.locator('input[type="file"][accept=".csv,text/csv"]').setInputFiles({ name: "hybryda.csv", mimeType: "text/csv", buffer: Buffer.from(csv, "utf-8") });
+  await expect(page.getByText(/Zaimportowano 3 pozycje/)).toBeVisible();
+  const badges = page.getByTestId("kind-badge");
+  await expect(badges).toHaveCount(3);
+  await expect(badges.nth(0)).toHaveText("Pytanie");
+  await expect(badges.nth(1)).toHaveText("Prompter");
+  await expect(badges.nth(2)).toHaveText("Pytanie + prompter");
+  const d = await (await request.get(`/api/admin/projects/${project.id}`)).json();
+  const qp = d.questions.find((x: { text: string }) => x.text === "Jak podnieść ceny?");
+  expect(qp).toMatchObject({ kind: "QUESTION_PROMPTER", script: "Zacznij od nowych klientów.", subcategoryName: "ceny" });
+});

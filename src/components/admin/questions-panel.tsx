@@ -50,7 +50,8 @@ import type { PanelProps } from "./project-view";
 import { QuestionPreview } from "./question-preview";
 import { parseBulk, parseBulkScripts } from "@/lib/bulk-questions";
 import { terms } from "@/lib/project-terms";
-import { csvTemplate, decodeCsv, parseImportCsv } from "@/lib/csv-import";
+import { csvTemplate, decodeCsv, hybridCsvTemplate, parseHybridCsv, parseImportCsv } from "@/lib/csv-import";
+import { effectiveKind, kindHasNarration, kindHasPrompter, KIND_LABELS, QUESTION_KINDS, type QuestionKind } from "@/lib/question-kinds";
 
 type Q = PanelProps["data"]["questions"][number];
 type Take = Q["takes"][number];
@@ -143,18 +144,28 @@ export function QuestionsPanel({ data, refresh, toast }: PanelProps) {
   const importCsv = async (file: File) => {
     let rows;
     try {
-      rows = parseImportCsv(decodeCsv(await file.arrayBuffer()), T.prompter);
+      const textCsv = decodeCsv(await file.arrayBuffer());
+      // mixed file (typ;kategoria;podkategoria;tytuł wideo;treść) works in every project
+      rows = parseHybridCsv(textCsv) ?? parseImportCsv(textCsv, T.prompter);
     } catch (err) {
       toast(`Błąd CSV: ${(err as Error).message}`, "err");
       return;
     }
     if (!rows.length) {
-      toast(T.prompter ? "Nie znaleziono skryptów. Plik CSV powinien mieć nagłówek: Kategoria;Podkategoria;Hook;Treść" : "Nie znaleziono pytań. Plik CSV powinien mieć nagłówek: Kategoria;Podkategoria;Pytanie;Instrukcje;Czas", "err");
+      toast(
+        T.hybrid
+          ? "Nie znaleziono pozycji. Format: pytania/prompter/pytaniazprompterem;kategoria;podkategoria;tytuł wideo;treść"
+          : T.prompter
+            ? "Nie znaleziono skryptów. Plik CSV powinien mieć nagłówek: Kategoria;Podkategoria;Hook;Treść"
+            : "Nie znaleziono pytań. Plik CSV powinien mieć nagłówek: Kategoria;Podkategoria;Pytanie;Instrukcje;Czas",
+        "err",
+      );
       return;
     }
     try {
       const r = await api<{ created: number }>(`/api/admin/projects/${data.project.id}/questions`, { method: "POST", json: { items: rows } });
-      toast(`Zaimportowano ${r.created} ${plural(r.created, T.one, T.few, T.many)}`);
+      const kinds = new Set(rows.map((x) => x.kind).filter(Boolean));
+      toast(`Zaimportowano ${r.created} ${plural(r.created, T.one, T.few, T.many)}${kinds.size > 1 && !T.hybrid ? " — plik miesza typy: ustaw format projektu „Hybryda” w Ustawieniach" : ""}`);
       refresh();
     } catch (err) {
       toast((err as Error).message, "err");
@@ -162,10 +173,10 @@ export function QuestionsPanel({ data, refresh, toast }: PanelProps) {
   };
 
   const downloadTemplate = () => {
-    const url = URL.createObjectURL(new Blob([csvTemplate(T.prompter)], { type: "text/csv;charset=utf-8" }));
+    const url = URL.createObjectURL(new Blob([T.hybrid ? hybridCsvTemplate() : csvTemplate(T.prompter)], { type: "text/csv;charset=utf-8" }));
     const a = document.createElement("a");
     a.href = url;
-    a.download = T.prompter ? "wzor-skrypty-prompter.csv" : "wzor-pytania.csv";
+    a.download = T.hybrid ? "wzor-hybryda.csv" : T.prompter ? "wzor-skrypty-prompter.csv" : "wzor-pytania.csv";
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
@@ -182,7 +193,7 @@ export function QuestionsPanel({ data, refresh, toast }: PanelProps) {
         <Button variant="outline" onClick={() => fileRef.current?.click()}>
           <FileUp /> Import CSV
         </Button>
-        <Button variant="ghost" onClick={downloadTemplate} title={T.prompter ? "Kolumny: Kategoria;Podkategoria;Hook;Treść" : "Kolumny: Kategoria;Podkategoria;Pytanie;Instrukcje;Czas"}>
+        <Button variant="ghost" onClick={downloadTemplate} title={T.hybrid ? "Kolumny: Typ (pytania/prompter/pytaniazprompterem);Kategoria;Podkategoria;Tytuł wideo;Treść" : T.prompter ? "Kolumny: Kategoria;Podkategoria;Hook;Treść" : "Kolumny: Kategoria;Podkategoria;Pytanie;Instrukcje;Czas"}>
           <Download /> Wzór CSV
         </Button>
         <input
@@ -384,6 +395,7 @@ function UnassignedBanner({ data, refresh, toast }: PanelProps) {
 
 function QuestionRow({ q, index, draggable = true, data, refresh, toast, onEdit, onPreview }: { q: Q; index: number; draggable?: boolean; onEdit: () => void; onPreview: () => void } & PanelProps) {
   const router = useRouter();
+  const T = terms(data.project.format);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: q.id, disabled: !draggable });
   const [open, setOpen] = useState(false);
   const [narrating, setNarrating] = useState(false);
@@ -439,6 +451,11 @@ function QuestionRow({ q, index, draggable = true, data, refresh, toast, onEdit,
                   {q.subcategoryName ? <span className="text-ink/50">› {q.subcategoryName}</span> : null}
                 </Badge>
               ) : null}
+              {T.hybrid ? (
+                <span className="rounded-full bg-black/[.05] px-2 py-0.5 text-[11px] font-medium text-ink/70" data-testid="kind-badge">
+                  {KIND_LABELS[effectiveKind(q.kind, data.project.format)].short}
+                </span>
+              ) : null}
               <span>{q.expertName ?? "Brak eksperta"}</span>
               {q.status === "IN_PROGRESS" || q.status === "APPROVED" ? (
                 q.takes.some((t) => t.status === "READY") ? (
@@ -493,7 +510,7 @@ function QuestionRow({ q, index, draggable = true, data, refresh, toast, onEdit,
                 <DropdownMenuItem onSelect={onPreview}>
                   <Eye /> Podgląd na wideo
                 </DropdownMenuItem>
-                {data.project.format !== "PROMPTER" ? (
+                {kindHasNarration(effectiveKind(q.kind, data.project.format)) ? (
                   <DropdownMenuItem onSelect={playNarration} disabled={narrating}>
                     <Volume2 /> Odsłuchaj lektora
                   </DropdownMenuItem>
@@ -727,7 +744,11 @@ function QuestionDialog({ open, question, data, onClose, refresh, toast }: { ope
   const [instructions, setInstructions] = useState("");
   const [script, setScript] = useState("");
   const [max, setMax] = useState<string>("");
+  const [kind, setKind] = useState<QuestionKind>("QUESTION");
   const T = terms(data.project.format);
+  // what the item is recorded as (hybrid projects choose it per item)
+  const k = T.hybrid ? kind : effectiveKind(null, data.project.format);
+  const usesScript = kindHasPrompter(k);
   const [lastKey, setLastKey] = useState<string | null>(null);
   const key = open ? (question?.id ?? "new") : null;
   if (key !== lastKey) {
@@ -740,6 +761,7 @@ function QuestionDialog({ open, question, data, onClose, refresh, toast }: { ope
     setInstructions(question?.instructions ?? "");
     setScript(question?.script ?? "");
     setMax(question?.maxDurationSec ? String(question.maxDurationSec) : "");
+    setKind(effectiveKind(question?.kind, data.project.format));
   }
   const theme = data.project.theme ? themeFromRow(data.project.theme) : DEFAULT_THEME;
   return (
@@ -757,7 +779,8 @@ function QuestionDialog({ open, question, data, onClose, refresh, toast }: { ope
                 subcategoryId: subcategoryId && subcategoryId !== "__new" ? subcategoryId : null,
                 ...(subcategoryId === "__new" && newSub.trim() ? { subcategoryName: newSub.trim() } : {}),
                 expertId: expertId || null, instructions: instructions || null, maxDurationSec: max ? Number(max) : null,
-                ...(T.prompter ? { script: script.trim() || null } : {}) };
+                ...(usesScript ? { script: script.trim() || null } : {}),
+                ...(T.hybrid ? { kind } : {}) };
               try {
                 if (question) await api(`/api/admin/questions/${question.id}`, { method: "PATCH", json: body });
                 else await api(`/api/admin/projects/${data.project.id}/questions`, { method: "POST", json: body });
@@ -769,15 +792,34 @@ function QuestionDialog({ open, question, data, onClose, refresh, toast }: { ope
               }
             }}
           >
+            {T.hybrid ? (
+              <div className="space-y-1.5" data-testid="kind-select">
+                <Label>Typ</Label>
+                <div className="grid gap-2 sm:grid-cols-3">
+                  {QUESTION_KINDS.map((x) => (
+                    <button
+                      key={x}
+                      type="button"
+                      aria-pressed={kind === x}
+                      onClick={() => setKind(x)}
+                      className={cn("rounded-xl border p-2.5 text-left text-xs transition", kind === x ? "border-ink bg-white shadow-sm" : "border-line hover:border-black/20")}
+                    >
+                      <span className="block text-sm font-medium">{KIND_LABELS[x].name}</span>
+                      <span className="mt-0.5 block text-muted">{KIND_LABELS[x].hint}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
             <div className="space-y-1.5">
-              <Label htmlFor="qtext">{T.title}</Label>
-              <Textarea id="qtext" value={text} onChange={(e) => setText(e.target.value)} required minLength={3} rows={T.prompter ? 2 : 3} placeholder={T.prompter ? "np. 3 błędy, które kosztują Cię klientów" : "np. Dlaczego warto zastrzec znak towarowy?"} />
-              {T.prompter ? <p className="text-xs text-muted">Hook to pierwsze zdanie rolki — ekspert mówi je na początku, a na wideo pojawia się jako tytuł.</p> : null}
+              <Label htmlFor="qtext">{k === "PROMPTER" ? "Hook (tytuł wideo)" : k === "QUESTION_PROMPTER" ? "Pytanie klienta (tytuł wideo, czyta lektor)" : T.hybrid ? "Pytanie (tytuł wideo, czyta lektor)" : T.title}</Label>
+              <Textarea id="qtext" value={text} onChange={(e) => setText(e.target.value)} required minLength={3} rows={k === "PROMPTER" ? 2 : 3} placeholder={k === "PROMPTER" ? "np. 3 błędy, które kosztują Cię klientów" : "np. Dlaczego warto zastrzec znak towarowy?"} />
+              {k === "PROMPTER" ? <p className="text-xs text-muted">Hook to pierwsze zdanie rolki — ekspert mówi je na początku, a na wideo pojawia się jako tytuł.</p> : null}
             </div>
-            {T.prompter ? (
+            {usesScript ? (
               <div className="space-y-1.5">
-                <Label htmlFor="qscript">Treść</Label>
-                <Textarea id="qscript" value={script} onChange={(e) => setScript(e.target.value)} rows={9} placeholder="Tekst, który ekspert przeczyta z promptera po hooku…" />
+                <Label htmlFor="qscript">{k === "QUESTION_PROMPTER" ? "Odpowiedź (prompter)" : "Treść"}</Label>
+                <Textarea id="qscript" value={script} onChange={(e) => setScript(e.target.value)} rows={9} placeholder={k === "QUESTION_PROMPTER" ? "Odpowiedź, którą ekspert przeczyta z promptera po pytaniu lektora…" : "Tekst, który ekspert przeczyta z promptera po hooku…"} />
                 <p className="text-xs text-muted">
                   {script.trim() ? `${script.trim().split(/\s+/).length} słów · ok. ${Math.max(1, Math.round((script.trim().split(/\s+/).length + text.trim().split(/\s+/).length) / 2.4))} s czytania` : "Prompter przewija tekst za głosem eksperta."}
                 </p>

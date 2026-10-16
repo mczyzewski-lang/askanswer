@@ -1,3 +1,4 @@
+import { prisma } from "@/lib/server/db";
 import { json, route } from "@/lib/server/http";
 import { resolveToken } from "@/lib/server/invitations";
 import { elevenLabsConfigured } from "@/lib/server/env";
@@ -8,7 +9,9 @@ import { ElevenLabsError, realtimeSttSession } from "@/lib/server/elevenlabs";
 export const POST = route(async (_req: Request, ctx: { params: Promise<{ token: string }> }) => {
   const { token } = await ctx.params;
   const inv = await resolveToken(token);
-  if (inv.project.format !== "PROMPTER") return json({ error: "Prompter nie jest włączony w tym projekcie." }, 400);
+  const hasPrompter =
+    inv.project.format === "PROMPTER" || (await prisma.question.count({ where: { projectId: inv.projectId, expertId: inv.expertId, kind: { in: ["PROMPTER", "QUESTION_PROMPTER"] } } })) > 0;
+  if (!hasPrompter) return json({ error: "Prompter nie jest włączony w tym projekcie." }, 400);
   if (!elevenLabsConfigured()) return json({ error: "Śledzenie głosu wymaga ElevenLabs — prompter przewija się w stałym tempie.", code: "not_configured" }, 503);
   if (!rateLimit(`stt-rt:${inv.id}`, { capacity: 30, perMinute: 15 })) return json({ error: "Zbyt wiele żądań — spróbuj za chwilę." }, 429);
   try {

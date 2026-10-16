@@ -2,6 +2,7 @@ import { prisma } from "./db";
 import { assetInfo } from "./assets";
 import { themeFromRow } from "../themes";
 import { syncTheme } from "../question-styles";
+import { applyEndCard } from "../end-card";
 import { referencedAssetIds } from "./render-job";
 import type { EditorDocument } from "../editor/types";
 import { signedUrl } from "./storage";
@@ -17,6 +18,7 @@ export async function loadStudio(id: string) {
   const doc = comp.document as unknown as EditorDocument;
   // the project theme is the source of truth: theme edits propagate to every video
   if (comp.project.theme) syncTheme(doc, themeFromRow(comp.project.theme));
+  applyEndCard(doc, comp.project);
   const ids = new Set(referencedAssetIds(doc));
   // illustration variants to choose from in the AI tab
   for (const it of doc.meta.aiBroll ?? []) for (const v of it.variants ?? []) ids.add(v);

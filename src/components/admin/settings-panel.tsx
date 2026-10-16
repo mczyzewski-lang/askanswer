@@ -39,6 +39,10 @@ export function SettingsPanel({ data, refresh, toast }: PanelProps) {
     autoVoice: p.autoVoice,
     autoZooms: p.autoZooms,
     autoImageEnhance: p.autoImageEnhance,
+    ctaEnabled: p.ctaEnabled,
+    ctaUrl: p.ctaUrl ?? "",
+    ctaText: p.ctaText ?? "",
+    ctaSeconds: p.ctaSeconds,
   });
   const [voices, setVoices] = useState<VoiceList | null>(null);
   const [collections, setCollections] = useState<Array<{ id: string; name: string; items: unknown[] }>>([]);
@@ -70,9 +74,11 @@ export function SettingsPanel({ data, refresh, toast }: PanelProps) {
               </option>
             ))}
           </NativeSelect>
-          <p className="text-xs text-muted">W formacie Prompter zamiast pytań są pozycje „Hook + Treść”, a ekspert czyta je z promptera (bez lektora).</p>
+          <p className="text-xs text-muted">
+            W formacie Prompter zamiast pytań są pozycje „Hook + Treść”, a ekspert czyta je z promptera (bez lektora). Hybryda łączy w jednym projekcie pytania z lektorem, skrypty z promptera i pytania z lektorem + odpowiedź z promptera — typ wybierasz przy każdej pozycji albo w kolumnie „Typ” pliku CSV.
+          </p>
         </div>
-        {form.format === "ANSWERS" ? (
+        {form.format !== "PROMPTER" ? (
         <div className="space-y-1.5">
           <Label htmlFor="s-mode">Tryb nagrywania</Label>
           <NativeSelect id="s-mode" value={form.recordingMode} onChange={(e) => set("recordingMode", e.target.value as typeof form.recordingMode)}>
@@ -98,6 +104,31 @@ export function SettingsPanel({ data, refresh, toast }: PanelProps) {
           </span>
           <Switch checked={form.autoInfographics} onCheckedChange={(v) => set("autoInfographics", v)} />
         </label>
+        <div className="space-y-3 rounded-xl border border-line p-3" data-testid="cta-settings">
+          <label className="flex items-center justify-between gap-4 text-sm">
+            <span>
+              Plansza CTA na końcu każdego filmu
+              <span className="block text-xs text-muted">Wyśrodkowany adres strony z podpisem, w kolorach motywu — dodawana po ostatniej klatce, w Studio i w eksporcie.</span>
+            </span>
+            <Switch checked={form.ctaEnabled} onCheckedChange={(v) => set("ctaEnabled", v)} aria-label="Plansza CTA na końcu filmu" />
+          </label>
+          {form.ctaEnabled ? (
+            <div className="grid gap-3 sm:grid-cols-[1fr_1fr_110px]">
+              <div className="space-y-1.5">
+                <Label htmlFor="s-cta-url">Adres strony</Label>
+                <Input id="s-cta-url" value={form.ctaUrl} placeholder="np. kancelaria.pl" onChange={(e) => set("ctaUrl", e.target.value)} />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="s-cta-text">Podpis</Label>
+                <Input id="s-cta-text" value={form.ctaText} placeholder="np. Umów konsultację" onChange={(e) => set("ctaText", e.target.value)} />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="s-cta-sec">Czas (s)</Label>
+                <Input id="s-cta-sec" type="number" min={1} max={10} value={form.ctaSeconds} onChange={(e) => set("ctaSeconds", Math.min(10, Math.max(1, Math.round(Number(e.target.value) || 3))))} />
+              </div>
+            </div>
+          ) : null}
+        </div>
         <div className="space-y-3 rounded-xl border border-line p-3" data-testid="auto-polish-settings">
           <p className="text-sm font-medium">
             Automatycznie w każdym nowym filmie
@@ -145,7 +176,7 @@ export function SettingsPanel({ data, refresh, toast }: PanelProps) {
       </Card>
       <div className="space-y-6">
         <ProjectExpertsCard data={data} refresh={refresh} toast={toast} />
-        {form.format === "ANSWERS" ? (
+        {form.format !== "PROMPTER" ? (
         <Card className="space-y-4 p-5">
           <p className="font-medium">Lektor ElevenLabs</p>
           {!voices?.configured ? (
@@ -240,7 +271,7 @@ export function SettingsPanel({ data, refresh, toast }: PanelProps) {
               try {
                 await api(`/api/admin/projects/${p.id}`, {
                   method: "PATCH",
-                  json: { ...form, description: form.description || null, voiceId: form.voiceId || null, ttsModel: form.ttsModel || null, voiceCollectionId: voiceSource === "collection" ? form.voiceCollectionId || null : null },
+                  json: { ...form, description: form.description || null, voiceId: form.voiceId || null, ttsModel: form.ttsModel || null, voiceCollectionId: voiceSource === "collection" ? form.voiceCollectionId || null : null, ctaUrl: form.ctaUrl.trim() || null, ctaText: form.ctaText.trim() || null },
                 });
                 toast("Zapisano ustawienia");
                 refresh();
