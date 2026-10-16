@@ -7,7 +7,7 @@
  * which is what gives preview/export parity. Editor-only UI (selection handles,
  * safe-area guides) is never drawn here.
  */
-import type { CalloutOverlay, ColorRef, EditorDocument, FontRef, ImageOverlay, Overlay, ShapeOverlay, TextOverlay, ThemeTokens, VideoOverlay } from "../editor/types";
+import type { CalloutOverlay, ColorRef, EditorDocument, FaceBubble, FontRef, ImageOverlay, Overlay, ShapeOverlay, TextOverlay, ThemeTokens, VideoOverlay } from "../editor/types";
 import { clipAt, docDuration, overlayEnd, segmentAt, timedSegments, type TimedSegment } from "../editor/timeline";
 import { zoomAt } from "../editor/zoom";
 
@@ -366,7 +366,56 @@ function drawVideoOverlay(ctx: Ctx, doc: EditorDocument, o: VideoOverlay, t: num
   ctx.restore();
 }
 
-export function drawOverlay(ctx: Ctx, doc: EditorDocument, o: Overlay, t: number, env: RenderEnv, duration: number) {
+/** The expert's picture as placed in this frame (for the face bubble over full-screen graphics). */
+export interface MainVideo {
+  frame: FrameSource;
+  rect: Rect;
+}
+
+/**
+ * The expert's face in a circle (like Loom) over a full-screen image: a square around the face is
+ * cut from the expert's picture as it is placed in the frame, drawn in a circle with a theme ring.
+ */
+export function drawFaceBubble(ctx: Ctx, doc: EditorDocument, b: FaceBubble, main: MainVideo) {
+  const W = doc.width;
+  const H = doc.height;
+  const R = (Math.max(0.08, b.size) * W) / 2;
+  const cx = b.x * W;
+  const cy = b.y * H;
+  const r = main.rect;
+  // face square in output coordinates, then in source pixels
+  const side = Math.min(r.w, r.h, (W * 0.62) / Math.max(0.5, b.zoom ?? 1.25));
+  const fx = r.x + r.w / 2;
+  const fy = r.y + r.h * (b.fy ?? 0.3);
+  const kx = main.frame.width / r.w;
+  const ky = main.frame.height / r.h;
+  let sx = (fx - side / 2 - r.x) * kx;
+  let sy = (fy - side / 2 - r.y) * ky;
+  const sw = side * kx;
+  const sh = side * ky;
+  sx = Math.max(0, Math.min(main.frame.width - sw, sx));
+  sy = Math.max(0, Math.min(main.frame.height - sh, sy));
+  ctx.save();
+  // soft shadow under the bubble
+  ctx.shadowColor = "rgba(0,0,0,0.45)";
+  ctx.shadowBlur = R * 0.18;
+  ctx.shadowOffsetY = R * 0.05;
+  ctx.fillStyle = resolveColor("$accent", doc.theme);
+  ctx.beginPath();
+  ctx.arc(cx, cy, R, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+  ctx.save();
+  const ring = Math.max(3, R * 0.06);
+  ctx.beginPath();
+  ctx.arc(cx, cy, R - ring, 0, Math.PI * 2);
+  ctx.clip();
+  ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(main.frame.image, sx, sy, sw, sh, cx - R + ring, cy - R + ring, (R - ring) * 2, (R - ring) * 2);
+  ctx.restore();
+}
+
+export function drawOverlay(ctx: Ctx, doc: EditorDocument, o: Overlay, t: number, env: RenderEnv, duration: number, main?: MainVideo | null) {
   const a = animState(o, t, duration, env.settled);
   if (a.alpha <= 0.001) return;
   ctx.save();
@@ -395,6 +444,7 @@ export function drawOverlay(ctx: Ctx, doc: EditorDocument, o: Overlay, t: number
     case "image":
     case "logo":
       drawImageOverlay(ctx, doc, o, env);
+      if (o.kind === "image" && o.bubble && main) drawFaceBubble(ctx, doc, o.bubble, main);
       break;
     case "video":
       drawVideoOverlay(ctx, doc, o, t, env);
@@ -702,6 +752,7 @@ export function drawFrame(ctx: Ctx, doc: EditorDocument, t: number, env: RenderE
   ctx.fillRect(0, 0, W, H);
   const clip = clipAt(doc, t);
   let drewVideo = false;
+  let main: MainVideo | null = null;
   if (clip) {
     const src = clip.sourceIn + (t - clip.start);
     const frame = env.getFrame(clip.id, clip.assetId, src);
@@ -715,6 +766,7 @@ export function drawFrame(ctx: Ctx, doc: EditorDocument, t: number, env: RenderE
       if (blur > 0 && mask && env.scratch) drawWithBlurredBackground(ctx, doc, frame, mask, r, blur, env.scratch);
       else ctx.drawImage(frame.image, r.x, r.y, r.w, r.h);
       drewVideo = true;
+      main = { frame, rect: r };
     }
   }
   if (!drewVideo) {
@@ -728,7 +780,7 @@ export function drawFrame(ctx: Ctx, doc: EditorDocument, t: number, env: RenderE
   for (const o of doc.overlays) {
     if (o.hidden || env.hideOverlayIds?.has(o.id)) continue;
     if (t < o.start || t >= overlayEnd(o, duration)) continue;
-    drawOverlay(ctx, doc, o, t, env, duration);
+    drawOverlay(ctx, doc, o, t, env, duration, main);
   }
   drawSubtitles(ctx, doc, t);
   ctx.restore();

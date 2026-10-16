@@ -1,4 +1,4 @@
-import type { AiBrollItem, EditorDocument, ImageOverlay } from "./types";
+import { DEFAULT_BUBBLE, type AiBrollItem, type EditorDocument, type ImageOverlay } from "./types";
 import { uid } from "./id";
 
 /** Full-frame infographic image for the moment's length (fades in under the question and captions). */
@@ -18,6 +18,8 @@ export function infographicOverlay(item: Pick<AiBrollItem, "start" | "end" | "ti
     h: 1,
     opacity: 1,
     animation: "fade",
+    // the expert stays visible in a circle while the graphic covers the frame
+    bubble: { ...DEFAULT_BUBBLE },
   };
 }
 

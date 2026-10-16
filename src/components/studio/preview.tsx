@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { EditorDocument, Overlay } from "@/lib/editor/types";
+import type { EditorDocument, ImageOverlay, Overlay } from "@/lib/editor/types";
 import { overlayEnd, docDuration } from "@/lib/editor/timeline";
 import { cachedSegments, layoutSubtitle, overlayRect, type Rect } from "@/lib/render/compositor";
 import { segmentAt } from "@/lib/editor/timeline";
@@ -17,7 +17,16 @@ export const SAFE_ZONES: Record<string, { label: string; zones: Array<[number, n
 type Drag =
   | { mode: "move"; ids: string[]; startX: number; startY: number; orig: Map<string, { x: number; y: number }> }
   | { mode: "resize"; id: string; handle: "nw" | "ne" | "sw" | "se" | "e" | "w"; startX: number; startY: number; orig: Overlay; rect: Rect }
-  | { mode: "subs"; startY: number; origY: number };
+  | { mode: "subs"; startY: number; origY: number }
+  | { mode: "bubble"; id: string; startX: number; startY: number; orig: { x: number; y: number } }
+  | { mode: "bubbleSize"; id: string };
+
+/** Image layers showing the expert's face bubble at this moment (topmost first). */
+function bubblesAt(doc: EditorDocument, t: number) {
+  return visibleAt(doc, t)
+    .filter((o): o is ImageOverlay => o.kind === "image" && !!o.bubble)
+    .reverse();
+}
 
 function visibleAt(doc: EditorDocument, t: number) {
   const dur = docDuration(doc);
@@ -84,6 +93,15 @@ export function Preview({ engine }: { engine: PlaybackEngine | null }) {
     if (!cx || e.button !== 0) return;
     const p = toDoc(e);
     const st = useStudio.getState();
+    // the face bubble sits on top of its image: grab it first
+    const bub = bubblesAt(doc, time).find((o) => Math.hypot(p.x - o.bubble!.x * doc.width, p.y - o.bubble!.y * doc.height) <= (o.bubble!.size * doc.width) / 2);
+    if (bub) {
+      st.select({ kind: "overlay", ids: [bub.id] });
+      st.beginGesture();
+      drag.current = { mode: "bubble", id: bub.id, startX: p.x, startY: p.y, orig: { x: bub.bubble!.x, y: bub.bubble!.y } };
+      (e.target as HTMLElement).setPointerCapture(e.pointerId);
+      return;
+    }
     const vis = visibleAt(doc, time).reverse();
     const hit = vis.find((o) => {
       const r = overlayRect(cx, doc, o);
@@ -123,7 +141,24 @@ export function Preview({ engine }: { engine: PlaybackEngine | null }) {
     const W = doc.width;
     const H = doc.height;
     const st = useStudio.getState();
-    if (d.mode === "move") {
+    if (d.mode === "bubble" || d.mode === "bubbleSize") {
+      st.updateGesture((base) => ({
+        ...base,
+        overlays: base.overlays.map((o) => {
+          if (o.id !== d.id || o.kind !== "image" || !o.bubble) return o;
+          const b = o.bubble;
+          if (d.mode === "bubble") {
+            const half = b.size / 2;
+            const x = Math.min(1 - half, Math.max(half, d.orig.x + (p.x - d.startX) / W));
+            const y = Math.min(1 - (half * W) / H, Math.max((half * W) / H, d.orig.y + (p.y - d.startY) / H));
+            return { ...o, bubble: { ...b, x, y } };
+          }
+          // diameter from the distance between the centre and the pointer
+          const size = Math.min(0.9, Math.max(0.1, (2 * Math.hypot(p.x - b.x * W, p.y - b.y * H)) / Math.SQRT2 / W));
+          return { ...o, bubble: { ...b, size } };
+        }),
+      }));
+    } else if (d.mode === "move") {
       let dx = (p.x - d.startX) / W;
       let dy = (p.y - d.startY) / H;
       const v: number[] = [];
@@ -261,6 +296,34 @@ export function Preview({ engine }: { engine: PlaybackEngine | null }) {
                     : null}
                 </div>
               ))
+            : null}
+          {!clean
+            ? selRects
+                .filter(({ o }) => o.kind === "image" && !!o.bubble && visibleAt(doc, time).some((v) => v.id === o.id))
+                .map(({ o }) => {
+                  const b = (o as ImageOverlay).bubble!;
+                  const R = (b.size * doc.width * scale) / 2;
+                  const cx = b.x * doc.width * scale;
+                  const cy = b.y * doc.height * scale;
+                  return (
+                    <div key={`bub-${o.id}`} className="pointer-events-none absolute rounded-full border-2 border-dashed border-sky-400" style={{ left: cx - R, top: cy - R, width: R * 2, height: R * 2 }} data-testid="bubble-outline">
+                      <span
+                        onPointerDown={(e) => {
+                          e.stopPropagation();
+                          useStudio.getState().beginGesture();
+                          drag.current = { mode: "bubbleSize", id: o.id };
+                          (e.target as HTMLElement).setPointerCapture(e.pointerId);
+                        }}
+                        onPointerMove={onPointerMove}
+                        onPointerUp={onPointerUp}
+                        className="pointer-events-auto absolute h-3 w-3 cursor-nwse-resize rounded-full border border-sky-500 bg-white"
+                        style={{ left: R + R * Math.SQRT1_2 - 6, top: R + R * Math.SQRT1_2 - 6 }}
+                        data-testid="bubble-resize"
+                        title="Przeciągnij, aby zmienić wielkość kółka"
+                      />
+                    </div>
+                  );
+                })
             : null}
           {!clean && selection?.kind === "subtitles" && subRect ? (
             <div className="pointer-events-none absolute border border-dashed border-sky-400" style={{ left: subRect.x * scale, top: subRect.y * scale, width: subRect.w * scale, height: subRect.h * scale }} />

@@ -47,6 +47,8 @@ test("studio: pauses, cuts, subtitles, zoom, theme, persistence and real MP4 exp
   expect(placedAuto.length).toBeGreaterThan(0);
   expect(placedAuto.every((i) => i.kind === "illustration" && i.engine === "openai")).toBeTruthy();
   expect(auto!.document.overlays.filter((o) => o.kind === "image" && o.name.startsWith("Ilustracja")).length).toBe(placedAuto.length);
+  // the expert stays visible in a face bubble over each full-screen illustration (exported below too)
+  expect(auto!.document.overlays.filter((o) => o.kind === "image" && o.name.startsWith("Ilustracja")).every((o) => !!(o as { bubble?: { size: number } }).bubble?.size)).toBeTruthy();
   // drawn from whole passages of the answer, full screen, minimal Polish text, in the theme colours
   const autoStats = await (await request.get("http://127.0.0.1:4010/__stats", { headers: { "xi-api-key": "mock-key" } })).json();
   const illu = (autoStats.openai as Array<{ prompt: string; size: string }>).filter((c) => c.prompt.includes("Full-screen vertical 9:16 illustration"));

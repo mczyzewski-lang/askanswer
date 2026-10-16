@@ -132,3 +132,37 @@ describe("mask stability over time", () => {
     expect(cur[3]).toBe(0);
   });
 });
+
+describe("face bubble over full-screen graphics", () => {
+  it("shows the expert in a circle on top of the image, same code for preview and export", async () => {
+    const { infographicOverlay } = await import("../../src/lib/editor/ai-overlays");
+    const W = 270;
+    const H = 480;
+    const expert = createCanvas(W, H);
+    const ectx = expert.getContext("2d");
+    ectx.fillStyle = "#ff0000";
+    ectx.fillRect(0, 0, W, H);
+    const art = createCanvas(W, H);
+    const actx = art.getContext("2d");
+    actx.fillStyle = "#0000ff";
+    actx.fillRect(0, 0, W, H);
+    const doc = buildInitialDocument({ questionText: "Q", theme: DEFAULT_THEME, mode: "ANSWER_ONLY", recording: { assetId: "rec", duration: 10 }, segments: [], pauses: [], visibility: "FULL", questionSeconds: 0 });
+    doc.width = W;
+    doc.height = H;
+    doc.subtitles.enabled = false;
+    const ov = infographicOverlay({ start: 0, end: 10, title: "t", kind: "illustration" }, "art", 10);
+    expect(ov.bubble).toBeTruthy();
+    ov.animation = "none";
+    ov.bubble = { x: 0.5, y: 0.5, size: 0.4 };
+    doc.overlays = [ov];
+    const out = createCanvas(W, H);
+    drawFrame(out.getContext("2d") as unknown as Ctx, doc, 5, {
+      getFrame: () => ({ image: expert as unknown as CanvasImageSource, width: W, height: H }),
+      getImage: () => ({ image: art as unknown as CanvasImageSource, width: W, height: H }),
+    });
+    const px = out.getContext("2d").getImageData(0, 0, W, H).data;
+    const at = (x: number, y: number) => [...px.subarray((y * W + x) * 4, (y * W + x) * 4 + 3)];
+    expect(at(W / 2, H / 2)).toEqual([255, 0, 0]); // the expert inside the circle
+    expect(at(10, 10)).toEqual([0, 0, 255]); // the graphic around it
+  });
+});

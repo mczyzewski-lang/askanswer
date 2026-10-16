@@ -94,7 +94,13 @@ const overlay = z.discriminatedUnion("kind", [
   z.object({ ...overlayBase, kind: z.literal("text"), role: z.enum(["question", "label", "custom"]), text: z.string().max(2000), style: textStyle }),
   z.object({ ...overlayBase, kind: z.enum(["rect", "ellipse", "highlight"]), fill: color.nullable(), stroke: color.nullable(), strokeWidth: num.min(0).max(60), radius: num.min(0).max(500) }),
   z.object({ ...overlayBase, kind: z.enum(["callout", "lowerThird"]), title: z.string().max(300), subtitle: z.string().max(300), fill: color, accent: color, textColor: color, fontFamily: font, titleSize: num.min(8).max(300).optional(), subtitleSize: num.min(6).max(300).optional() }),
-  z.object({ ...overlayBase, kind: z.enum(["image", "logo"]), assetId: z.string().max(64).nullable(), fit: z.enum(["contain", "cover"]) }),
+  z.object({
+    ...overlayBase,
+    kind: z.enum(["image", "logo"]),
+    assetId: z.string().max(64).nullable(),
+    fit: z.enum(["contain", "cover"]),
+    bubble: z.object({ x: num.min(0).max(1), y: num.min(0).max(1), size: num.min(0.08).max(0.9), zoom: num.min(0.5).max(4).optional(), fy: num.min(0).max(1).optional() }).optional(),
+  }),
   z.object({ ...overlayBase, kind: z.literal("video"), assetId: z.string().max(64), fit: z.enum(["contain", "cover"]), sourceIn: num.min(0), loop: z.boolean(), volume: num.min(0).max(2), radius: num.min(0).max(500) }),
 ]);
 

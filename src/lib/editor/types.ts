@@ -151,7 +151,23 @@ export interface ImageOverlay extends OverlayBase {
   kind: "image" | "logo";
   assetId: string | null; // null + kind=logo => theme logo
   fit: "contain" | "cover";
+  /** the expert's face in a circle over the image (like Loom) */
+  bubble?: FaceBubble;
 }
+
+export interface FaceBubble {
+  /** circle centre, normalized to the frame */
+  x: number;
+  y: number;
+  /** diameter as a fraction of the frame width */
+  size: number;
+  /** how tight the face is cropped (1 = head and shoulders, 2.5 = face only) */
+  zoom?: number;
+  /** height of the face in the expert's picture, 0 = top … 1 = bottom */
+  fy?: number;
+}
+
+export const DEFAULT_BUBBLE: FaceBubble = { x: 0.2, y: 0.62, size: 0.3, zoom: 1.25, fy: 0.3 };
 
 /** Uploaded video placed as its own layer (picture-in-picture, B-roll, animated graphic). */
 export interface VideoOverlay extends OverlayBase {

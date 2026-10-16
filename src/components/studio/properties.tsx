@@ -1,6 +1,6 @@
 "use client";
 import { Trash2 } from "lucide-react";
-import type { AudioClip, AVClip, CalloutOverlay, EditorDocument, ImageOverlay, Overlay, ShapeOverlay, TextOverlay, VideoOverlay, ZoomEffect } from "@/lib/editor/types";
+import { DEFAULT_BUBBLE, type AudioClip, type AVClip, type CalloutOverlay, type EditorDocument, type FaceBubble, type ImageOverlay, type Overlay, type ShapeOverlay, type TextOverlay, type VideoOverlay, type ZoomEffect } from "@/lib/editor/types";
 import { NarrationVoiceChanger } from "./narration";
 import { clipEnd, deleteClip, docDuration } from "@/lib/editor/timeline";
 import { ZOOM_PRESETS } from "@/lib/editor/zoom";
@@ -279,11 +279,63 @@ function VideoProps({ o }: { o: VideoOverlay }) {
 }
 
 function ImageProps({ o }: { o: ImageOverlay }) {
+  const apply = useStudio((s) => s.apply);
+  const b = o.bubble;
+  const setB = (p: Partial<FaceBubble>, key: string) => patchOverlay<ImageOverlay>(o.id, { bubble: { ...(b ?? DEFAULT_BUBBLE), ...p } }, `ovl:${o.id}:bubble:${key}`);
+  const fullFrame = o.kind === "image" && o.w >= 0.95 && o.h >= 0.95;
+  const corners: Array<[string, number, number]> = [
+    ["↖", 0.2, 0.25],
+    ["↗", 0.8, 0.25],
+    ["↙", 0.2, 0.62],
+    ["↘", 0.72, 0.62],
+  ];
   return (
     <>
       <Row label="Dopasowanie">
         <Seg value={o.fit} onChange={(v) => patchOverlay<ImageOverlay>(o.id, { fit: v })} options={[["contain", "Zmieść"], ["cover", "Wypełnij"]]} />
       </Row>
+      {o.kind === "image" ? (
+        <div className="space-y-2 rounded-lg border border-studio-line p-2.5" data-testid="bubble-props">
+          <label className="flex items-center justify-between gap-2 text-[12.5px]">
+            <span>Twarz eksperta w kółku</span>
+            <input type="checkbox" checked={!!b} onChange={(e) => patchOverlay<ImageOverlay>(o.id, { bubble: e.target.checked ? { ...DEFAULT_BUBBLE } : undefined })} aria-label="Twarz eksperta w kółku" />
+          </label>
+          {b ? (
+            <>
+              <p className="text-[11px] leading-snug text-studio-muted">Przeciągnij kółko na podglądzie, a białym uchwytem zmień jego wielkość.</p>
+              <Row label="Miejsce">
+                <div className="flex gap-1">
+                  {corners.map(([label, x, y]) => (
+                    <SButton key={label} variant="ghost" className="h-7 w-8 px-0" onClick={() => setB({ x, y }, "pos")} aria-label={`Kółko ${label}`}>
+                      {label}
+                    </SButton>
+                  ))}
+                </div>
+              </Row>
+              <Row label={`Wielkość: ${Math.round(b.size * 100)}%`}>
+                <Slider value={Math.round(b.size * 100)} min={10} max={90} onChange={(v) => setB({ size: v / 100 }, "size")} />
+              </Row>
+              <Row label={`Przybliżenie twarzy: ${(b.zoom ?? 1.25).toFixed(1)}×`}>
+                <Slider value={Math.round((b.zoom ?? 1.25) * 10)} min={6} max={30} onChange={(v) => setB({ zoom: v / 10 }, "zoom")} />
+              </Row>
+              <Row label="Wysokość twarzy w kadrze">
+                <Slider value={Math.round((b.fy ?? 0.3) * 100)} min={10} max={80} onChange={(v) => setB({ fy: v / 100 }, "fy")} />
+              </Row>
+              {fullFrame ? (
+                <SButton
+                  variant="ghost"
+                  className="h-7 w-full text-[11.5px]"
+                  onClick={() =>
+                    apply((d) => ({ ...d, overlays: d.overlays.map((x) => (x.kind === "image" && x.w >= 0.95 && x.h >= 0.95 ? { ...x, bubble: { ...b } } : x)) }), "bubble:all")
+                  }
+                >
+                  Użyj tego kółka na wszystkich grafikach pełnoekranowych
+                </SButton>
+              ) : null}
+            </>
+          ) : null}
+        </div>
+      ) : null}
       {o.kind === "logo" && !o.assetId ? <p className="text-[12px] text-studio-muted">Logo pochodzi z motywu projektu — zmiana logo w motywie zaktualizuje wszystkie filmy.</p> : null}
     </>
   );
