@@ -37,6 +37,10 @@ export interface ThemeTokens {
   subtitleFont: string;
   labelFont: string;
   logoAssetId?: string | null;
+  /** how the question is shown: "card" | "plain" | "outline" | "accent" | "pill" (default card) */
+  questionStyle?: string;
+  /** "top" | "center" | "lower" (default top) */
+  questionPosition?: string;
 }
 
 /** Linked expert video + microphone audio. Shown on two timeline rows but edited together, so they never drift. */
@@ -101,6 +105,10 @@ export interface TextStyle {
   radius: number;
   shadow: number; // blur px, 0 = none
   uppercase: boolean;
+  /** dark contour around the letters, px (0/absent = none) */
+  outline?: number;
+  /** short accent-coloured line under the text */
+  accentBar?: boolean;
 }
 
 export type OverlayAnimation = "none" | "fade" | "pop" | "slide" | "slideDown" | "slideLeft" | "zoom";
@@ -124,6 +132,8 @@ export interface TextOverlay extends OverlayBase {
   role: "question" | "label" | "custom";
   text: string;
   style: TextStyle;
+  /** question: the theme question style it was laid out with ("card:top"…) */
+  themeStyle?: string;
 }
 
 export interface ShapeOverlay extends OverlayBase {

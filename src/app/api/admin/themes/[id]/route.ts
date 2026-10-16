@@ -24,6 +24,8 @@ export const PATCH = route(async (req: Request, ctx: { params: Promise<{ id: str
       subtitleFont: fontName.optional(),
       labelFont: fontName.optional(),
       logoAssetId: z.string().nullable().optional(),
+      questionStyle: z.enum(["card", "plain", "outline", "accent", "pill"]).optional(),
+      questionPosition: z.enum(["top", "center", "lower"]).optional(),
       brollStyle: z.string().trim().max(4000).nullable().optional().transform((v) => (v === "" ? null : v)),
       applyPreset: z.string().optional(),
     })

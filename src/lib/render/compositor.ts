@@ -261,8 +261,30 @@ function drawTextOverlay(ctx: Ctx, doc: EditorDocument, o: TextOverlay) {
     ctx.shadowOffsetY = 2 * u;
   }
   const x = s.align === "left" ? rect.x + pad : s.align === "right" ? rect.x + rect.w - pad : rect.x + rect.w / 2;
+  if (s.outline && s.outline > 0) {
+    // contour first, then the letters on top of it
+    ctx.save();
+    ctx.shadowColor = "transparent";
+    ctx.lineJoin = "round";
+    ctx.miterLimit = 2;
+    ctx.lineWidth = s.outline * u * 2;
+    ctx.strokeStyle = "rgba(0,0,0,0.88)";
+    lines.forEach((line, i) => ctx.strokeText(line, x, rect.y + pad + lineH * (i + 0.5)));
+    ctx.restore();
+  }
   lines.forEach((line, i) => ctx.fillText(line, x, rect.y + pad + lineH * (i + 0.5)));
   ctx.restore();
+  if (s.accentBar) {
+    const bw = Math.min(rect.w * 0.24, 240 * u);
+    const bh = 9 * u;
+    const by = rect.y + pad + lineH * lines.length + 10 * u;
+    const bx = s.align === "left" ? rect.x + pad : s.align === "right" ? rect.x + rect.w - pad - bw : rect.x + (rect.w - bw) / 2;
+    ctx.save();
+    ctx.fillStyle = resolveColor("$accent", doc.theme);
+    roundRect(ctx, bx, by, bw, bh, bh / 2);
+    ctx.fill();
+    ctx.restore();
+  }
 }
 
 function drawShape(ctx: Ctx, doc: EditorDocument, o: ShapeOverlay) {

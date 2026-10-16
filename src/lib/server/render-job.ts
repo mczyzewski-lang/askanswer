@@ -8,6 +8,7 @@ import { renderComposition, concatRenders, type RenderAsset } from "../render/se
 import type { EditorDocument } from "../editor/types";
 import { EXPORT_FORMATS, type ExportFormat } from "../editor/factory";
 import { themeFromRow } from "../themes";
+import { syncTheme } from "../question-styles";
 import { probe } from "./ffmpeg";
 
 export interface RenderSettings {
@@ -64,7 +65,7 @@ export function referencedAssetIds(doc: EditorDocument): string[] {
 export async function loadDocForRender(compositionId: string): Promise<{ doc: EditorDocument; name: string; projectId: string }> {
   const comp = await prisma.videoComposition.findUniqueOrThrow({ where: { id: compositionId }, include: { project: { include: { theme: true } } } });
   const doc = comp.document as unknown as EditorDocument;
-  if (comp.project.theme) doc.theme = themeFromRow(comp.project.theme);
+  if (comp.project.theme) syncTheme(doc, themeFromRow(comp.project.theme));
   return { doc, name: comp.name, projectId: comp.projectId };
 }
 

@@ -185,6 +185,9 @@ test("studio: pauses, cuts, subtitles, zoom, theme, persistence and real MP4 exp
 
   // Test 12 — theme accent/highlight change propagates (stored on the project theme)
   await page.getByTestId("tab-theme").click();
+  // question style from the theme: plain text in the middle, no card
+  await page.getByTestId("question-style").getByRole("button", { name: "Sam tekst" }).click();
+  await page.getByTestId("question-style").getByRole("button", { name: "Środek" }).click();
   const themeSaved = page.waitForResponse((r) => r.url().includes("/api/admin/themes/") && r.request().method() === "PATCH", { timeout: 30_000 });
   await page.getByTestId("theme-highlight").evaluate((el: HTMLInputElement) => {
     const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
@@ -203,6 +206,11 @@ test("studio: pauses, cuts, subtitles, zoom, theme, persistence and real MP4 exp
   await expect(page.getByLabel("Tekst napisu").first()).toHaveValue("EDYTOWANY NAPIS testowy");
   await page.getByTestId("tab-theme").click();
   await expect(page.getByTestId("theme-highlight")).toHaveValue("#ff0066");
+  await expect(page.getByTestId("question-style").getByRole("button", { name: "Sam tekst" })).toHaveAttribute("aria-pressed", "true");
+  const restyled = (await (await request.get(`/api/admin/compositions/${compId}`)).json()).composition.document;
+  const qOv = restyled.overlays.find((o: { kind: string; role?: string }) => o.kind === "text" && o.role === "question");
+  expect(qOv.style.background).toBeNull();
+  expect(qOv.y).toBeCloseTo(0.4);
 
   // SRT reflects the edit and the cuts
   const srt = await (await request.get(`/api/admin/compositions/${compId}/export?type=srt`)).text();

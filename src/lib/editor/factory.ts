@@ -2,6 +2,7 @@ import type { AudioClip, AVClip, EditorDocument, Overlay, PauseSuggestion, Subti
 import { DOC_VERSION } from "./types";
 import { SUBTITLE_PRESETS } from "./subtitles";
 import { uid } from "./id";
+import { styledQuestion } from "../question-styles";
 
 export const EXPORT_FORMATS = {
   "1080x1920": { width: 1080, height: 1920, label: "9:16 — 1080 × 1920 (domyślny)" },
@@ -11,7 +12,12 @@ export const EXPORT_FORMATS = {
 } as const;
 export type ExportFormat = keyof typeof EXPORT_FORMATS;
 
-export function questionOverlay(text: string, start: number, end: number | null): TextOverlay {
+/** The question layer, laid out in the theme's question style (Motywy → Styl pytania). */
+export function questionOverlay(text: string, start: number, end: number | null, theme?: Pick<ThemeTokens, "questionStyle" | "questionPosition">): TextOverlay {
+  return styledQuestion(baseQuestion(text, start, end), theme ?? {});
+}
+
+function baseQuestion(text: string, start: number, end: number | null): TextOverlay {
   return {
     id: uid("ovl"),
     kind: "text",
@@ -119,7 +125,7 @@ export function buildInitialDocument(input: BuildInput): EditorDocument {
   let qEnd: number | null = null;
   if (input.visibility === "NARRATION_ONLY") qEnd = Math.max(1.5, answerStart);
   else if (input.visibility === "FIRST_SECONDS") qEnd = answerStart + input.questionSeconds;
-  const overlays: Overlay[] = [questionOverlay(input.questionText, 0, qEnd)];
+  const overlays: Overlay[] = [questionOverlay(input.questionText, 0, qEnd, input.theme)];
   if (input.logo && input.theme.logoAssetId) {
     overlays.push({
       id: uid("ovl"),

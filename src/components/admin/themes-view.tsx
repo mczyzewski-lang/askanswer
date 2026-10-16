@@ -5,6 +5,7 @@ import { ImagePlus, Trash2 } from "lucide-react";
 import { Button, Card, EmptyState, Input, Label, NativeSelect, useToast } from "@/components/ui";
 import { api, cn } from "@/lib/utils";
 import { FONT_FAMILIES, THEME_PRESETS, themeFromRow } from "@/lib/themes";
+import { QUESTION_POSITIONS, QUESTION_STYLES } from "@/lib/question-styles";
 import { ThemePreview } from "./theme-preview";
 import { AiStyleCard, type StyleCategory } from "./ai-style-card";
 
@@ -21,6 +22,8 @@ interface ThemeRow {
   questionFont: string;
   subtitleFont: string;
   labelFont: string;
+  questionStyle: string;
+  questionPosition: string;
   logoAssetId: string | null;
   logoUrl: string | null;
   brollStyle: string | null;
@@ -67,6 +70,8 @@ export function ThemesView({ themes, experts, initialId }: { themes: ThemeRow[];
           questionFont: draft.questionFont,
           subtitleFont: draft.subtitleFont,
           labelFont: draft.labelFont,
+          questionStyle: draft.questionStyle,
+          questionPosition: draft.questionPosition,
         },
       });
       toast("Zapisano motyw — zmiany obejmą wszystkie filmy projektu");
@@ -168,6 +173,42 @@ export function ThemesView({ themes, experts, initialId }: { themes: ThemeRow[];
               ))}
             </div>
             <p className="text-xs text-muted">Czcionki na licencji SIL Open Font License — te same pliki są używane w podglądzie i w eksporcie.</p>
+          </Card>
+          <Card className="space-y-4 p-5" data-testid="question-style-card">
+            <div>
+              <p className="font-medium">Styl pytania</p>
+              <p className="text-xs text-muted">Jak pytanie widza wygląda na filmie — dotyczy wszystkich filmów projektu, w podglądzie i w eksporcie.</p>
+            </div>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+              {QUESTION_STYLES.map((q) => (
+                <button
+                  key={q.id}
+                  type="button"
+                  aria-pressed={draft.questionStyle === q.id}
+                  onClick={() => setDraft({ ...draft, questionStyle: q.id })}
+                  className={cn("rounded-xl border p-2.5 text-left text-xs transition", draft.questionStyle === q.id ? "border-ink bg-white shadow-sm" : "border-line hover:border-black/20")}
+                >
+                  <span className="block font-medium">{q.label}</span>
+                  <span className="mt-0.5 block text-muted">{q.hint}</span>
+                </button>
+              ))}
+            </div>
+            <div className="space-y-1.5">
+              <Label>Położenie pytania</Label>
+              <div className="flex gap-2">
+                {QUESTION_POSITIONS.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    aria-pressed={draft.questionPosition === p.id}
+                    onClick={() => setDraft({ ...draft, questionPosition: p.id })}
+                    className={cn("rounded-lg border px-3 py-1.5 text-sm", draft.questionPosition === p.id ? "border-ink bg-white shadow-sm" : "border-line hover:border-black/20")}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            </div>
           </Card>
           <Card className="space-y-3 p-5">
             <p className="font-medium">Logo</p>

@@ -81,7 +81,7 @@ export function QuestionPanel({ meta }: { meta: StudioMeta }) {
             ) : null}
           </>
         ) : (
-          <SButton variant="primary" onClick={() => apply((d) => ({ ...d, overlays: [questionOverlay(d.meta.questionText, 0, null), ...d.overlays] }))}>
+          <SButton variant="primary" onClick={() => apply((d) => ({ ...d, overlays: [questionOverlay(d.meta.questionText, 0, null, d.theme), ...d.overlays] }))}>
             <Plus /> Dodaj warstwę pytania
           </SButton>
         )}

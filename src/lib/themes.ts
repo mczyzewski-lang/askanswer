@@ -93,6 +93,8 @@ export function themeFromRow(row: {
   subtitleFont: string;
   labelFont: string;
   logoAssetId: string | null;
+  questionStyle?: string | null;
+  questionPosition?: string | null;
 }): ThemeTokens {
   return {
     name: row.name,
@@ -106,6 +108,8 @@ export function themeFromRow(row: {
     subtitleFont: row.subtitleFont,
     labelFont: row.labelFont,
     logoAssetId: row.logoAssetId,
+    questionStyle: row.questionStyle ?? "card",
+    questionPosition: row.questionPosition ?? "top",
   };
 }
 

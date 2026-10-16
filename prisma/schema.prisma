@@ -116,6 +116,10 @@ model Theme {
   questionFont    String    @default("Manrope")
   subtitleFont    String    @default("Inter")
   labelFont       String    @default("Inter")
+  /// how the question is shown: card | plain | outline | accent | pill
+  questionStyle    String   @default("card")
+  /// top | center | lower
+  questionPosition String   @default("top")
   logoAssetId     String?
   /// default visual style for AI scenes (Higgsfield); categories can override it
   brollStyle      String?

@@ -16,6 +16,8 @@ const theme = z.object({
   questionFont: font,
   subtitleFont: font,
   labelFont: font,
+  questionStyle: z.string().max(20).optional(),
+  questionPosition: z.string().max(20).optional(),
   logoAssetId: z.string().max(64).nullable().optional(),
 });
 
@@ -88,10 +90,12 @@ const textStyle = z.object({
   radius: num.min(0).max(200),
   shadow: num.min(0).max(100),
   uppercase: z.boolean(),
+  outline: num.min(0).max(40).optional(),
+  accentBar: z.boolean().optional(),
 });
 
 const overlay = z.discriminatedUnion("kind", [
-  z.object({ ...overlayBase, kind: z.literal("text"), role: z.enum(["question", "label", "custom"]), text: z.string().max(2000), style: textStyle }),
+  z.object({ ...overlayBase, kind: z.literal("text"), role: z.enum(["question", "label", "custom"]), text: z.string().max(2000), style: textStyle, themeStyle: z.string().max(40).optional() }),
   z.object({ ...overlayBase, kind: z.enum(["rect", "ellipse", "highlight"]), fill: color.nullable(), stroke: color.nullable(), strokeWidth: num.min(0).max(60), radius: num.min(0).max(500) }),
   z.object({ ...overlayBase, kind: z.enum(["callout", "lowerThird"]), title: z.string().max(300), subtitle: z.string().max(300), fill: color, accent: color, textColor: color, fontFamily: font, titleSize: num.min(8).max(300).optional(), subtitleSize: num.min(6).max(300).optional() }),
   z.object({

@@ -43,7 +43,8 @@ import { Preview } from "./preview";
 import { Timeline } from "./timeline";
 import { Properties } from "./properties";
 import { AudioPanel, GraphicsPanel, PausesPanel, QuestionPanel, SubtitlesPanel, TakesPanel, TemplatesPanel, TextPanel, ZoomPanel, type StudioMeta } from "./panels";
-import { Row, Section, Select, SButton } from "./controls";
+import { Row, Section, Seg, Select, SButton } from "./controls";
+import { QUESTION_POSITIONS, QUESTION_STYLES, syncTheme } from "@/lib/question-styles";
 import { AiPanel, useBrollJobs, type AiConfig, type AutoVisualsJob } from "./ai-panel";
 import { mergeAutoVisuals } from "@/lib/editor/ai-overlays";
 
@@ -566,7 +567,13 @@ function ThemePanel({ themeId, toast }: { themeId: string | null; toast: (t: str
   const update = (patch: Partial<ThemeTokens>) => {
     const st = useStudio.getState();
     // theme is applied live to the document; the project theme is persisted so every video follows
-    st.apply((d) => ({ ...d, theme: { ...d.theme, ...patch } }), `theme:${Object.keys(patch).join(",")}`);
+    st.apply((d) => {
+      const theme = { ...d.theme, ...patch };
+      const next = { ...d, theme };
+      // question style / position: the question layers are laid out again
+      if ("questionStyle" in patch || "questionPosition" in patch) syncTheme(next, theme);
+      return next;
+    }, `theme:${Object.keys(patch).join(",")}`);
     if (!themeId) return;
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(async () => {
@@ -584,6 +591,8 @@ function ThemePanel({ themeId, toast }: { themeId: string | null; toast: (t: str
           questionFont: t.questionFont,
           subtitleFont: t.subtitleFont,
           labelFont: t.labelFont,
+          questionStyle: t.questionStyle ?? "card",
+          questionPosition: t.questionPosition ?? "top",
         }),
       });
       if (!res.ok) toast((await res.json()).error ?? "Nie zapisano motywu", "err");
@@ -632,7 +641,34 @@ function ThemePanel({ themeId, toast }: { themeId: string | null; toast: (t: str
             </Select>
           </Row>
         ))}
-        <p className="text-[11.5px] text-studio-muted">Zmiany motywu zapisują się w projekcie i obejmują wszystkie jego filmy: pytanie, podświetlenie napisów, belki, callouty i tła.</p>
+        <div className="space-y-1.5" data-testid="question-style">
+          <p className="text-[11.5px] text-studio-muted">Styl pytania</p>
+          <div className="grid grid-cols-3 gap-1.5">
+            {QUESTION_STYLES.map((q) => (
+              <button
+                key={q.id}
+                type="button"
+                title={q.hint}
+                aria-pressed={(doc.theme.questionStyle ?? "card") === q.id}
+                onClick={() => update({ questionStyle: q.id })}
+                className={cn(
+                  "rounded-lg border px-1.5 py-1.5 text-[11.5px]",
+                  (doc.theme.questionStyle ?? "card") === q.id ? "border-white/70 bg-studio-3 text-studio-text" : "border-studio-line text-studio-muted hover:border-white/30",
+                )}
+              >
+                {q.label}
+              </button>
+            ))}
+          </div>
+          <Row label="Położenie pytania">
+            <Seg<string>
+              value={doc.theme.questionPosition ?? "top"}
+              onChange={(v) => update({ questionPosition: v })}
+              options={QUESTION_POSITIONS.map((p) => [p.id, p.label] as [string, string])}
+            />
+          </Row>
+        </div>
+        <p className="text-[11.5px] text-studio-muted">Zmiany motywu zapisują się w projekcie i obejmują wszystkie jego filmy: pytanie (także jego styl i położenie), podświetlenie napisów, belki, callouty i tła.</p>
         <Link href={`/admin/themes?theme=${themeId ?? ""}`} className="text-[12px] text-sky-300 hover:underline">
           Pełne ustawienia motywu i logo →
         </Link>
