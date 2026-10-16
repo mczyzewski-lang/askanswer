@@ -127,6 +127,15 @@ test("studio: pauses, cuts, subtitles, zoom, theme, persistence and real MP4 exp
   const srt = await (await request.get(`/api/admin/compositions/${compId}/export?type=srt`)).text();
   expect(srt).toContain("EDYTOWANY NAPIS testowy");
 
+  // Background blur: person mask computed by the worker (ONNX), used by the preview and the export below
+  await page.getByTestId("tab-takes").click();
+  await page.getByRole("button", { name: "Rozmyte" }).click();
+  await expect(page.getByTestId("blur-on")).toBeVisible({ timeout: 120_000 });
+  await waitSaved(page);
+  const blurred = await (await request.get(`/api/admin/compositions/${compId}`)).json();
+  expect(blurred.composition.document.clips.every((c: { background?: { blur: number } }) => (c.background?.blur ?? 0) > 0)).toBeTruthy();
+  expect(blurred.assets.some((a: { maskUrl?: string | null }) => !!a.maskUrl)).toBeTruthy();
+
   // Test 13 — real server-side MP4 export
   await page.getByRole("button", { name: "Eksportuj" }).click();
   await page.getByRole("button", { name: "Renderuj MP4" }).click();

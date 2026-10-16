@@ -28,6 +28,7 @@ const avClip = z.object({
   volume: num.min(0).max(4),
   muted: z.boolean(),
   framing: z.object({ scale: num.min(1).max(4), cx: num.min(0).max(1), cy: num.min(0).max(1) }),
+  background: z.object({ blur: num.min(0).max(100) }).optional(),
   label: z.string().max(120).optional(),
   audioAssetId: z.string().max(64).nullable().optional(),
 });

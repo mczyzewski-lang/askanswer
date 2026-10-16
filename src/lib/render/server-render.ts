@@ -5,6 +5,8 @@
  * Licensing: uses only FFmpeg (LGPL/GPL build) and Skia — no Remotion licence required.
  */
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import zlib from "node:zlib";
+import { maskFrameIndex, maskToRgba, parseMaskHeader, type MaskHeader } from "./mask-format";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
@@ -26,6 +28,8 @@ export interface RenderAsset {
   hasVideo: boolean;
   kind: string;
   durationSec?: number | null;
+  /** person mask (AMSK) for background blur */
+  maskPath?: string | null;
 }
 
 export interface RenderOptions {
@@ -225,6 +229,34 @@ export async function renderVideoSegment(job: SegmentJob, onFrame?: (done: numbe
     const id = o.kind === "image" || o.kind === "logo" ? (o.assetId ?? (o.kind === "logo" ? doc.theme.logoAssetId : null)) : null;
     if (id && assets.has(id) && !images.has(id)) images.set(id, await loadImage(await fsp.readFile(assets.get(id)!.path)));
   }
+  // background blur: person masks, decoded frame by frame (one cached frame per recording)
+  const masks = new Map<string, { buf: Buffer; h: MaskHeader; canvas: Canvas; index: number }>();
+  for (const a of job.assets) {
+    if (!a.maskPath) continue;
+    const buf = await fsp.readFile(a.maskPath);
+    const h = parseMaskHeader(buf);
+    masks.set(a.id, { buf, h, canvas: createCanvas(h.width, h.height), index: -1 });
+  }
+  const getMask = (assetId: string, sourceTime: number): FrameSource | null => {
+    const m = masks.get(assetId);
+    if (!m) return null;
+    const i = maskFrameIndex(m.h, sourceTime);
+    if (i !== m.index) {
+      const gray = zlib.inflateRawSync(m.buf.subarray(m.h.dataStart + m.h.offsets[i], m.h.dataStart + m.h.offsets[i + 1]));
+      m.canvas.getContext("2d").putImageData(new ImageData(maskToRgba(gray), m.h.width, m.h.height), 0, 0);
+      m.index = i;
+    }
+    return { image: m.canvas as unknown as CanvasImageSource, width: m.h.width, height: m.h.height };
+  };
+  const scratchCanvases = new Map<string, Canvas>();
+  const scratch = (key: string, w: number, h: number) => {
+    let c = scratchCanvases.get(key);
+    if (!c || c.width !== w || c.height !== h) {
+      c = createCanvas(w, h);
+      scratchCanvases.set(key, c);
+    }
+    return { canvas: c as unknown as CanvasImageSource, ctx: c.getContext("2d") as unknown as Ctx };
+  };
   const encoder = spawn(env.ffmpeg, [
     "-hide_banner", "-v", "error", "-y",
     "-f", "rawvideo", "-pix_fmt", "rgba", "-s", `${job.width}x${job.height}`, "-r", String(fps), "-i", "-",
@@ -300,6 +332,8 @@ export async function renderVideoSegment(job: SegmentJob, onFrame?: (done: numbe
         },
         includeSuggestedZooms: false,
         getOverlayFrame: (o) => ovFrames.get(o.id) ?? null,
+        getMask,
+        scratch,
       });
       const px = ctx.getImageData(0, 0, job.width, job.height).data;
       const ok = encoder.stdin.write(Buffer.from(px.buffer, px.byteOffset, px.byteLength));

@@ -6,8 +6,9 @@
  * so what you see here is what the server renderer produces.
  */
 import type { AssetInfo, AudioClip, EditorDocument } from "@/lib/editor/types";
+import { maskFrameIndex, maskToRgba, parseMaskHeader, type MaskHeader } from "@/lib/render/mask-format";
 import { clipAt, clipEnd, docDuration, overlayEnd, sortedClips } from "@/lib/editor/timeline";
-import { drawFrame, overlayVideoTime } from "@/lib/render/compositor";
+import { drawFrame, overlayVideoTime, type FrameSource } from "@/lib/render/compositor";
 import type { VideoOverlay } from "@/lib/editor/types";
 
 const DRIFT = 0.25;
@@ -25,6 +26,8 @@ export class PlaybackEngine {
   private assignment = new Map<HTMLVideoElement, string>(); // element -> clip id
   private audios = new Map<string, HTMLAudioElement>(); // per audio clip id
   private images = new Map<string, HTMLImageElement>();
+  private masks = new Map<string, { url: string; state: "loading" | "ready" | "error"; h?: MaskHeader; frames?: Uint8Array; canvas?: HTMLCanvasElement; index: number }>();
+  private scratchCanvases = new Map<string, HTMLCanvasElement>();
   private overlayVideos = new Map<string, HTMLVideoElement>(); // per video overlay id
   private raf = 0;
   private playing = false;
@@ -137,6 +140,62 @@ export class PlaybackEngine {
       this.images.set(assetId, img);
     }
     return img.complete && img.naturalWidth ? img : null;
+  }
+
+  /** Person mask (background blur) at a source time; loads and decodes the whole AMSK file once. */
+  private mask(assetId: string, sourceTime: number): FrameSource | null {
+    const a = this.assets[assetId];
+    if (!a?.maskUrl) return null;
+    let m = this.masks.get(assetId);
+    if (!m || (m.state === "error" && m.url !== a.maskUrl)) {
+      m = { url: a.maskUrl, state: "loading", index: -1 };
+      this.masks.set(assetId, m);
+      const entry = m;
+      void (async () => {
+        try {
+          const buf = new Uint8Array(await (await fetch(entry.url)).arrayBuffer());
+          const h = parseMaskHeader(buf);
+          const size = h.width * h.height;
+          const frames = new Uint8Array(size * h.count);
+          for (let i = 0; i < h.count; i++) {
+            const part = buf.subarray(h.dataStart + h.offsets[i], h.dataStart + h.offsets[i + 1]);
+            const raw = new Uint8Array(await new Response(new Blob([part]).stream().pipeThrough(new DecompressionStream("deflate-raw"))).arrayBuffer());
+            frames.set(raw.subarray(0, size), i * size);
+          }
+          const canvas = document.createElement("canvas");
+          canvas.width = h.width;
+          canvas.height = h.height;
+          Object.assign(entry, { h, frames, canvas, state: "ready" });
+          this.invalidate();
+        } catch {
+          entry.state = "error";
+        }
+      })();
+    }
+    if (m.state !== "ready" || !m.h || !m.frames || !m.canvas) return null;
+    const i = maskFrameIndex(m.h, sourceTime);
+    if (i !== m.index) {
+      const size = m.h.width * m.h.height;
+      const ctx = m.canvas.getContext("2d")!;
+      const img = ctx.createImageData(m.h.width, m.h.height);
+      maskToRgba(m.frames.subarray(i * size, (i + 1) * size), img.data);
+      ctx.putImageData(img, 0, 0);
+      m.index = i;
+    }
+    return { image: m.canvas, width: m.h.width, height: m.h.height };
+  }
+
+  private scratch(key: string, w: number, h: number) {
+    let c = this.scratchCanvases.get(key);
+    if (!c) {
+      c = document.createElement("canvas");
+      this.scratchCanvases.set(key, c);
+    }
+    if (c.width !== w || c.height !== h) {
+      c.width = w;
+      c.height = h;
+    }
+    return { canvas: c, ctx: c.getContext("2d")! };
   }
 
   /** Element bound to a clip, binding a free one (and seeking it) if needed. */
@@ -331,6 +390,8 @@ export class PlaybackEngine {
       hideOverlayIds: this.hideOverlayIds,
       // paused: entrance animations shown in their final state so layers stay visible and editable
       settled: !this.playing,
+      getMask: (assetId, sourceTime) => this.mask(assetId, sourceTime),
+      scratch: (key, w, h) => this.scratch(key, w, h),
       getOverlayFrame: (o: VideoOverlay) => {
         const v = this.overlayVideos.get(o.id);
         if (!v || v.readyState < 2 || !v.videoWidth) return null;

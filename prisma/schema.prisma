@@ -56,6 +56,7 @@ enum AssetKind {
   OVERLAY_VIDEO
   LOGO
   RENDER
+  SEGMENTATION_MASK
 }
 
 enum JobStatus {

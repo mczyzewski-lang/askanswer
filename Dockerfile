@@ -12,7 +12,13 @@ ENV NEXT_TELEMETRY_DISABLED=1
 COPY package.json package-lock.json ./
 COPY prisma ./prisma
 COPY scripts ./scripts
-RUN npm ci
+# onnxruntime-node (background blur): CPU only — skip the CUDA download and drop other platforms' binaries
+ENV ONNXRUNTIME_NODE_INSTALL=skip
+RUN npm ci \
+ && cd node_modules/onnxruntime-node/bin/napi-v6 \
+ && find . -mindepth 1 -maxdepth 1 ! -name linux -exec rm -rf {} + \
+ && find linux -mindepth 1 -maxdepth 1 ! -name "$(uname -m | sed 's/x86_64/x64/;s/aarch64/arm64/')" -exec rm -rf {} + \
+ && rm -f linux/*/libonnxruntime_providers_cuda.so linux/*/libonnxruntime_providers_tensorrt.so
 
 COPY . .
 RUN npm run build

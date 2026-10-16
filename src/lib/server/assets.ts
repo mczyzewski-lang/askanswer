@@ -7,6 +7,8 @@ export async function assetInfo(id: string, withWaveform = false): Promise<Asset
   if (!a) return null;
   const proxyId = (a.meta as { proxyAssetId?: string } | null)?.proxyAssetId;
   const proxy = proxyId ? await prisma.mediaAsset.findUnique({ where: { id: proxyId } }) : null;
+  const maskId = (a.meta as { maskAssetId?: string } | null)?.maskAssetId;
+  const mask = maskId ? await prisma.mediaAsset.findUnique({ where: { id: maskId } }) : null;
   return {
     id: a.id,
     kind: a.kind,
@@ -22,6 +24,7 @@ export async function assetInfo(id: string, withWaveform = false): Promise<Asset
     variant: (a.meta as { mode?: string } | null)?.mode ?? null,
     strength: (a.meta as { strength?: string } | null)?.strength ?? null,
     voiceId: (a.meta as { voiceId?: string } | null)?.voiceId ?? null,
+    maskUrl: mask ? await signedUrl(mask.storageKey, { ttlSec: 12 * 3600 }) : null,
   };
 }
 
@@ -32,6 +35,8 @@ export async function deleteAssets(ids: Array<string | null | undefined>) {
     if (!a) continue;
     const proxyId = (a.meta as { proxyAssetId?: string } | null)?.proxyAssetId;
     if (proxyId) await deleteAssets([proxyId]);
+    const maskId = (a.meta as { maskAssetId?: string } | null)?.maskAssetId;
+    if (maskId) await deleteAssets([maskId]);
     // narration assets are shared via the TTS cache — keep them
     if (a.kind === "NARRATION") continue;
     await deleteObject(a.storageKey).catch(() => {});

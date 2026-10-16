@@ -98,6 +98,89 @@ export function QuestionPanel({ meta }: { meta: StudioMeta }) {
 // ---------------------------------------------------------------------------
 // Recordings / takes
 // ---------------------------------------------------------------------------
+/** Blur the room behind the expert (person mask computed once per recording on the server). */
+function BackgroundBlurSection({ meta }: { meta: StudioMeta }) {
+  const doc = useStudio((s) => s.doc)!;
+  const assets = useStudio((s) => s.assets);
+  const apply = useStudio((s) => s.apply);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const blur = doc.clips.find((c) => (c.background?.blur ?? 0) > 0)?.background?.blur ?? 0;
+  const [strength, setStrength] = useState(blur || 45);
+  const masksReady = doc.clips.every((c) => !!assets[c.assetId]?.maskUrl);
+  const setBlur = (v: number) => apply((d) => ({ ...d, clips: d.clips.map((c) => ({ ...c, background: v > 0 ? { blur: v } : undefined })) }));
+
+  const enable = async () => {
+    setErr(null);
+    setBusy(true);
+    try {
+      const call = async () => {
+        const res = await fetch(`/api/admin/compositions/${meta.compositionId}/segment`, { method: "POST" });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error ?? `Błąd HTTP ${res.status}`);
+        return data as { jobs: string[]; assets: AssetInfo[] };
+      };
+      let data = await call();
+      const started = Date.now();
+      while (data.jobs.length) {
+        await new Promise((r) => setTimeout(r, 2000));
+        const states = await Promise.all(data.jobs.map(async (j) => (await fetch(`/api/admin/jobs/${j}`, { cache: "no-store" })).json().catch(() => null)));
+        const failed = states.find((x) => x?.status === "FAILED");
+        if (failed) throw new Error(failed.error ?? "Nie udało się wykryć sylwetki");
+        if (states.every((x) => x?.status === "SUCCEEDED")) data = await call();
+        if (Date.now() - started > 15 * 60_000) throw new Error("Analiza trwa zbyt długo — spróbuj ponownie później.");
+      }
+      useStudio.getState().addAssets(data.assets);
+      setBlur(strength);
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Section title="Tło za ekspertem">
+      <Seg<"off" | "blur">
+        value={blur > 0 ? "blur" : "off"}
+        onChange={(v) => (v === "off" ? setBlur(0) : void enable())}
+        options={[
+          ["off", "Bez zmian"],
+          ["blur", "Rozmyte"],
+        ]}
+      />
+      {busy ? (
+        <p className="flex items-center gap-1.5 text-[11.5px] text-sky-300" data-testid="blur-busy">
+          <Loader2 className="h-3.5 w-3.5 animate-spin" /> Wykrywam sylwetkę eksperta… zwykle kilkanaście sekund na minutę nagrania.
+        </p>
+      ) : null}
+      {blur > 0 ? (
+        <>
+          <Row label={`Siła rozmycia: ${strength}`}>
+            <Slider
+              value={strength}
+              min={5}
+              max={100}
+              step={5}
+              onChange={(v) => {
+                setStrength(v);
+                setBlur(v);
+              }}
+            />
+          </Row>
+          {!masksReady ? <p className="text-[11.5px] text-amber-300">Maska jeszcze się wczytuje…</p> : null}
+          <p className="text-[11.5px] text-studio-muted" data-testid="blur-on">
+            Ekspert zostaje ostry, tło jest rozmyte — w podglądzie i w eksporcie.
+          </p>
+        </>
+      ) : (
+        <p className="text-[11.5px] text-studio-muted">Rozmywa pokój za ekspertem, żeby wyglądało jak z obiektywu z małą głębią ostrości. Sylwetka jest wykrywana automatycznie (raz na nagranie).</p>
+      )}
+      {err ? <p className="text-[12px] text-red-300">{err}</p> : null}
+    </Section>
+  );
+}
+
 export function TakesPanel({ meta, onReplaceTake }: { meta: StudioMeta; onReplaceTake: (takeId: string) => void }) {
   const doc = useStudio((s) => s.doc)!;
   const assets = useStudio((s) => s.assets);
@@ -105,6 +188,7 @@ export function TakesPanel({ meta, onReplaceTake }: { meta: StudioMeta; onReplac
   const main = doc.clips[0] ? assets[doc.clips[0].assetId] : null;
   return (
     <div>
+      <BackgroundBlurSection meta={meta} />
       <Section title="Nagrania">
         {meta.takes.length === 0 ? <p className="text-[12.5px] text-studio-muted">Brak innych ujęć.</p> : null}
         {meta.takes.map((t) => {

@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  serverExternalPackages: ["@napi-rs/canvas", "@prisma/client"],
+  serverExternalPackages: ["@napi-rs/canvas", "@prisma/client", "onnxruntime-node"],
   experimental: {
     serverActions: { bodySizeLimit: "4mb" },
   },

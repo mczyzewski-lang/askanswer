@@ -50,6 +50,8 @@ export interface AVClip {
   muted: boolean;
   /** Base framing (crop/reposition). scale >= 1, centre in normalized source coords. */
   framing: { scale: number; cx: number; cy: number };
+  /** Background behind the expert: blur strength 0 (off) .. 100, via the recording's person mask. */
+  background?: { blur: number };
   label?: string;
   /** Optional replacement audio with identical timing (e.g. enhanced voice). Video stays from assetId. */
   audioAssetId?: string | null;
@@ -283,6 +285,8 @@ export interface AssetInfo {
   strength?: string | null;
   /** For narration: the ElevenLabs voice it was generated with. */
   voiceId?: string | null;
+  /** Recordings: person mask (AMSK file) for background blur, once computed. */
+  maskUrl?: string | null;
 }
 
 export interface Waveform {

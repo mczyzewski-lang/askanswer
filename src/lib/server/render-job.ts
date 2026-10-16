@@ -79,6 +79,17 @@ async function renderOne(doc: EditorDocument, out: string, settings: RenderSetti
       locals.push(f);
       assets.set(r.id, { id: r.id, path: f.path, width: r.width, height: r.height, hasAudio: r.hasAudio, hasVideo: r.hasVideo, kind: r.kind, durationSec: r.durationSec });
     }
+    // background blur: the person masks of recordings whose clips use it
+    const blurred = new Set(doc.clips.filter((c) => (c.background?.blur ?? 0) > 0).map((c) => c.assetId));
+    for (const r of rows) {
+      const maskId = (r.meta as { maskAssetId?: string } | null)?.maskAssetId;
+      if (!blurred.has(r.id) || !maskId) continue;
+      const m = await prisma.mediaAsset.findUnique({ where: { id: maskId } });
+      if (!m) continue;
+      const f = await toLocalFile(m.storageKey);
+      locals.push(f);
+      assets.get(r.id)!.maskPath = f.path;
+    }
     const missing = doc.clips.filter((c) => !assets.has(c.assetId));
     if (missing.length) throw new Error("Brak pliku źródłowego dla części klipów — nie można wyrenderować");
     const fmt = EXPORT_FORMATS[settings.format] ?? EXPORT_FORMATS["1080x1920"];

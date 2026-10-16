@@ -32,6 +32,10 @@ export interface RenderEnv {
   getOverlayFrame?: (overlay: VideoOverlay, localTime: number) => FrameSource | null;
   /** Paused editor preview: show entrance animations in their final state so elements stay editable. */
   settled?: boolean;
+  /** Person mask of a recording (alpha = person) at a source time, for background blur. */
+  getMask?: (assetId: string, sourceTime: number) => FrameSource | null;
+  /** Reusable offscreen canvas (browser: <canvas>, server: @napi-rs/canvas). */
+  scratch?: (key: string, width: number, height: number) => { canvas: Drawable; ctx: Ctx };
 }
 
 export const ENTRANCE = 0.55;
@@ -554,6 +558,72 @@ export function videoPlacement(
   return { x, y, w: dw, h: dh };
 }
 
+/** In-place separable box blur of RGBA pixels (radius in px, edges clamped). */
+function boxBlur(px: Uint8ClampedArray, w: number, h: number, r: number) {
+  const tmp = new Float32Array(px.length);
+  const n = 2 * r + 1;
+  for (let y = 0; y < h; y++)
+    for (let x = 0; x < w; x++)
+      for (let c = 0; c < 4; c++) {
+        let s = 0;
+        for (let k = -r; k <= r; k++) s += px[(y * w + Math.min(w - 1, Math.max(0, x + k))) * 4 + c];
+        tmp[(y * w + x) * 4 + c] = s / n;
+      }
+  for (let y = 0; y < h; y++)
+    for (let x = 0; x < w; x++)
+      for (let c = 0; c < 4; c++) {
+        let s = 0;
+        for (let k = -r; k <= r; k++) s += tmp[(Math.min(h - 1, Math.max(0, y + k)) * w + x) * 4 + c];
+        px[(y * w + x) * 4 + c] = s / n;
+      }
+}
+
+/**
+ * Background blur behind the expert: the frame is blurred (down- and up-sampling, identical in the
+ * browser and in the export), then the sharp person is drawn on top through the segmentation mask.
+ * `blur` 1..100 = strength.
+ */
+function drawWithBlurredBackground(ctx: Ctx, doc: EditorDocument, frame: FrameSource, mask: FrameSource, r: Rect, blur: number, scratch: NonNullable<RenderEnv["scratch"]>) {
+  const W = doc.width;
+  const H = doc.height;
+  // 1) blurred background: two-step downscale keeps it smooth instead of blocky
+  const f = 6 + (Math.min(100, blur) / 100) * 34; // 6..40 × smaller
+  const midW = Math.max(8, Math.round(W / Math.sqrt(f)));
+  const midH = Math.max(8, Math.round(H / Math.sqrt(f)));
+  const smW = Math.max(4, Math.round(W / f));
+  const smH = Math.max(4, Math.round(H / f));
+  const mid = scratch("blur-mid", midW, midH);
+  const sm = scratch("blur-sm", smW, smH);
+  for (const s of [mid, sm]) {
+    s.ctx.imageSmoothingEnabled = true;
+    (s.ctx as unknown as { imageSmoothingQuality: string }).imageSmoothingQuality = "high";
+  }
+  mid.ctx.clearRect(0, 0, midW, midH);
+  mid.ctx.drawImage(frame.image, (r.x * midW) / W, (r.y * midH) / H, (r.w * midW) / W, (r.h * midH) / H);
+  sm.ctx.clearRect(0, 0, smW, smH);
+  sm.ctx.drawImage(mid.canvas, 0, 0, smW, smH);
+  // smooth the tiny image (box blur ×2 ≈ gaussian) so the upscale has no blocky edges
+  const img = sm.ctx.getImageData(0, 0, smW, smH);
+  boxBlur(img.data, smW, smH, 2);
+  boxBlur(img.data, smW, smH, 2);
+  sm.ctx.putImageData(img, 0, 0);
+  mid.ctx.clearRect(0, 0, midW, midH);
+  mid.ctx.drawImage(sm.canvas, 0, 0, midW, midH);
+  ctx.drawImage(mid.canvas, 0, 0, W, H);
+
+  // 2) sharp person through the mask (the mask covers the whole source frame, so it uses the same placement)
+  const person = scratch("blur-person", W, H);
+  person.ctx.globalCompositeOperation = "source-over";
+  person.ctx.clearRect(0, 0, W, H);
+  person.ctx.imageSmoothingEnabled = true;
+  (person.ctx as unknown as { imageSmoothingQuality: string }).imageSmoothingQuality = "high";
+  person.ctx.drawImage(frame.image, r.x, r.y, r.w, r.h);
+  person.ctx.globalCompositeOperation = "destination-in";
+  person.ctx.drawImage(mask.image, r.x, r.y, r.w, r.h);
+  person.ctx.globalCompositeOperation = "source-over";
+  ctx.drawImage(person.canvas, 0, 0);
+}
+
 export function drawFrame(ctx: Ctx, doc: EditorDocument, t: number, env: RenderEnv) {
   const W = doc.width;
   const H = doc.height;
@@ -573,7 +643,10 @@ export function drawFrame(ctx: Ctx, doc: EditorDocument, t: number, env: RenderE
       const r = videoPlacement(doc, frame.width, frame.height, clip.framing, z);
       ctx.imageSmoothingEnabled = true;
       (ctx as unknown as { imageSmoothingQuality: string }).imageSmoothingQuality = "high";
-      ctx.drawImage(frame.image, r.x, r.y, r.w, r.h);
+      const blur = clip.background?.blur ?? 0;
+      const mask = blur > 0 ? env.getMask?.(clip.assetId, src) : null;
+      if (blur > 0 && mask && env.scratch) drawWithBlurredBackground(ctx, doc, frame, mask, r, blur, env.scratch);
+      else ctx.drawImage(frame.image, r.x, r.y, r.w, r.h);
       drewVideo = true;
     }
   }

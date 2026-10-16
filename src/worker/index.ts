@@ -29,6 +29,10 @@ async function handle(job: { id: string; type: string; payload: unknown }) {
       return { map: await enhanceComposition(p.compositionId, p.mode as "podcast" | "isolator", (p.strength as "natural" | "podcast" | "radio") ?? "podcast") };
     case "generate-broll":
       return generateBroll(job.id, job.payload as Parameters<typeof generateBroll>[1]);
+    case "segment-asset": {
+      const { segmentAsset } = await import("../lib/server/segment");
+      return segmentAsset(p.assetId);
+    }
     case "generate-infographic":
       return generateInfographic(job.id, job.payload as Parameters<typeof generateInfographic>[1]);
     default:
