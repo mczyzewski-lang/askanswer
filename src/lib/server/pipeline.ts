@@ -145,7 +145,9 @@ export async function processTake(takeId: string): Promise<void> {
 
     // 9–15. composition
     await step(takeId, "Tworzenie kompozycji");
-    await ensureComposition(takeId);
+    const composition = await ensureComposition(takeId);
+    // automatic infographics need to know what the expert says
+    if (await prisma.transcript.findUnique({ where: { takeId }, select: { id: true } })) await queueAutoVisuals(composition.id);
 
     await prisma.recordingTake.update({ where: { id: takeId }, data: { status: "READY", processingStep: "Gotowe do edycji" } });
     const q = await prisma.question.findUnique({ where: { id: take.recording.questionId } });
@@ -212,7 +214,13 @@ export async function transcribeTake(takeId: string, force = false): Promise<voi
     const assetIdForSubs = doc.clips[0]?.assetId ?? take.normalizedAssetId!;
     const next: EditorDocument = { ...doc, subtitles: { ...doc.subtitles, segments: buildSegments(assetIdForSubs, words), source: "transcript" } };
     await prisma.videoComposition.update({ where: { id: c.id }, data: { document: next as unknown as Prisma.InputJsonValue, version: { increment: 1 } } });
+    await queueAutoVisuals(c.id);
   }
+}
+
+/** Once per composition (the job itself skips when disabled in the project or already done). */
+async function queueAutoVisuals(compositionId: string) {
+  await enqueue("auto-visuals", { compositionId }, { idempotencyKey: `auto-visuals:${compositionId}`, maxAttempts: 2 });
 }
 
 export async function refreshSilences(takeId: string) {

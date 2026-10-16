@@ -45,6 +45,7 @@ import { Properties } from "./properties";
 import { AudioPanel, GraphicsPanel, PausesPanel, QuestionPanel, SubtitlesPanel, TakesPanel, TemplatesPanel, TextPanel, ZoomPanel, type StudioMeta } from "./panels";
 import { Row, Section, Select, SButton } from "./controls";
 import { AiPanel, useBrollJobs, type AiConfig } from "./ai-panel";
+import { mergeAutoVisuals } from "@/lib/editor/ai-overlays";
 
 interface StudioPayload {
   composition: { id: string; name: string; version: number; status: string; document: EditorDocument };
@@ -56,6 +57,8 @@ interface StudioPayload {
   renders: RenderInfo[];
   elevenLabs: boolean;
   ai: AiConfig;
+  /** the worker is still generating the automatic infographics */
+  autoVisualsPending?: boolean;
 }
 
 const TABS = [
@@ -144,6 +147,30 @@ export function Studio({ id }: { id: string }) {
     engine.invalidate();
   }, [engine, time]);
 
+  // automatic infographics still being made: pick them up as soon as the worker is done
+  useEffect(() => {
+    if (!payload?.autoVisualsPending) return;
+    let stopped = false;
+    const t = setInterval(async () => {
+      const latest = await (await fetch(`/api/admin/compositions/${id}`, { cache: "no-store" })).json().catch(() => null);
+      if (stopped || !latest?.composition) return;
+      const serverDoc = latest.composition.document as EditorDocument;
+      if (!serverDoc.meta.autoVisuals && latest.autoVisualsPending) return;
+      clearInterval(t);
+      const st = useStudio.getState();
+      if (!st.doc || st.doc.meta.autoVisuals || !serverDoc.meta.autoVisuals) return;
+      st.addAssets(latest.assets ?? []);
+      const n = (serverDoc.meta.aiBroll ?? []).filter((i) => i.status === "done").length;
+      if (st.dirty || st.saving === "saving") useStudio.setState({ doc: mergeAutoVisuals(st.doc, serverDoc), version: latest.composition.version, dirty: true });
+      else useStudio.setState({ doc: mergeAutoVisuals(st.doc, serverDoc), version: latest.composition.version, dirty: false });
+      if (n) toast(`AI dodało ${n} ${n === 1 ? "infografikę" : n < 5 ? "infografiki" : "infografik"} — zobacz zakładkę AI`);
+    }, 4000);
+    return () => {
+      stopped = true;
+      clearInterval(t);
+    };
+  }, [payload?.autoVisualsPending, id, toast]);
+
   // ---- autosave (debounced + periodic) and unload protection ----
   const save = useCallback(async () => {
     const st = useStudio.getState();
@@ -158,6 +185,16 @@ export function Studio({ id }: { id: string }) {
       });
       const data = await res.json();
       if (res.status === 409) {
+        // the AI placed infographics meanwhile: take them over and save again instead of failing
+        const latest = await (await fetch(`/api/admin/compositions/${st.compositionId}`, { cache: "no-store" })).json().catch(() => null);
+        const serverDoc = latest?.composition?.document as EditorDocument | undefined;
+        if (serverDoc?.meta?.autoVisuals && !docToSave.meta.autoVisuals) {
+          useStudio.getState().addAssets(latest.assets ?? []);
+          useStudio.setState({ doc: mergeAutoVisuals(useStudio.getState().doc ?? docToSave, serverDoc), version: latest.composition.version, dirty: true, saving: "idle" });
+          toast("AI dodało infografiki — połączono z Twoimi zmianami");
+          setTimeout(() => void save(), 50);
+          return;
+        }
         st.setSaving("conflict");
         toast(data.error, "err");
         return;

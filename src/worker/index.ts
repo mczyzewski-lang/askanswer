@@ -30,6 +30,10 @@ async function handle(job: { id: string; type: string; payload: unknown }) {
       return { map: await enhanceComposition(p.compositionId, p.mode as "podcast" | "isolator", (p.strength as "natural" | "podcast" | "radio") ?? "podcast") };
     case "generate-broll":
       return generateBroll(job.id, job.payload as Parameters<typeof generateBroll>[1]);
+    case "auto-visuals": {
+      const { autoVisuals } = await import("../lib/server/auto-visuals");
+      return autoVisuals(job.id, p.compositionId);
+    }
     case "segment-asset": {
       const { segmentAsset } = await import("../lib/server/segment");
       return segmentAsset(p.assetId);

@@ -24,6 +24,7 @@ export const ProjectInput = z.object({
   ttsModel: z.string().trim().max(100).nullable().optional(),
   voiceCollectionId: z.string().max(64).nullable().optional(),
   naturalFillers: z.boolean().optional(),
+  autoInfographics: z.boolean().optional(),
   recordingMode: z.enum(["CONTINUOUS", "ANSWER_ONLY"]).optional(),
   sequential: z.boolean().optional(),
   format: z.enum(["ANSWERS", "PROMPTER"]).optional(),

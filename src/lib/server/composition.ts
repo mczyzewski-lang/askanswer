@@ -61,6 +61,7 @@ export async function loadStudio(id: string) {
     assets,
     renders: renderInfos,
     elevenLabs: elevenLabsConfigured(),
+    autoVisualsPending: !!(await prisma.job.findFirst({ where: { idempotencyKey: `auto-visuals:${id}`, status: { in: ["QUEUED", "RUNNING"] } }, select: { id: true } })),
     ai: {
       higgsfield: higgsfieldConfigured(),
       claude: env.anthropicConfigured,

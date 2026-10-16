@@ -34,6 +34,7 @@ export function SettingsPanel({ data, refresh, toast }: PanelProps) {
     ttsModel: p.ttsModel ?? "",
     voiceCollectionId: p.voiceCollectionId ?? "",
     naturalFillers: p.naturalFillers,
+    autoInfographics: p.autoInfographics,
   });
   const [voices, setVoices] = useState<VoiceList | null>(null);
   const [collections, setCollections] = useState<Array<{ id: string; name: string; items: unknown[] }>>([]);
@@ -83,6 +84,15 @@ export function SettingsPanel({ data, refresh, toast }: PanelProps) {
             <span className="block text-xs text-muted">Ekspert nagrywa pytania po kolei.</span>
           </span>
           <Switch checked={form.sequential} onCheckedChange={(v) => set("sequential", v)} />
+        </label>
+        <label className="flex items-center justify-between gap-4 text-sm">
+          <span>
+            Automatyczne infografiki AI
+            <span className="block text-xs text-muted">
+              Po przetworzeniu nagrania AI wybiera momenty i od razu osadza w filmie do 3 infografik (OpenAI, gdy jest klucz; inaczej szablon motywu). Sceny wideo zostają propozycjami w zakładce AI.
+            </span>
+          </span>
+          <Switch checked={form.autoInfographics} onCheckedChange={(v) => set("autoInfographics", v)} />
         </label>
         <div className="space-y-1.5">
           <Label htmlFor="s-daily">Pytań na dziś na liście eksperta</Label>

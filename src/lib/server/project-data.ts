@@ -125,6 +125,7 @@ export async function projectData(id: string) {
       ttsModel: p.ttsModel,
       voiceCollectionId: p.voiceCollectionId,
       naturalFillers: p.naturalFillers,
+      autoInfographics: p.autoInfographics,
       themeId: p.themeId,
       themeName: p.theme?.name ?? null,
       theme: p.theme,

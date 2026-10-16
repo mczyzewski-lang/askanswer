@@ -1,9 +1,10 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { BarChart3, Check, Clapperboard, Loader2, Plus, RefreshCw, Sparkles, Trash2, Wand2, X } from "lucide-react";
-import type { AiBrollItem, AssetInfo, EditorDocument, ImageOverlay, VideoOverlay } from "@/lib/editor/types";
+import type { AiBrollItem, AssetInfo, EditorDocument, VideoOverlay } from "@/lib/editor/types";
 import { docDuration, formatShort, timedSegments } from "@/lib/editor/timeline";
 import { uid } from "@/lib/editor/id";
+import { infographicOverlay as buildInfographicOverlay } from "@/lib/editor/ai-overlays";
 import { cn } from "@/lib/utils";
 import { useStudio } from "./store";
 import { Section, Seg, Select, SButton, TextField } from "./controls";
@@ -66,32 +67,12 @@ function brollOverlay(item: AiBrollItem, asset: AssetInfo, total: number): Video
   };
 }
 
-/** Full-frame infographic image for the moment's length (fades in under the question and captions). */
-function infographicOverlay(item: AiBrollItem, asset: AssetInfo, total: number): ImageOverlay {
-  const start = Math.max(0, Math.min(item.start, total - 0.5));
-  return {
-    id: uid("ovl"),
-    kind: "image",
-    name: `Infografika: ${item.infographic?.headline ?? item.title}`.slice(0, 80),
-    assetId: asset.id,
-    fit: "cover",
-    start,
-    end: Math.min(total, start + Math.max(2, item.end - item.start)),
-    x: 0,
-    y: 0,
-    w: 1,
-    h: 1,
-    opacity: 1,
-    animation: "fade",
-  };
-}
-
 const isInfographic = (i: AiBrollItem) => i.kind === "infographic";
 
 /** Background of a template infographic: none, Higgsfield or OpenAI illustration (only providers that are set up). */
 function bgSource(item: AiBrollItem, ai: AiConfig): "none" | "higgsfield" | "openai" {
   if (!item.illustration) return "none";
-  const want = item.illustrationSource ?? (ai.higgsfield ? "higgsfield" : "openai");
+  const want = item.illustrationSource ?? (ai.openai ? "openai" : "higgsfield");
   if (want === "openai") return ai.openai ? "openai" : ai.higgsfield ? "higgsfield" : "none";
   return ai.higgsfield ? "higgsfield" : ai.openai ? "openai" : "none";
 }
@@ -138,7 +119,7 @@ export function useBrollJobs() {
             st.apply((d) => {
               const item = items(d).find((i) => i.id === itemId);
               if (!item || item.status !== "generating") return d;
-              const ov = isInfographic(item) ? infographicOverlay(item, asset, docDuration(d)) : brollOverlay(item, asset, docDuration(d));
+              const ov = isInfographic(item) ? buildInfographicOverlay(item, asset.id, docDuration(d)) : brollOverlay(item, asset, docDuration(d));
               return {
                 ...d,
                 // below the question and other layers; captions are always drawn on top
@@ -207,7 +188,7 @@ export function AiPanel({ engine, compositionId, ai }: { engine: PlaybackEngine 
         meta: {
           ...d.meta,
           // keep what is generating or already placed; replace old untouched proposals
-          aiBroll: [...items(d).filter((i) => i.status !== "suggested"), ...sugg.map((s) => ({ ...s, id: uid("ai"), duration: snap(s.duration ?? 5), model: modelInfo.id, illustration: ai.higgsfield || !!ai.openai, illustrationSource: ai.higgsfield ? ("higgsfield" as const) : ("openai" as const), status: "suggested" as const }))],
+          aiBroll: [...items(d).filter((i) => i.status !== "suggested"), ...sugg.map((s) => ({ ...s, id: uid("ai"), duration: snap(s.duration ?? 5), model: modelInfo.id, illustration: ai.higgsfield || !!ai.openai, illustrationSource: ai.openai ? ("openai" as const) : ("higgsfield" as const), engine: ai.openai ? ("openai" as const) : ("template" as const), status: "suggested" as const }))],
         },
       }));
     } catch (e) {
@@ -230,7 +211,7 @@ export function AiPanel({ engine, compositionId, ai }: { engine: PlaybackEngine 
               infographic: { headline: info.headline, items: info.items.filter((r) => r.value.trim() || r.label.trim()), note: info.note || null },
               imagePrompt: bgSource(item, ai) !== "none" && item.imagePrompt ? item.imagePrompt : null,
               illustration: bgSource(item, ai),
-              engine: item.engine === "openai" && ai.openai ? "openai" : "template",
+              engine: (item.engine ?? (ai.openai ? "openai" : "template")) === "openai" && ai.openai ? "openai" : "template",
               start: item.start,
             }),
           }),
@@ -406,18 +387,18 @@ function BrollCard({ item, ai, canGenerate, onSeek, onGenerate, onRemove }: { it
           <div className="space-y-1">
             <p className="text-[11px] text-studio-muted">Wykonanie</p>
             <Seg<"template" | "openai">
-              value={item.engine === "openai" && ai.openai ? "openai" : "template"}
+              value={(item.engine ?? (ai.openai ? "openai" : "template")) === "openai" && ai.openai ? "openai" : "template"}
               onChange={(v) => editable && patchItem(item.id, { engine: v })}
               options={[
                 ["template", "Szablon (ostry tekst)"],
                 ...(ai.openai ? ([["openai", "Cała grafika z OpenAI"]] as Array<["openai", string]>) : []),
               ]}
             />
-            {item.engine === "openai" && ai.openai ? (
+            {(item.engine ?? (ai.openai ? "openai" : "template")) === "openai" && ai.openai ? (
               <p className="text-[11px] leading-snug text-studio-muted">OpenAI rysuje całą infografikę z tym tekstem, w kolorach motywu i stylu kategorii. Sprawdź pisownię na gotowej grafice.</p>
             ) : null}
           </div>
-          {item.engine === "openai" && ai.openai ? null : (
+          {(item.engine ?? (ai.openai ? "openai" : "template")) === "openai" && ai.openai ? null : (
             <div className="space-y-1">
               <p className="text-[11px] text-studio-muted">Tło infografiki</p>
               <Seg<"none" | "higgsfield" | "openai">
@@ -469,7 +450,7 @@ function BrollCard({ item, ai, canGenerate, onSeek, onGenerate, onRemove }: { it
       {item.status === "generating" ? (
         <p className="flex items-center gap-1.5 text-[11.5px] text-sky-300">
           <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          {info ? (item.engine === "openai" && ai.openai ? "OpenAI rysuje infografikę… zwykle do minuty." : bgSource(item, ai) !== "none" ? "Tworzę infografikę z ilustracją AI… zwykle do minuty." : "Tworzę infografikę…") : "Higgsfield generuje scenę… zwykle 1–4 min. Możesz dalej edytować."}
+          {info ? ((item.engine ?? (ai.openai ? "openai" : "template")) === "openai" && ai.openai ? "OpenAI rysuje infografikę… zwykle do minuty." : bgSource(item, ai) !== "none" ? "Tworzę infografikę z ilustracją AI… zwykle do minuty." : "Tworzę infografikę…") : "Higgsfield generuje scenę… zwykle 1–4 min. Możesz dalej edytować."}
         </p>
       ) : null}
       {item.status === "done" ? (

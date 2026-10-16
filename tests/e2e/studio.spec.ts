@@ -34,6 +34,18 @@ test("studio: pauses, cuts, subtitles, zoom, theme, persistence and real MP4 exp
   expect(info.silences.some((s: { start: number; end: number }) => s.start > 2.5 && s.start < 3.2 && s.end > 4.0 && s.end < 4.7)).toBeTruthy();
   const compId = info.compositionIds[0];
 
+  // automatic infographics: placed by the worker right after processing, without any acceptance (OpenAI mock)
+  let auto: { document: { overlays: Array<{ kind: string; name: string }>; meta: { autoVisuals?: string; aiBroll?: Array<{ status: string; kind?: string; engine?: string }> } } } | null = null;
+  for (let i = 0; i < 60 && !auto?.document.meta.autoVisuals; i++) {
+    await new Promise((r) => setTimeout(r, 1500));
+    auto = (await (await request.get(`/api/admin/compositions/${compId}`)).json()).composition;
+  }
+  expect(auto?.document.meta.autoVisuals).toBe("done");
+  const placedAuto = (auto!.document.meta.aiBroll ?? []).filter((i) => i.status === "done");
+  expect(placedAuto.length).toBeGreaterThan(0);
+  expect(placedAuto.every((i) => i.kind === "infographic" && i.engine === "openai")).toBeTruthy();
+  expect(auto!.document.overlays.filter((o) => o.kind === "image" && o.name.startsWith("Infografika")).length).toBe(placedAuto.length);
+
   await login(page);
   await page.goto(`/studio/${compId}`);
   await expect(page.getByTestId("timeline")).toBeVisible();
@@ -86,8 +98,9 @@ test("studio: pauses, cuts, subtitles, zoom, theme, persistence and real MP4 exp
   await expect(page.getByTestId("ai-check-result")).toContainText("Połączenie z OpenAI działa");
   await page.getByTestId("ai-suggest").click();
   await expect(page.getByTestId("ai-item").first()).toBeVisible({ timeout: 30_000 });
-  await page.getByTestId("ai-accept").first().click();
-  await expect(page.getByTestId("ai-done")).toBeVisible({ timeout: 120_000 });
+  const videoItem = page.locator('[data-testid="ai-item"][data-kind="video"]').filter({ has: page.getByTestId("ai-accept") }).first();
+  await videoItem.getByTestId("ai-accept").click();
+  await expect(page.locator('[data-testid="ai-item"][data-kind="video"]').getByTestId("ai-done").first()).toBeVisible({ timeout: 120_000 });
   // …and an infographic (custom proposal switched to "Infografika", AI illustration from the image mock)
   await page.getByPlaceholder(/Close-up of hands/).fill("Hands holding a calendar, slow push-in");
   await page.getByRole("button", { name: "Dodaj propozycję" }).click();

@@ -240,6 +240,8 @@ export interface EditorDocument {
     showSafeArea?: "tiktok" | "reels" | "shorts" | "none";
     /** AI B-roll proposals and generations (Higgsfield), kept with the video so they survive a reload. */
     aiBroll?: AiBrollItem[];
+    /** set once the automatic infographics have been placed */
+    autoVisuals?: string;
   };
 }
 

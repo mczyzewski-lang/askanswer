@@ -1,0 +1,1 @@
+ALTER TABLE "Project" ADD COLUMN "autoInfographics" BOOLEAN NOT NULL DEFAULT true;

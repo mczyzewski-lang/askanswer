@@ -187,5 +187,6 @@ export const EditorDocumentSchema = z.object({
       )
       .max(50)
       .optional(),
+    autoVisuals: z.string().max(20).optional(),
   }),
 });

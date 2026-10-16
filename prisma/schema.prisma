@@ -153,6 +153,8 @@ model Project {
   voiceCollection    VoiceCollection?   @relation(fields: [voiceCollectionId], references: [id], onDelete: SetNull)
   /// subtle "yyy… / mm…" hesitations in the narrated question
   naturalFillers     Boolean            @default(true)
+  /// after processing: AI picks moments and places infographics automatically (OpenAI when configured)
+  autoInfographics   Boolean            @default(true)
   recordingMode      RecordingMode      @default(CONTINUOUS)
   sequential         Boolean            @default(false)
   /// questions on the expert's list per day, mixed evenly across categories (0 = whole list)
