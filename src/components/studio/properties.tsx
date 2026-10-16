@@ -3,6 +3,7 @@ import { useRef } from "react";
 import { Trash2 } from "lucide-react";
 import { DEFAULT_BUBBLE, type AudioClip, type AVClip, type CalloutOverlay, type EditorDocument, type FaceBubble, type ImageOverlay, type Overlay, type ShapeOverlay, type TextOverlay, type VideoOverlay, type ZoomEffect } from "@/lib/editor/types";
 import { NarrationVoiceChanger } from "./narration";
+import { VariantPicker } from "./ai-panel";
 import { clipEnd, deleteClip, docDuration } from "@/lib/editor/timeline";
 import { ZOOM_PRESETS } from "@/lib/editor/zoom";
 import { SUBTITLE_PRESETS } from "@/lib/editor/subtitles";
@@ -281,20 +282,29 @@ function VideoProps({ o }: { o: VideoOverlay }) {
 
 function ImageProps({ o }: { o: ImageOverlay }) {
   const apply = useStudio((s) => s.apply);
+  // an AI illustration / infographic: its drawn variants can be swapped right here
+  const aiItem = useStudio((s) => s.doc?.meta.aiBroll?.find((i) => i.overlayId === o.id) ?? null);
   const b = o.bubble;
   const setB = (p: Partial<FaceBubble>, key: string) => patchOverlay<ImageOverlay>(o.id, { bubble: { ...(b ?? DEFAULT_BUBBLE), ...p } }, `ovl:${o.id}:bubble:${key}`);
   const fullFrame = o.kind === "image" && o.w >= 0.95 && o.h >= 0.95;
   const corners: Array<[string, number, number]> = [
-    ["↖", 0.2, 0.25],
-    ["↗", 0.8, 0.25],
-    ["↙", 0.2, 0.62],
-    ["↘", 0.72, 0.62],
+    ["↖", 0.18, 0.32],
+    ["↗", 0.7, 0.32],
+    ["↙", 0.18, 0.62],
+    ["↘", 0.7, 0.62],
   ];
   return (
     <>
       <Row label="Dopasowanie">
         <Seg value={o.fit} onChange={(v) => patchOverlay<ImageOverlay>(o.id, { fit: v })} options={[["contain", "Zmieść"], ["cover", "Wypełnij"]]} />
       </Row>
+      {aiItem ? (
+        <div className="space-y-2 rounded-lg border border-studio-line p-2.5" data-testid="ai-layer-props">
+          <p className="text-[12.5px]">Grafika AI: {aiItem.title}</p>
+          {aiItem.variants && aiItem.variants.length > 1 ? <VariantPicker item={aiItem} /> : <p className="text-[11px] text-studio-muted">Ta grafika ma jeden wariant. Nowe ilustracje powstają w kilku wariantach do wyboru.</p>}
+          {aiItem.quote ? <p className="text-[11px] italic leading-snug text-studio-muted">„{aiItem.quote}”</p> : null}
+        </div>
+      ) : null}
       {o.kind === "image" ? (
         <div className="space-y-2 rounded-lg border border-studio-line p-2.5" data-testid="bubble-props">
           <label className="flex items-center justify-between gap-2 text-[12.5px]">

@@ -76,10 +76,14 @@ export const env = {
   get openaiBaseUrl() {
     return str("OPENAI_BASE_URL", "https://api.openai.com/v1").replace(/\/$/, "");
   },
-  /** "high" (default) | "medium" | "low" — cost per image */
+  /** "medium" (default) | "high" | "low" — the biggest factor of the cost per image (high ≈ 4× medium) */
   get openaiImageQuality(): "low" | "medium" | "high" {
-    const q = str("OPENAI_IMAGE_QUALITY", "high");
-    return q === "low" || q === "medium" ? q : "high";
+    const q = str("OPENAI_IMAGE_QUALITY", "medium");
+    return q === "low" || q === "high" ? q : "medium";
+  },
+  /** long side of generated images in px (gpt-image-2), default 1536 */
+  get openaiImageLong() {
+    return Number(str("OPENAI_IMAGE_LONG", "1536")) || 1536;
   },
   /** variants drawn for each illustration (to choose from in the Studio), 1–4 */
   get illustrationVariants() {

@@ -185,7 +185,8 @@ export interface FaceBubble {
   fy?: number;
 }
 
-export const DEFAULT_BUBBLE: FaceBubble = { x: 0.2, y: 0.62, size: 0.3, zoom: 1.25, fy: 0.3 };
+// upper left, clear of the platform buttons (right) and the caption area (lower half)
+export const DEFAULT_BUBBLE: FaceBubble = { x: 0.18, y: 0.32, size: 0.3, zoom: 1.25, fy: 0.3 };
 
 /** Uploaded video placed as its own layer (picture-in-picture, B-roll, animated graphic). */
 export interface VideoOverlay extends OverlayBase {

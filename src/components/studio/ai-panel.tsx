@@ -644,7 +644,7 @@ function AutoStatus({ job }: { job: AutoVisualsJob | null }) {
 }
 
 /** Illustration drawn in several variants: pick the one shown on the timeline. */
-function VariantPicker({ item }: { item: AiBrollItem }) {
+export function VariantPicker({ item }: { item: AiBrollItem }) {
   const assets = useStudio((s) => s.assets);
   const current = useStudio((s) => {
     const o = s.doc?.overlays.find((x) => x.id === item.overlayId);

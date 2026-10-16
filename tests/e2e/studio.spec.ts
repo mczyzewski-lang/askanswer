@@ -131,6 +131,13 @@ test("studio: pauses, cuts, subtitles, zoom, theme, persistence and real MP4 exp
   await expect(picker.getByTestId("ai-variant").first()).toHaveAttribute("aria-pressed", "true");
   await picker.getByTestId("ai-variant").nth(1).click();
   await expect(picker.getByTestId("ai-variant").nth(1)).toHaveAttribute("aria-pressed", "true");
+  // …also from the right-hand column after clicking the illustration layer on the timeline
+  await page.getByTestId("timeline").locator('[title^="Ilustracja:"]').first().click();
+  const layerProps = page.getByTestId("ai-layer-props");
+  await expect(layerProps.getByTestId("ai-variant")).toHaveCount(3);
+  await expect(layerProps.getByTestId("ai-variant").nth(1)).toHaveAttribute("aria-pressed", "true");
+  await layerProps.getByTestId("ai-variant").nth(2).click();
+  await expect(layerProps.getByTestId("ai-variant").nth(2)).toHaveAttribute("aria-pressed", "true");
   await waitSaved(page);
   await expect(page.getByTestId("auto-visuals-status")).toContainText("ilustracje myśli");
   await page.getByTestId("auto-visuals-run").click();
@@ -167,7 +174,7 @@ test("studio: pauses, cuts, subtitles, zoom, theme, persistence and real MP4 exp
   const oaiStats = await (await request.get("http://127.0.0.1:4010/__stats", { headers: { "xi-api-key": "mock-key" } })).json();
   const call = oaiStats.openai.at(-1);
   expect(call.model).toBe("gpt-image-2");
-  expect(call.size).toBe("1024x1824");
+  expect(call.size).toBe("864x1536");
   expect(call.prompt).toContain("«Ile trwa rozwód?»");
   // own illustration from the timeline: click on the graphics layer, the passage around it is shown and sent with the idea
   const lane = page.getByTestId("overlay-lane");

@@ -16,12 +16,14 @@ export class OpenAIImageError extends Error {
 }
 
 /** Portrait/landscape/square size the model accepts, close to the video's aspect ratio. */
-export function imageSize(model: string, width: number, height: number): string {
-  // gpt-image-2 / 2.5: any WIDTHxHEIGHT divisible by 16 (ratio 1:3..3:1); older GPT image models: fixed sizes
+export function imageSize(model: string, width: number, height: number, long = env.openaiImageLong): string {
+  // gpt-image-2 / 2.5: any WIDTHxHEIGHT divisible by 16 (ratio 1:3..3:1); older GPT image models: fixed sizes.
+  // The price grows with the pixels: 1536 on the long side (864×1536) is sharp enough for a phone
+  // after upscaling to 1080×1920 and costs ~30% less than 1824.
   if (/^gpt-image-2/.test(model)) {
-    const long = 1824;
-    const short = Math.round(((long * Math.min(width, height)) / Math.max(width, height)) / 16) * 16;
-    return width === height ? "1536x1536" : width < height ? `${short}x${long}` : `${long}x${short}`;
+    const L = Math.max(1024, Math.min(2048, Math.round(long / 16) * 16));
+    const short = Math.round(((L * Math.min(width, height)) / Math.max(width, height)) / 16) * 16;
+    return width === height ? `${Math.min(L, 1536)}x${Math.min(L, 1536)}` : width < height ? `${short}x${L}` : `${L}x${short}`;
   }
   return width === height ? "1024x1024" : width < height ? "1024x1536" : "1536x1024";
 }
