@@ -440,6 +440,17 @@ function QuestionRow({ q, index, draggable = true, data, refresh, toast, onEdit,
                 </Badge>
               ) : null}
               <span>{q.expertName ?? "Brak eksperta"}</span>
+              {q.status === "IN_PROGRESS" || q.status === "APPROVED" ? (
+                q.takes.some((t) => t.status === "READY") ? (
+                  <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-800" data-testid="expert-sees-video">
+                    ▶ Ekspert widzi film{q.takes.some((t) => t.editedDownload) ? " (eksport)" : " (nagranie)"}
+                  </span>
+                ) : (
+                  <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-900" title="Ekspert zobaczy film, gdy nagranie zostanie przetworzone (status nagrania: gotowe).">
+                    Ekspert nie zobaczy filmu — brak gotowego nagrania
+                  </span>
+                )
+              ) : null}
               {q.maxDurationSec ? <span>· do {formatDuration(q.maxDurationSec)}</span> : null}
               {q.instructions ? <span className="truncate">· {q.instructions}</span> : null}
             </div>

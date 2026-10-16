@@ -304,7 +304,7 @@ export function Recorder({ token }: { token: string }) {
       <Shell>
         <div className="relative h-dvh w-full overflow-hidden">
           <CameraView stream={stream} mirrored={facing === "user"} fit={fit} />
-          <FaceGuide />
+          <FaceGuide mirrored={facing === "user"} />
           <div className="absolute inset-x-0 top-0 bg-gradient-to-b from-black/80 to-transparent px-5 pb-10 safe-top">
             <p className="pt-2 font-display text-xl font-semibold">Przygotuj kamerę</p>
             <p className="text-sm text-white/70">Ustaw twarz w zaznaczonym obszarze. Za blisko? Odsuń telefon lub zmień podgląd poniżej.</p>
@@ -1105,18 +1105,25 @@ function CameraView({ stream, mirrored, fit = "contain" }: { stream: MediaStream
   return <video ref={ref} className={cn("absolute inset-0 h-full w-full bg-black", fit === "cover" ? "object-cover" : "object-contain", mirrored && "-scale-x-100")} muted playsInline autoPlay />;
 }
 
-function FaceGuide() {
+/**
+ * Where the face should be: slightly left of centre and in the upper third — the right edge
+ * (TikTok / Reels buttons) and the lower part (captions, description) stay free on the video.
+ */
+function FaceGuide({ mirrored }: { mirrored: boolean }) {
+  // the front-camera preview is a mirror, the recording is not: on screen the guide is mirrored
+  // too, so that in the finished video the face ends up slightly left of centre
+  const cx = mirrored ? 90 - 38 : 38;
   return (
-    <svg className="pointer-events-none absolute inset-0 h-full w-full" viewBox="0 0 90 160" preserveAspectRatio="xMidYMid slice" aria-hidden>
+    <svg className="pointer-events-none absolute inset-0 h-full w-full" viewBox="0 0 90 160" preserveAspectRatio="xMidYMid slice" aria-hidden data-testid="face-guide" data-cx={cx}>
       <defs>
         <mask id="face">
           <rect width="90" height="160" fill="white" />
-          <ellipse cx="45" cy="66" rx="21" ry="28" fill="black" />
+          <ellipse cx={cx} cy="54" rx="20" ry="27" fill="black" />
         </mask>
       </defs>
       <rect width="90" height="160" fill="rgba(0,0,0,.35)" mask="url(#face)" />
-      <ellipse cx="45" cy="66" rx="21" ry="28" fill="none" stroke="white" strokeOpacity=".8" strokeWidth=".5" strokeDasharray="2 1.5" />
-      <line x1="10" y1="40" x2="80" y2="40" stroke="white" strokeOpacity=".25" strokeWidth=".25" />
+      <ellipse cx={cx} cy="54" rx="20" ry="27" fill="none" stroke="white" strokeOpacity=".8" strokeWidth=".5" strokeDasharray="2 1.5" />
+      <line x1={mirrored ? 18 : 6} y1="28" x2={mirrored ? 84 : 72} y2="28" stroke="white" strokeOpacity=".25" strokeWidth=".25" />
     </svg>
   );
 }
