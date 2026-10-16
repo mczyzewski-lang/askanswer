@@ -5,7 +5,7 @@ import { requireAdmin } from "@/lib/server/auth";
 import { json, route } from "@/lib/server/http";
 import { rateLimit } from "@/lib/server/ratelimit";
 import { enqueue } from "@/lib/server/jobs";
-import { higgsfieldConfigured } from "@/lib/server/env";
+import { higgsfieldConfigured, openaiConfigured } from "@/lib/server/env";
 import type { EditorDocument } from "@/lib/editor/types";
 
 const Body = z.object({
@@ -16,6 +16,9 @@ const Body = z.object({
   }),
   /** background illustration in the category style (Higgsfield text-to-image); null = theme background */
   imagePrompt: z.string().trim().max(3000).nullable().optional(),
+  illustration: z.enum(["none", "higgsfield", "openai"]).default("higgsfield"),
+  /** "openai" = the whole infographic (with its text) is drawn by OpenAI */
+  engine: z.enum(["template", "openai"]).default("template"),
   start: z.number().min(0).max(3600),
 });
 
@@ -27,8 +30,10 @@ export const POST = route(async (req: Request, ctx: { params: Promise<{ id: stri
   const comp = await prisma.videoComposition.findUniqueOrThrow({ where: { id }, select: { document: true } });
   const doc = comp.document as unknown as EditorDocument;
   if (!rateLimit(`infographic:${user.id}`, { capacity: 10, perMinute: 6 })) return json({ error: "Zbyt wiele żądań — spróbuj za chwilę." }, 429);
-  const imagePrompt = b.imagePrompt && higgsfieldConfigured() ? b.imagePrompt : null;
-  const payload = { compositionId: id, infographic: { ...b.infographic, note: b.infographic.note || null }, imagePrompt, width: doc.width, height: doc.height };
+  if (b.engine === "openai" && !openaiConfigured()) return json({ error: "Grafika z OpenAI wymaga klucza OPENAI_API_KEY w Railway → Variables." }, 503);
+  const illustration = b.illustration === "openai" ? (openaiConfigured() ? "openai" : "none") : b.illustration === "higgsfield" ? (higgsfieldConfigured() ? "higgsfield" : "none") : "none";
+  const imagePrompt = b.imagePrompt && illustration !== "none" ? b.imagePrompt : null;
+  const payload = { compositionId: id, infographic: { ...b.infographic, note: b.infographic.note || null }, imagePrompt, illustration, engine: b.engine, width: doc.width, height: doc.height };
   const key = crypto.createHash("sha256").update(JSON.stringify([payload, b.start.toFixed(1)])).digest("hex").slice(0, 40);
   const job = await enqueue("generate-infographic", payload, { idempotencyKey: `infographic:${key}`, maxAttempts: 3 });
   return json({ jobId: job.id, illustrated: !!imagePrompt }, 202);

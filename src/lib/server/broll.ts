@@ -1,4 +1,6 @@
 import fsp from "node:fs/promises";
+import { createCanvas, loadImage } from "@napi-rs/canvas";
+import { generateOpenAIImage, OpenAIImageError } from "./openai-images";
 import path from "node:path";
 import Anthropic from "@anthropic-ai/sdk";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
@@ -240,17 +242,73 @@ export async function generateBroll(jobId: string, p: { compositionId: string; p
  * background, then crisp text rendered with the theme fonts. An illustration failure does not
  * lose the infographic: it is rendered on the theme background and the warning is returned.
  */
+/** Prompt for a complete infographic drawn by OpenAI (text included), in the theme colours and category style. */
+export function openaiInfographicPrompt(info: InfographicData, theme: ThemeTokens, style: string | null) {
+  const c = (hex: string) => `${colorName(hex)} (${hex})`;
+  const rows = info.items.map((r, i) => `${i + 1}. big value «${r.value}» — label «${r.label}»`).join("\n");
+  return [
+    "Vertical 9:16 infographic for a short expert video on TikTok/Reels.",
+    "Language: Polish. Render every text exactly as written below, with correct Polish letters (ą ć ę ł ń ó ś ź ż); add no other words.",
+    `Headline: «${info.headline}»`,
+    `Rows:\n${rows}`,
+    info.note ? `Small footnote: «${info.note}»` : "",
+    "Layout: keep the top 22% and the bottom 32% of the image calm, without text (the video title and captions are placed there). Put the infographic card with all text in the middle band, large and legible on a phone.",
+    `Brand colours: background ${c(theme.background)}, card ${c(theme.primary)}, highlights ${c(theme.accent)} and ${c(theme.highlight)}, text ${c(theme.text)}.`,
+    "Clean, modern, premium design with simple icons; high contrast; no logos, no watermarks, no people's faces.",
+    style ? `Visual style of the illustration elements (as a still image): ${style}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
 export async function generateInfographic(
   jobId: string,
-  p: { compositionId: string; infographic: InfographicData; imagePrompt?: string | null; requestId?: string; width?: number; height?: number },
+  p: {
+    compositionId: string;
+    infographic: InfographicData;
+    imagePrompt?: string | null;
+    /** background illustration source (template engine) */
+    illustration?: "none" | "higgsfield" | "openai";
+    /** "template" = text rendered by the app; "openai" = the whole image drawn by OpenAI */
+    engine?: "template" | "openai";
+    requestId?: string;
+    width?: number;
+    height?: number;
+  },
 ) {
   const comp = await prisma.videoComposition.findUniqueOrThrow({ where: { id: p.compositionId }, include: { project: { include: { theme: true } } } });
   const theme = comp.project.theme ? themeFromRow(comp.project.theme) : (comp.document as unknown as { theme: ThemeTokens }).theme;
+  const W = p.width ?? 1080;
+  const H = p.height ?? 1920;
+  const illustration = p.illustration ?? (p.imagePrompt ? "higgsfield" : "none");
   const dir = await makeTempDir("infographic");
   try {
     let background: string | null = null;
     let warning: string | null = null;
-    if (p.imagePrompt && higgsfieldConfigured()) {
+    const out = path.join(dir, "infographic.png");
+    if (p.engine === "openai") {
+      // whole infographic by OpenAI, fitted (cover) to the video frame
+      const raw = path.join(dir, "openai.png");
+      await generateOpenAIImage(openaiInfographicPrompt(p.infographic, theme, await styleFor(comp, theme)), { width: W, height: H, out: raw });
+      const img = await loadImage(await fsp.readFile(raw));
+      const cv = createCanvas(W, H);
+      const ctx = cv.getContext("2d");
+      const sc = Math.max(W / img.width, H / img.height);
+      ctx.drawImage(img, (W - img.width * sc) / 2, (H - img.height * sc) / 2, img.width * sc, img.height * sc);
+      await fsp.writeFile(out, await cv.encode("png"));
+      return await storeInfographic(comp.projectId, out, W, H, p.infographic.headline, { engine: "openai" }, "Grafika z OpenAI — sprawdź pisownię tekstu przed eksportem.");
+    }
+    if (p.imagePrompt && illustration === "openai") {
+      try {
+        background = path.join(dir, "illustration.png");
+        await generateOpenAIImage(p.imagePrompt, { width: W, height: H, out: background, quality: "medium" });
+      } catch (e) {
+        if (e instanceof OpenAIImageError && e.retryable) throw e;
+        background = null;
+        warning = `Ilustracja OpenAI nie powstała (${(e as Error).message}) — infografika ma tło z motywu.`;
+      }
+    }
+    if (p.imagePrompt && illustration === "higgsfield" && higgsfieldConfigured()) {
       try {
         let requestId = p.requestId;
         if (!requestId) {
@@ -266,27 +324,18 @@ export async function generateInfographic(
         warning = `Ilustracja AI nie powstała (${(e as Error).message}) — infografika ma tło z motywu.`;
       }
     }
-    const out = path.join(dir, "infographic.png");
-    await renderInfographic(p.infographic, theme, out, { width: p.width, height: p.height, background });
-    const key = `projects/${comp.projectId}/uploads/${randomToken(12)}.png`;
-    const size = await putFile(key, out, "image/png");
-    const asset = await prisma.mediaAsset.create({
-      data: {
-        kind: "IMAGE",
-        projectId: comp.projectId,
-        storageKey: key,
-        mimeType: "image/png",
-        sizeBytes: size,
-        width: p.width ?? 1080,
-        height: p.height ?? 1920,
-        hasAudio: false,
-        hasVideo: true,
-        originalName: `Infografika: ${p.infographic.headline}`.slice(0, 120),
-        meta: { source: "infographic", illustrated: !!background },
-      },
-    });
-    return { assetId: asset.id, warning };
+    await renderInfographic(p.infographic, theme, out, { width: W, height: H, background });
+    return await storeInfographic(comp.projectId, out, W, H, p.infographic.headline, { engine: "template", illustration: background ? illustration : "none" }, warning);
   } finally {
     await fsp.rm(dir, { recursive: true, force: true });
   }
+}
+
+async function storeInfographic(projectId: string, file: string, W: number, H: number, headline: string, meta: Record<string, string>, warning: string | null) {
+  const key = `projects/${projectId}/uploads/${randomToken(12)}.png`;
+  const size = await putFile(key, file, "image/png");
+  const asset = await prisma.mediaAsset.create({
+    data: { kind: "IMAGE", projectId, storageKey: key, mimeType: "image/png", sizeBytes: size, width: W, height: H, hasAudio: false, hasVideo: true, originalName: `Infografika: ${headline}`.slice(0, 120), meta: { source: "infographic", ...meta } },
+  });
+  return { assetId: asset.id, warning };
 }

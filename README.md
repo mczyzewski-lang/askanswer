@@ -54,6 +54,8 @@ All variables are listed in `.env.example`.
 | `HIGGSFIELD_IMAGE_MODEL` | no | Text-to-image model for infographic illustrations, default `flux-pro/kontext/max/text-to-image` |
 | `ANTHROPIC_API_KEY` | no | Claude writes the B-roll proposals and prompts from the transcript; without it a basic heuristic is used |
 | `CLAUDE_MODEL` | no | Default `claude-opus-5-5` |
+| `OPENAI_API_KEY` | for OpenAI infographics | Background illustration or the whole infographic (with text) drawn by OpenAI; server-side only |
+| `OPENAI_IMAGE_MODEL` | no | Default `gpt-image-2` (e.g. `gpt-image-1.5`, `gpt-image-2.5-flare`) |
 | `ELEVENLABS_BASE_URL` | no | Default `https://api.elevenlabs.io` (the tests point it at a mock) |
 | `STORAGE_DRIVER` | no | `local` (default) or `s3` |
 | `STORAGE_LOCAL_DIR` | no | Private directory used by the local driver (default `./storage`) |

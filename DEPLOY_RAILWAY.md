@@ -66,6 +66,7 @@ STORAGE_LOCAL_DIR=/data
 RENDER_CONCURRENCY=2
 HIGGSFIELD_CREDENTIALS=TWOJ_KEY_ID:TWOJ_KEY_SECRET
 ANTHROPIC_API_KEY=twoj_klucz_anthropic
+OPENAI_API_KEY=twoj_klucz_openai
 ```
 
 Uwagi do zmiennych:
@@ -73,6 +74,7 @@ Uwagi do zmiennych:
 - **`ADMIN_PASSWORD`**: minimum 10 znaków. Hasło jest ustawiane tylko przy pierwszym starcie, więc późniejsza zmiana tej zmiennej nie zmieni hasła.
 - **`ELEVENLABS_VOICE_ID`**: domyślny głos lektora. Później zmienisz go w ustawieniach projektu, wybierając z listy głosów na Twoim koncie.
 - **`HIGGSFIELD_CREDENTIALS`**: klucz API Higgsfield w postaci `KEY_ID:KEY_SECRET` (oba fragmenty z panelu API Higgsfield, połączone dwukropkiem). Włącza generowanie scen wideo w zakładce **AI** w Studio. Domyślny model to Kling 3.0 Pro; inny ustawisz zmienną `HIGGSFIELD_MODEL` (np. `bytedance/seedance-2.5/text-to-video`) albo wybierzesz w Studio.
+- **`OPENAI_API_KEY`** (opcjonalnie): klucz z platform.openai.com → API keys (zaczyna się od `sk-`). Włącza w infografikach tło z OpenAI i tryb „Cała grafika z OpenAI”. Domyślny model to `gpt-image-2`; inny ustawisz w `OPENAI_IMAGE_MODEL`. Modele obrazów OpenAI mogą wymagać weryfikacji organizacji w panelu OpenAI.
 - **`ANTHROPIC_API_KEY`** (opcjonalnie): klucz z console.anthropic.com. Wtedy propozycje scen i prompty przygotowuje Claude na podstawie tego, co mówi ekspert. Bez klucza działa tryb podstawowy (prostsze propozycje).
 - **`Postgres`** w `${{Postgres.DATABASE_URL}}` to nazwa usługi bazy. Jeśli Railway nazwał ją inaczej, popraw tę nazwę.
 

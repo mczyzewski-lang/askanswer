@@ -19,6 +19,8 @@ const testEnv = {
   HIGGSFIELD_CREDENTIALS: "mock-key-id:mock-key-secret",
   HIGGSFIELD_BASE_URL: "http://127.0.0.1:4010/hf",
   ANTHROPIC_API_KEY: "",
+  OPENAI_API_KEY: "sk-mock-openai-key-0123456789",
+  OPENAI_BASE_URL: "http://127.0.0.1:4010/oai/v1",
   NEXT_TELEMETRY_DISABLED: "1",
 };
 Object.assign(process.env, testEnv);

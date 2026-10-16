@@ -19,6 +19,7 @@ import path from "node:path";
 const PORT = Number(process.env.MOCK_PORT ?? 4010);
 const ff = process.env.FFMPEG_PATH || "ffmpeg";
 let ttsCalls = 0;
+const oaiLog: Array<{ model: string; size: string; prompt: string }> = [];
 const ttsLog: Array<{ voiceId: string; model: string; text: string; settings: unknown }> = [];
 let sttCalls = 0;
 
@@ -133,6 +134,21 @@ const server = http.createServer(async (req, res) => {
   try {
     // ---- MOCK Higgsfield (text-to-video): POST /{model} → request_id; GET /requests/:id/status ----
     if (url.pathname.startsWith("/hf/")) return higgsfield(req, res, url.pathname.slice(3), json);
+    // ---- MOCK OpenAI images: POST /oai/v1/images/generations → base64 PNG; GET /oai/v1/models/:id ----
+    if (url.pathname.startsWith("/oai/")) {
+      if (!/^Bearer \S{20,}$/.test(String(req.headers.authorization ?? ""))) return json(401, { error: { message: "Incorrect API key provided" } });
+      if (req.method === "GET" && url.pathname.startsWith("/oai/v1/models/")) return json(200, { id: decodeURIComponent(url.pathname.split("/").pop() ?? ""), object: "model" });
+      if (req.method === "POST" && url.pathname === "/oai/v1/images/generations") {
+        const body = JSON.parse((await readBody(req)).toString() || "{}");
+        const m = /^(\d+)x(\d+)$/.exec(String(body.size));
+        if (!body.model || !body.prompt || !m || +m[1] % 16 || +m[2] % 16) return json(400, { error: { message: "invalid model/prompt/size" } });
+        oaiLog.push({ model: body.model, size: body.size, prompt: body.prompt });
+        const f = path.join(os.tmpdir(), `mock-oai-${process.pid}-${m[1]}x${m[2]}.png`);
+        if (!fs.existsSync(f)) execFileSync(ff, ["-v", "error", "-y", "-f", "lavfi", "-i", `testsrc2=size=${m[1]}x${m[2]}`, "-frames:v", "1", f]);
+        return json(200, { created: Math.floor(Date.now() / 1000), data: [{ b64_json: fs.readFileSync(f).toString("base64") }] });
+      }
+      return json(404, { error: { message: "unknown endpoint" } });
+    }
     if (!req.headers["xi-api-key"]) return json(401, { detail: "missing api key" });
     if (req.method === "POST" && url.pathname === "/v1/single-use-token/realtime_scribe") {
       return json(200, { token: `mock-rt-${Date.now().toString(36)}` });
@@ -140,7 +156,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && url.pathname === "/v1/voices") {
       return json(200, { voices: [{ voice_id: "mock-voice-pl", name: "Mock — Polski lektor", labels: { accent: "polish", gender: "female" } }, { voice_id: "mock-voice-2", name: "Mock — Drugi głos", labels: {} }] });
     }
-    if (req.method === "GET" && url.pathname === "/__stats") return json(200, { ttsCalls, sttCalls, tts: ttsLog.slice(-50) });
+    if (req.method === "GET" && url.pathname === "/__stats") return json(200, { ttsCalls, sttCalls, tts: ttsLog.slice(-50), openai: oaiLog.slice(-20) });
     if (req.method === "POST" && url.pathname.startsWith("/v1/text-to-speech/")) {
       const body = JSON.parse((await readBody(req)).toString());
       ttsCalls++;

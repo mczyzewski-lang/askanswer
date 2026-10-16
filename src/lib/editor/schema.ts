@@ -170,6 +170,8 @@ export const EditorDocumentSchema = z.object({
           status: z.enum(["suggested", "generating", "done", "failed"]),
           imagePrompt: z.string().max(3000).optional(),
           illustration: z.boolean().optional(),
+          illustrationSource: z.enum(["higgsfield", "openai"]).optional(),
+          engine: z.enum(["template", "openai"]).optional(),
           infographic: z
             .object({
               headline: z.string().max(200),

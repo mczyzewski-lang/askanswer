@@ -54,6 +54,15 @@ export const env = {
   get higgsfieldModel() {
     return str("HIGGSFIELD_MODEL", "kling-video/v3.0/pro/text-to-video");
   },
+  get openaiKey() {
+    return str("OPENAI_API_KEY").trim().replace(/^["']|["']$/g, "");
+  },
+  get openaiBaseUrl() {
+    return str("OPENAI_BASE_URL", "https://api.openai.com/v1").replace(/\/$/, "");
+  },
+  get openaiImageModel() {
+    return str("OPENAI_IMAGE_MODEL", "gpt-image-2");
+  },
   get anthropicConfigured() {
     return Boolean(str("ANTHROPIC_API_KEY") || str("ANTHROPIC_AUTH_TOKEN"));
   },
@@ -106,4 +115,8 @@ export function elevenLabsConfigured(): boolean {
 
 export function higgsfieldConfigured(): boolean {
   return env.higgsfieldCredentials.length >= 8;
+}
+
+export function openaiConfigured(): boolean {
+  return env.openaiKey.length >= 20;
 }

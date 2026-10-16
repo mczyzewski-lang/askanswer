@@ -259,6 +259,10 @@ export interface AiBrollItem {
   /** infographic: background illustration prompt and content */
   imagePrompt?: string;
   illustration?: boolean;
+  /** where the background illustration comes from (default Higgsfield) */
+  illustrationSource?: "higgsfield" | "openai";
+  /** "openai" = the whole infographic, text included, drawn by OpenAI */
+  engine?: "template" | "openai";
   infographic?: { headline: string; items: Array<{ value: string; label: string }>; note?: string | null };
   warning?: string | null;
   jobId?: string | null;

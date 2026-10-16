@@ -11,6 +11,7 @@ import { enhanceComposition } from "../lib/server/enhance";
 import { ElevenLabsError } from "../lib/server/elevenlabs";
 import { generateBroll, generateInfographic } from "../lib/server/broll";
 import { HiggsfieldError } from "../lib/server/higgsfield";
+import { OpenAIImageError } from "../lib/server/openai-images";
 import { cleanupTemp } from "../lib/server/storage";
 
 const workerId = `${os.hostname()}-${process.pid}`;
@@ -78,7 +79,7 @@ async function loop() {
     } catch (e) {
       stopBeat();
       const err = e as Error;
-      const retryable = !(err instanceof PermanentError) && !(err instanceof ElevenLabsError && !err.retryable) && !(err instanceof HiggsfieldError && !err.retryable);
+      const retryable = !(err instanceof PermanentError) && !(err instanceof ElevenLabsError && !err.retryable) && !(err instanceof HiggsfieldError && !err.retryable) && !(err instanceof OpenAIImageError && !err.retryable);
       const gaveUp = await failJob(job.id, err.message, retryable);
       console.error(`[worker] ✗ ${job.type} ${job.id}: ${err.message}${gaveUp ? " (giving up)" : " (will retry)"}`);
       if (gaveUp && job.type === "render") {

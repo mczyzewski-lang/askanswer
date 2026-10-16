@@ -12,6 +12,7 @@ import type { PlaybackEngine } from "./playback";
 export interface AiConfig {
   higgsfield: boolean;
   claude: boolean;
+  openai?: boolean;
   models: Array<{ id: string; label: string; description: string; durations: number[] }>;
   defaultModel: string;
 }
@@ -86,6 +87,14 @@ function infographicOverlay(item: AiBrollItem, asset: AssetInfo, total: number):
 }
 
 const isInfographic = (i: AiBrollItem) => i.kind === "infographic";
+
+/** Background of a template infographic: none, Higgsfield or OpenAI illustration (only providers that are set up). */
+function bgSource(item: AiBrollItem, ai: AiConfig): "none" | "higgsfield" | "openai" {
+  if (!item.illustration) return "none";
+  const want = item.illustrationSource ?? (ai.higgsfield ? "higgsfield" : "openai");
+  if (want === "openai") return ai.openai ? "openai" : ai.higgsfield ? "higgsfield" : "none";
+  return ai.higgsfield ? "higgsfield" : ai.openai ? "openai" : "none";
+}
 
 /** Starting infographic content for an item that has none (custom scenes, older proposals). */
 function defaultInfographic(item: AiBrollItem) {
@@ -162,11 +171,11 @@ export function AiPanel({ engine, compositionId, ai }: { engine: PlaybackEngine 
   const [engineUsed, setEngineUsed] = useState<string | null>(null);
   const [styled, setStyled] = useState<boolean | null>(null);
   const [custom, setCustom] = useState("");
-  const [check, setCheck] = useState<{ ok: boolean; message: string } | "busy" | null>(null);
+  const [check, setCheck] = useState<{ ok: boolean; message: string; openai?: { ok: boolean; message: string }; claude?: string } | "busy" | null>(null);
   const runCheck = async () => {
     setCheck("busy");
     try {
-      setCheck((await readJson(await fetch("/api/admin/ai/check", { method: "POST" }))) as { ok: boolean; message: string });
+      setCheck((await readJson(await fetch("/api/admin/ai/check", { method: "POST" }))) as { ok: boolean; message: string; openai?: { ok: boolean; message: string }; claude?: string });
     } catch (e) {
       setCheck({ ok: false, message: (e as Error).message });
     }
@@ -198,7 +207,7 @@ export function AiPanel({ engine, compositionId, ai }: { engine: PlaybackEngine 
         meta: {
           ...d.meta,
           // keep what is generating or already placed; replace old untouched proposals
-          aiBroll: [...items(d).filter((i) => i.status !== "suggested"), ...sugg.map((s) => ({ ...s, id: uid("ai"), duration: snap(s.duration ?? 5), model: modelInfo.id, illustration: ai.higgsfield, status: "suggested" as const }))],
+          aiBroll: [...items(d).filter((i) => i.status !== "suggested"), ...sugg.map((s) => ({ ...s, id: uid("ai"), duration: snap(s.duration ?? 5), model: modelInfo.id, illustration: ai.higgsfield || !!ai.openai, illustrationSource: ai.higgsfield ? ("higgsfield" as const) : ("openai" as const), status: "suggested" as const }))],
         },
       }));
     } catch (e) {
@@ -219,7 +228,9 @@ export function AiPanel({ engine, compositionId, ai }: { engine: PlaybackEngine 
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               infographic: { headline: info.headline, items: info.items.filter((r) => r.value.trim() || r.label.trim()), note: info.note || null },
-              imagePrompt: item.illustration && item.imagePrompt ? item.imagePrompt : null,
+              imagePrompt: bgSource(item, ai) !== "none" && item.imagePrompt ? item.imagePrompt : null,
+              illustration: bgSource(item, ai),
+              engine: item.engine === "openai" && ai.openai ? "openai" : "template",
               start: item.start,
             }),
           }),
@@ -270,12 +281,14 @@ export function AiPanel({ engine, compositionId, ai }: { engine: PlaybackEngine 
         ) : null}
         <div className="flex items-center gap-2">
           <SButton variant="ghost" className="h-7 px-2 text-[11.5px]" onClick={runCheck} disabled={check === "busy"} data-testid="ai-check">
-            {check === "busy" ? <Loader2 className="animate-spin" /> : null} Sprawdź połączenie z Higgsfield
+            {check === "busy" ? <Loader2 className="animate-spin" /> : null} Sprawdź połączenia (Higgsfield, OpenAI, Claude)
           </SButton>
         </div>
         {check && check !== "busy" ? (
           <p className={cn("rounded-lg px-3 py-2 text-[12px]", check.ok ? "bg-emerald-500/10 text-emerald-300" : "bg-red-500/10 text-red-300")} data-testid="ai-check-result">
             {check.message}
+            {"openai" in check && check.openai ? <span className="mt-1 block">{(check.openai as { message: string }).message}</span> : null}
+            {"claude" in check && check.claude ? <span className="mt-1 block">{String(check.claude)}</span> : null}
           </p>
         ) : null}
         <div>
@@ -390,13 +403,37 @@ function BrollCard({ item, ai, canGenerate, onSeek, onGenerate, onRemove }: { it
             </SButton>
           ) : null}
           <TextField value={content.note ?? ""} disabled={!editable} onChange={(e) => setInfo({ note: e.target.value })} aria-label="Przypis" placeholder="Przypis (opcjonalnie)" />
-          <label className={cn("flex items-center gap-2 text-[11.5px]", !ai.higgsfield && "opacity-50")}>
-            <input type="checkbox" checked={!!item.illustration && ai.higgsfield} disabled={!editable || !ai.higgsfield} onChange={(e) => patchItem(item.id, { illustration: e.target.checked })} />
-            Ilustracja AI w tle (Higgsfield, styl kategorii)
-          </label>
-          {item.illustration && ai.higgsfield ? (
-            <textarea value={item.imagePrompt ?? ""} disabled={!editable} onChange={(e) => patchItem(item.id, { imagePrompt: e.target.value })} rows={3} aria-label="Prompt ilustracji" className={area} />
-          ) : null}
+          <div className="space-y-1">
+            <p className="text-[11px] text-studio-muted">Wykonanie</p>
+            <Seg<"template" | "openai">
+              value={item.engine === "openai" && ai.openai ? "openai" : "template"}
+              onChange={(v) => editable && patchItem(item.id, { engine: v })}
+              options={[
+                ["template", "Szablon (ostry tekst)"],
+                ...(ai.openai ? ([["openai", "Cała grafika z OpenAI"]] as Array<["openai", string]>) : []),
+              ]}
+            />
+            {item.engine === "openai" && ai.openai ? (
+              <p className="text-[11px] leading-snug text-studio-muted">OpenAI rysuje całą infografikę z tym tekstem, w kolorach motywu i stylu kategorii. Sprawdź pisownię na gotowej grafice.</p>
+            ) : null}
+          </div>
+          {item.engine === "openai" && ai.openai ? null : (
+            <div className="space-y-1">
+              <p className="text-[11px] text-studio-muted">Tło infografiki</p>
+              <Seg<"none" | "higgsfield" | "openai">
+                value={bgSource(item, ai)}
+                onChange={(v) => editable && patchItem(item.id, v === "none" ? { illustration: false } : { illustration: true, illustrationSource: v })}
+                options={[
+                  ["none", "Motyw"],
+                  ...(ai.higgsfield ? ([["higgsfield", "Higgsfield"]] as Array<["higgsfield", string]>) : []),
+                  ...(ai.openai ? ([["openai", "OpenAI"]] as Array<["openai", string]>) : []),
+                ]}
+              />
+              {bgSource(item, ai) !== "none" ? (
+                <textarea value={item.imagePrompt ?? ""} disabled={!editable} onChange={(e) => patchItem(item.id, { imagePrompt: e.target.value })} rows={3} aria-label="Prompt ilustracji" className={area} />
+              ) : null}
+            </div>
+          )}
         </div>
       ) : (
         <textarea value={item.prompt} disabled={!editable} onChange={(e) => patchItem(item.id, { prompt: e.target.value })} rows={5} aria-label="Prompt sceny" className={area} />
@@ -432,7 +469,7 @@ function BrollCard({ item, ai, canGenerate, onSeek, onGenerate, onRemove }: { it
       {item.status === "generating" ? (
         <p className="flex items-center gap-1.5 text-[11.5px] text-sky-300">
           <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          {info ? (item.illustration && ai.higgsfield ? "Tworzę infografikę z ilustracją AI… zwykle do minuty." : "Tworzę infografikę…") : "Higgsfield generuje scenę… zwykle 1–4 min. Możesz dalej edytować."}
+          {info ? (item.engine === "openai" && ai.openai ? "OpenAI rysuje infografikę… zwykle do minuty." : bgSource(item, ai) !== "none" ? "Tworzę infografikę z ilustracją AI… zwykle do minuty." : "Tworzę infografikę…") : "Higgsfield generuje scenę… zwykle 1–4 min. Możesz dalej edytować."}
         </p>
       ) : null}
       {item.status === "done" ? (

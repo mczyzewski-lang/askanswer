@@ -83,6 +83,7 @@ test("studio: pauses, cuts, subtitles, zoom, theme, persistence and real MP4 exp
   await page.getByTestId("tab-ai").click();
   await page.getByTestId("ai-check").click();
   await expect(page.getByTestId("ai-check-result")).toContainText("Połączenie z Higgsfield działa");
+  await expect(page.getByTestId("ai-check-result")).toContainText("Połączenie z OpenAI działa");
   await page.getByTestId("ai-suggest").click();
   await expect(page.getByTestId("ai-item").first()).toBeVisible({ timeout: 30_000 });
   await page.getByTestId("ai-accept").first().click();
@@ -97,6 +98,20 @@ test("studio: pauses, cuts, subtitles, zoom, theme, persistence and real MP4 exp
   await custom.getByLabel("Opis 1").fill("średni czas sprawy w sądzie");
   await custom.getByTestId("ai-accept").click();
   await expect(custom.getByTestId("ai-done")).toBeVisible({ timeout: 90_000 });
+  // …and a whole infographic drawn by OpenAI (text in Polish, theme colours)
+  await page.getByPlaceholder(/Close-up of hands/).fill("Grafika OpenAI o terminach sądowych");
+  await page.getByRole("button", { name: "Dodaj propozycję" }).click();
+  const oai = page.getByTestId("ai-item").filter({ hasText: "Grafika OpenAI o terminach" });
+  await oai.getByRole("button", { name: "Infografika" }).click();
+  await oai.getByLabel("Nagłówek infografiki").fill("Ile trwa rozwód?");
+  await oai.getByRole("button", { name: "Cała grafika z OpenAI" }).click();
+  await oai.getByTestId("ai-accept").click();
+  await expect(oai.getByTestId("ai-done")).toBeVisible({ timeout: 90_000 });
+  const oaiStats = await (await request.get("http://127.0.0.1:4010/__stats", { headers: { "xi-api-key": "mock-key" } })).json();
+  const call = oaiStats.openai.at(-1);
+  expect(call.model).toBe("gpt-image-2");
+  expect(call.size).toBe("1024x1824");
+  expect(call.prompt).toContain("«Ile trwa rozwód?»");
   await waitSaved(page);
   const saved = await (await request.get(`/api/admin/compositions/${compId}`)).json();
   const doc = saved.document ?? saved.composition?.document;
