@@ -250,7 +250,12 @@ export async function suggestBroll(compositionId: string, segments: SpokenSegmen
   const style = await styleFor(comp, theme);
   const illustrate = openaiConfigured() || higgsfieldConfigured();
   // every visual carries the longer passage it expresses (verbatim from the transcript)
-  const withPassages = (list: BrollSuggestion[]) => list.map((x) => ({ ...x, passage: x.passage || passageFor(segments, x.start, x.end) }));
+  const withPassages = (list: BrollSuggestion[]) =>
+    list.map((x) => {
+      // at least the neighbouring sentences: a short passage alone carries too little of the thought
+      const around = passageFor(segments, x.start, x.end);
+      return { ...x, passage: (x.passage?.length ?? 0) >= around.length ? x.passage : around };
+    });
   const basic = () => withPassages(sanitize(suggestHeuristic(segments, theme, duration, style, illustrate), duration));
   if (env.anthropicConfigured) {
     try {

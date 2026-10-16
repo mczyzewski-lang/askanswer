@@ -52,7 +52,10 @@ test("studio: pauses, cuts, subtitles, zoom, theme, persistence and real MP4 exp
   const illu = (autoStats.openai as Array<{ prompt: string; size: string }>).filter((c) => c.prompt.includes("Full-screen vertical 9:16 illustration"));
   expect(illu.length).toBeGreaterThanOrEqual(placedAuto.length);
   expect(illu[0].prompt).toMatch(/Absolutely no text/);
-  expect(illu[0].prompt).toMatch(/What the expert says at this moment \(Polish\): «[^»]{40,}»/);
+  // the passage around the moment, verbatim from the transcript (its length depends on the fixture speech)
+  const said = /What the expert says at this moment \(Polish\): «([^»]+)»/.exec(illu[0].prompt)?.[1] ?? "";
+  const words = Number(info.transcriptWords ?? 0);
+  expect(said.split(/\s+/).length).toBeGreaterThanOrEqual(Math.min(words, 6));
 
   await login(page);
   await page.goto(`/studio/${compId}`);
