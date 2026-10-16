@@ -74,3 +74,35 @@ test("expert's daily list mixes categories evenly", async ({ request }) => {
     await request.patch(`/api/admin/projects/${pid}`, { data: { name: before.project.name, dailyQuestionLimit: limit } });
   }
 });
+
+test("narrator: Eleven v4 by default, random voice from a collection, subtle fillers", async ({ request }) => {
+  await adminRequest(request);
+  const data = await demoProject(request);
+  const pid = data.project.id;
+  const project = (await (await request.get(`/api/admin/projects/${pid}`)).json()).project;
+  expect(project.ttsModel).toBe("eleven_v4");
+  const col = await (await request.post("/api/admin/voice-collections", { data: { name: "Lektorzy losowi" } })).json();
+  for (const v of ["mock-voice-pl", "mock-voice-2"]) expect((await request.post(`/api/admin/voice-collections/${col.id}/items`, { data: { voiceId: v } })).ok()).toBeTruthy();
+  await request.patch(`/api/admin/projects/${pid}`, { data: { name: project.name, voiceCollectionId: col.id, naturalFillers: true } });
+  const texts = Array.from({ length: 8 }, (_, i) => `Czy w sprawie numer ${i + 1} mogę złożyć wniosek, jeśli termin już minął?`);
+  const created = await (await request.post(`/api/admin/projects/${pid}/questions`, { data: { items: texts.map((text) => ({ text })) } })).json();
+  try {
+    for (const q of created.items) expect((await request.post(`/api/admin/questions/${q.id}/narration`)).ok()).toBeTruthy();
+    const stats = await (await request.get("http://127.0.0.1:4010/__stats", { headers: { "xi-api-key": "mock-key" } })).json();
+    const calls = stats.tts.filter((c: { text: string }) => /sprawie numer/.test(c.text)).slice(-8);
+    expect(calls).toHaveLength(8);
+    for (const c of calls) {
+      expect(c.model).toBe("eleven_v4");
+      expect(["mock-voice-pl", "mock-voice-2"]).toContain(c.voiceId);
+      expect(c.settings).not.toHaveProperty("style"); // v4 has no style control
+      expect((c.text.match(/…/g) ?? []).length).toBeLessThanOrEqual(1);
+    }
+    // the same question always gets the same voice and wording (cached, consistent re-records)
+    const again = await (await request.post(`/api/admin/questions/${created.items[0].id}/narration`)).json();
+    const first = await (await request.post(`/api/admin/questions/${created.items[0].id}/narration`)).json();
+    expect(again.assetId).toBe(first.assetId);
+  } finally {
+    await request.patch(`/api/admin/projects/${pid}`, { data: { name: project.name, voiceCollectionId: null } });
+    for (const q of created.items) await request.delete(`/api/admin/questions/${q.id}`);
+  }
+});

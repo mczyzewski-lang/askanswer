@@ -46,7 +46,7 @@ All variables are listed in `.env.example`.
 | `ADMIN_EMAIL`, `ADMIN_PASSWORD` | seed | Admin account created by `npm run db:seed` |
 | `ELEVENLABS_API_KEY` | for narration and subtitles | Server-side only; never sent to the browser |
 | `ELEVENLABS_VOICE_ID` | no | Default narrator voice (each project can override it) |
-| `ELEVENLABS_TTS_MODEL` | no | Default `eleven_multilingual_v2` (Polish-capable) |
+| `ELEVENLABS_TTS_MODEL` | no | Default `eleven_v4` (projects can pick v4 Turbo, v3, Multilingual v2, Flash v2.5) |
 | `ELEVENLABS_STT_MODEL` | no | Default `scribe_v2` |
 | `ELEVENLABS_REALTIME_STT_MODEL` | no | Prompter voice following, default `scribe_v2_realtime` (the browser gets a single-use token, never the key) |
 | `HIGGSFIELD_CREDENTIALS` | for AI B-roll | `KEY_ID:KEY_SECRET`; Studio → AI generates clips with Higgsfield (server-side only) |

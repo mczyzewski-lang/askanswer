@@ -20,6 +20,8 @@ export const ProjectInput = z.object({
   themeId: z.string().nullable().optional(),
   voiceId: z.string().trim().max(100).nullable().optional(),
   ttsModel: z.string().trim().max(100).nullable().optional(),
+  voiceCollectionId: z.string().max(64).nullable().optional(),
+  naturalFillers: z.boolean().optional(),
   recordingMode: z.enum(["CONTINUOUS", "ANSWER_ONLY"]).optional(),
   sequential: z.boolean().optional(),
   format: z.enum(["ANSWERS", "PROMPTER"]).optional(),

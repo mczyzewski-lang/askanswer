@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import { TTS_MODELS } from "@/lib/tts-models";
 import { Loader2, RefreshCw } from "lucide-react";
 import type { AudioClip } from "@/lib/editor/types";
 import { VoicePicker } from "@/components/voice-picker";
@@ -57,10 +58,11 @@ export function NarrationVoiceChanger({ questionText, initialVoiceId }: { questi
       <Row label="Model">
         <Select value={model} onChange={setModel}>
           <option value="">Domyślny projektu</option>
-          <option value="eleven_multilingual_v2">multilingual v2 — najlepszy PL</option>
-          <option value="eleven_v3">eleven v3 — ekspresyjny</option>
-          <option value="eleven_flash_v2_5">flash v2.5 — szybki</option>
-          <option value="eleven_turbo_v2_5">turbo v2.5</option>
+          {TTS_MODELS.map((m) => (
+            <option key={m.id} value={m.id}>
+              {m.label}
+            </option>
+          ))}
         </Select>
       </Row>
       <SButton variant="primary" className="w-full" disabled={busy || !voice} onClick={regenerate}>

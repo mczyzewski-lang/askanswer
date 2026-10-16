@@ -58,7 +58,9 @@ export function ttsCacheKey(p: TtsParams): string {
 }
 
 export async function synthesize(p: TtsParams): Promise<Buffer> {
-  const supportsLanguageCode = /flash|turbo|v3/.test(p.modelId);
+  const supportsLanguageCode = /flash|turbo|v3|v4/.test(p.modelId);
+  // v3/v4 have no style or speaker-boost controls (and v3 only accepts stability 0 / 0.5 / 1)
+  const expressive = /eleven_v[34]/.test(p.modelId);
   const res = await call(`/v1/text-to-speech/${encodeURIComponent(p.voiceId)}?output_format=mp3_44100_128`, {
     method: "POST",
     headers: { "content-type": "application/json", accept: "audio/mpeg" },
@@ -66,7 +68,7 @@ export async function synthesize(p: TtsParams): Promise<Buffer> {
       text: p.text,
       model_id: p.modelId,
       ...(supportsLanguageCode ? { language_code: "pl" } : {}),
-      voice_settings: { stability: 0.5, similarity_boost: 0.75, style: 0.1, use_speaker_boost: true },
+      voice_settings: expressive ? { stability: 0.5, similarity_boost: 0.75 } : { stability: 0.5, similarity_boost: 0.75, style: 0.1, use_speaker_boost: true },
     }),
   });
   return Buffer.from(await res.arrayBuffer());

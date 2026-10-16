@@ -8,6 +8,7 @@ import type { PanelProps } from "./project-view";
 import { VoicePicker } from "@/components/voice-picker";
 import { ProjectExpertsCard } from "./project-experts-card";
 import { FORMAT_LABELS, type ProjectFormat } from "@/lib/project-terms";
+import { DEFAULT_TTS_MODEL, TTS_MODELS } from "@/lib/tts-models";
 
 interface VoiceList {
   configured: boolean;
@@ -31,11 +32,16 @@ export function SettingsPanel({ data, refresh, toast }: PanelProps) {
     questionSeconds: p.questionSeconds,
     voiceId: p.voiceId ?? "",
     ttsModel: p.ttsModel ?? "",
+    voiceCollectionId: p.voiceCollectionId ?? "",
+    naturalFillers: p.naturalFillers,
   });
   const [voices, setVoices] = useState<VoiceList | null>(null);
+  const [collections, setCollections] = useState<Array<{ id: string; name: string; items: unknown[] }>>([]);
   useEffect(() => {
     void api<VoiceList>("/api/admin/voices").then(setVoices, () => setVoices(null));
+    void api<Array<{ id: string; name: string; items: unknown[] }>>("/api/admin/voice-collections").then(setCollections, () => setCollections([]));
   }, []);
+  const [voiceSource, setVoiceSource] = useState<"fixed" | "collection">(p.voiceCollectionId ? "collection" : "fixed");
   const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) => setForm((f) => ({ ...f, [k]: v }));
 
   return (
@@ -112,20 +118,73 @@ export function SettingsPanel({ data, refresh, toast }: PanelProps) {
             <p className="text-sm text-red-600">{voices.error}</p>
           ) : null}
           <div className="space-y-1.5">
-            <Label>Głos</Label>
-            <VoicePicker value={form.voiceId} onChange={(v) => set("voiceId", v)} modelId={form.ttsModel || null} allowDefault />
-            <p className="text-xs text-muted">„Odsłuchaj” odtwarza krótką polską próbkę wybranym głosem i modelem.</p>
+            <Label>Głos lektora</Label>
+            <div className="flex gap-1 rounded-xl border border-line p-1 text-sm" role="radiogroup" aria-label="Źródło głosu">
+              {(
+                [
+                  ["fixed", "Jeden głos"],
+                  ["collection", "Losowo z kolekcji"],
+                ] as const
+              ).map(([k, l]) => (
+                <button
+                  key={k}
+                  type="button"
+                  role="radio"
+                  aria-checked={voiceSource === k}
+                  onClick={() => {
+                    setVoiceSource(k);
+                    if (k === "fixed") set("voiceCollectionId", "");
+                    else if (!form.voiceCollectionId && collections[0]) set("voiceCollectionId", collections[0].id);
+                  }}
+                  className={voiceSource === k ? "flex-1 rounded-lg bg-ink px-3 py-1.5 font-medium text-white" : "flex-1 rounded-lg px-3 py-1.5 text-muted hover:text-ink"}
+                >
+                  {l}
+                </button>
+              ))}
+            </div>
           </div>
+          {voiceSource === "fixed" ? (
+            <div className="space-y-1.5">
+              <VoicePicker value={form.voiceId} onChange={(v) => set("voiceId", v)} modelId={form.ttsModel || null} allowDefault />
+              <p className="text-xs text-muted">„Odsłuchaj” odtwarza krótką polską próbkę wybranym głosem i modelem.</p>
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              <NativeSelect aria-label="Kolekcja głosów" value={form.voiceCollectionId} onChange={(e) => set("voiceCollectionId", e.target.value)}>
+                {collections.length === 0 ? <option value="">Brak kolekcji — utwórz ją w zakładce Głosy</option> : null}
+                {collections.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name} ({c.items.length} {c.items.length === 1 ? "głos" : c.items.length < 5 ? "głosy" : "głosów"})
+                  </option>
+                ))}
+              </NativeSelect>
+              <p className="text-xs text-muted">
+                Każde pytanie dostaje losowy głos z kolekcji — na stałe, więc ponowne nagranie i podgląd mają ten sam głos. Kolekcje tworzysz w zakładce{" "}
+                <Link href="/admin/voices" className="font-medium text-brand">
+                  Głosy
+                </Link>
+                .
+              </p>
+            </div>
+          )}
           <div className="space-y-1.5">
             <Label htmlFor="s-model">Model TTS</Label>
             <NativeSelect id="s-model" value={form.ttsModel} onChange={(e) => set("ttsModel", e.target.value)}>
-              <option value="">Domyślny ({voices?.model ?? "eleven_multilingual_v2"})</option>
-              <option value="eleven_multilingual_v2">eleven_multilingual_v2 — najlepsza jakość PL</option>
-              <option value="eleven_flash_v2_5">eleven_flash_v2_5 — szybki, niski koszt</option>
-              <option value="eleven_turbo_v2_5">eleven_turbo_v2_5</option>
-              <option value="eleven_v3">eleven_v3</option>
+              <option value="">Domyślny serwera ({voices?.model ?? DEFAULT_TTS_MODEL})</option>
+              {TTS_MODELS.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.label}
+                </option>
+              ))}
             </NativeSelect>
           </div>
+          <label className="flex items-center justify-between gap-4 text-sm">
+            <span>
+              Naturalne wtrącenia lektora
+              <span className="block text-xs text-muted">Czasem „yyy…”, „mm…” lub „ech…” przed pytaniem albo w środku — delikatnie, przy części pytań. Tekst na wideo zostaje bez zmian.</span>
+            </span>
+            <Switch checked={form.naturalFillers} onCheckedChange={(v) => set("naturalFillers", v)} aria-label="Naturalne wtrącenia lektora" />
+          </label>
           <p className="text-xs text-muted">Wygenerowane nagrania pytań są zapisywane w pamięci podręcznej — ten sam tekst i głos nie są syntezowane ponownie.</p>
         </Card>
         ) : null}
@@ -145,7 +204,7 @@ export function SettingsPanel({ data, refresh, toast }: PanelProps) {
               try {
                 await api(`/api/admin/projects/${p.id}`, {
                   method: "PATCH",
-                  json: { ...form, description: form.description || null, voiceId: form.voiceId || null, ttsModel: form.ttsModel || null },
+                  json: { ...form, description: form.description || null, voiceId: form.voiceId || null, ttsModel: form.ttsModel || null, voiceCollectionId: voiceSource === "collection" ? form.voiceCollectionId || null : null },
                 });
                 toast("Zapisano ustawienia");
                 refresh();

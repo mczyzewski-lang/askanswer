@@ -123,6 +123,8 @@ export async function projectData(id: string) {
       questionSeconds: p.questionSeconds,
       voiceId: p.voiceId,
       ttsModel: p.ttsModel,
+      voiceCollectionId: p.voiceCollectionId,
+      naturalFillers: p.naturalFillers,
       themeId: p.themeId,
       themeName: p.theme?.name ?? null,
       theme: p.theme,

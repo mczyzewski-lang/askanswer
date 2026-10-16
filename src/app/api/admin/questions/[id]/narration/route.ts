@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/server/db";
 import { requireAdmin } from "@/lib/server/auth";
 import { json, route } from "@/lib/server/http";
-import { ensureNarration } from "@/lib/server/narration";
+import { questionNarration } from "@/lib/server/narration";
 import { elevenLabsConfigured } from "@/lib/server/env";
 import { signedUrl } from "@/lib/server/storage";
 import { ElevenLabsError } from "@/lib/server/elevenlabs";
@@ -15,7 +15,7 @@ export const POST = route(async (_req: Request, ctx: { params: Promise<{ id: str
   if (!rateLimit(`tts-admin:${user.id}`, { capacity: 30, perMinute: 30 })) return json({ error: "Zbyt wiele żądań" }, 429);
   const q = await prisma.question.findUniqueOrThrow({ where: { id }, include: { project: true } });
   try {
-    const assetId = await ensureNarration(q.text, { voiceId: q.project.voiceId, modelId: q.project.ttsModel, projectId: q.projectId });
+    const assetId = await questionNarration(q.project, q);
     const a = await prisma.mediaAsset.findUniqueOrThrow({ where: { id: assetId } });
     return json({ assetId, url: await signedUrl(a.storageKey), duration: a.durationSec });
   } catch (e) {

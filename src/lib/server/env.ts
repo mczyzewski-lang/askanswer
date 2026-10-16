@@ -30,7 +30,7 @@ export const env = {
     return str("ELEVENLABS_VOICE_ID", "pNInz6obpgDQGcFmaJgB");
   },
   get ttsModel() {
-    return str("ELEVENLABS_TTS_MODEL", "eleven_multilingual_v2");
+    return str("ELEVENLABS_TTS_MODEL", "eleven_v4");
   },
   get realtimeSttModel() {
     return str("ELEVENLABS_REALTIME_STT_MODEL", "scribe_v2_realtime");

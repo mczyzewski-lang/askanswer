@@ -19,6 +19,7 @@ import path from "node:path";
 const PORT = Number(process.env.MOCK_PORT ?? 4010);
 const ff = process.env.FFMPEG_PATH || "ffmpeg";
 let ttsCalls = 0;
+const ttsLog: Array<{ voiceId: string; model: string; text: string; settings: unknown }> = [];
 let sttCalls = 0;
 
 function readBody(req: http.IncomingMessage): Promise<Buffer> {
@@ -139,10 +140,11 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && url.pathname === "/v1/voices") {
       return json(200, { voices: [{ voice_id: "mock-voice-pl", name: "Mock — Polski lektor", labels: { accent: "polish", gender: "female" } }, { voice_id: "mock-voice-2", name: "Mock — Drugi głos", labels: {} }] });
     }
-    if (req.method === "GET" && url.pathname === "/__stats") return json(200, { ttsCalls, sttCalls });
+    if (req.method === "GET" && url.pathname === "/__stats") return json(200, { ttsCalls, sttCalls, tts: ttsLog.slice(-50) });
     if (req.method === "POST" && url.pathname.startsWith("/v1/text-to-speech/")) {
       const body = JSON.parse((await readBody(req)).toString());
       ttsCalls++;
+      ttsLog.push({ voiceId: decodeURIComponent(url.pathname.split("/").pop() ?? ""), model: body.model_id, text: body.text, settings: body.voice_settings });
       const seconds = Math.min(6, Math.max(1.2, String(body.text ?? "").length / 16));
       res.writeHead(200, { "content-type": "audio/mpeg" });
       return res.end(tone(seconds));

@@ -2,7 +2,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/server/db";
 import { requireAdmin } from "@/lib/server/auth";
 import { json, route } from "@/lib/server/http";
-import { ensureNarration } from "@/lib/server/narration";
+import { questionNarration } from "@/lib/server/narration";
 import { assetInfo } from "@/lib/server/assets";
 import { elevenLabsConfigured } from "@/lib/server/env";
 import { ElevenLabsError } from "@/lib/server/elevenlabs";
@@ -19,7 +19,8 @@ export const POST = route(async (req: Request, ctx: { params: Promise<{ id: stri
   const t = text ?? comp.question?.text;
   if (!t) return json({ error: "Brak tekstu pytania" }, 400);
   try {
-    const assetId = await ensureNarration(t, { voiceId, modelId: modelId || comp.project.ttsModel, projectId: comp.projectId });
+    // an explicitly chosen voice in the Studio wins over the project collection
+    const assetId = await questionNarration(comp.project, { id: comp.question?.id ?? comp.id, text: t }, { voiceId, modelId });
     return json(await assetInfo(assetId));
   } catch (e) {
     if (e instanceof ElevenLabsError) return json({ error: e.message }, 502);

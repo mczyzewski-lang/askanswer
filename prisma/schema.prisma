@@ -146,7 +146,12 @@ model Project {
   themeId            String?
   theme              Theme?             @relation(fields: [themeId], references: [id], onDelete: SetNull)
   voiceId            String?
-  ttsModel           String?
+  ttsModel           String?            @default("eleven_v4")
+  /// narrator voice drawn at random (stable per question) from this collection instead of voiceId
+  voiceCollectionId  String?
+  voiceCollection    VoiceCollection?   @relation(fields: [voiceCollectionId], references: [id], onDelete: SetNull)
+  /// subtle "yyy… / mm…" hesitations in the narrated question
+  naturalFillers     Boolean            @default(true)
   recordingMode      RecordingMode      @default(CONTINUOUS)
   sequential         Boolean            @default(false)
   /// questions on the expert's list per day, mixed evenly across categories (0 = whole list)
@@ -416,6 +421,7 @@ model VoiceCollection {
   order     Int                   @default(0)
   createdAt DateTime              @default(now())
   items     VoiceCollectionItem[]
+  projects  Project[]
 }
 
 model VoiceCollectionItem {

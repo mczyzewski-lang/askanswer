@@ -6,6 +6,7 @@ import { putBuffer, makeTempDir } from "./storage";
 import { probe } from "./ffmpeg";
 import fsp from "node:fs/promises";
 import path from "node:path";
+import { stablePick, withFillers } from "../fillers";
 
 const inflight = new Map<string, Promise<string>>();
 
@@ -57,4 +58,30 @@ export async function ensureNarration(text: string, opts: { voiceId?: string | n
   } finally {
     inflight.delete(hash);
   }
+}
+
+interface NarrationProject {
+  id: string;
+  voiceId: string | null;
+  ttsModel: string | null;
+  voiceCollectionId: string | null;
+  naturalFillers: boolean;
+}
+
+/** The narrator voice for a question: a stable random pick from the project's collection, else the project voice. */
+export async function narratorVoice(project: NarrationProject, questionId: string): Promise<string | null> {
+  if (project.voiceCollectionId) {
+    const items = await prisma.voiceCollectionItem.findMany({ where: { collectionId: project.voiceCollectionId }, orderBy: [{ order: "asc" }, { createdAt: "asc" }], select: { voiceId: true } });
+    const pick = stablePick(items.map((i) => i.voiceId), `${project.id}:${questionId}`);
+    if (pick) return pick;
+  }
+  return project.voiceId;
+}
+
+/** Narration of a question with the project's settings (voice/collection, model, natural hesitations). */
+export async function questionNarration(project: NarrationProject, question: { id: string; text: string }, override: { voiceId?: string | null; modelId?: string | null; text?: string } = {}) {
+  const base = override.text ?? question.text;
+  const text = project.naturalFillers ? withFillers(base, question.id) : base;
+  const voiceId = override.voiceId || (await narratorVoice(project, question.id));
+  return ensureNarration(text, { voiceId, modelId: override.modelId || project.ttsModel, projectId: project.id });
 }
