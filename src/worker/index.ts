@@ -9,7 +9,7 @@ import { processTake, transcribeTake, PermanentError } from "../lib/server/pipel
 import { runRender } from "../lib/server/render-job";
 import { enhanceComposition } from "../lib/server/enhance";
 import { ElevenLabsError } from "../lib/server/elevenlabs";
-import { generateBroll } from "../lib/server/broll";
+import { generateBroll, generateInfographic } from "../lib/server/broll";
 import { HiggsfieldError } from "../lib/server/higgsfield";
 
 const workerId = `${os.hostname()}-${process.pid}`;
@@ -28,6 +28,8 @@ async function handle(job: { id: string; type: string; payload: unknown }) {
       return { map: await enhanceComposition(p.compositionId, p.mode as "podcast" | "isolator", (p.strength as "natural" | "podcast" | "radio") ?? "podcast") };
     case "generate-broll":
       return generateBroll(job.id, job.payload as Parameters<typeof generateBroll>[1]);
+    case "generate-infographic":
+      return generateInfographic(job.id, job.payload as Parameters<typeof generateInfographic>[1]);
     default:
       throw new PermanentError(`Unknown job type ${job.type}`);
   }

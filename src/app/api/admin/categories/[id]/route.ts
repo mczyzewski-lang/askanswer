@@ -8,8 +8,16 @@ type Ctx = { params: Promise<{ id: string }> };
 export const PATCH = route(async (req: Request, ctx: Ctx) => {
   await requireAdmin();
   const { id } = await ctx.params;
-  const { name } = z.object({ name: z.string().trim().min(1).max(80) }).parse(await req.json());
-  return json(await prisma.category.update({ where: { id }, data: { name } }));
+  const data = z
+    .object({
+      name: z.string().trim().min(1).max(80).optional(),
+      // AI scene style for this category; empty = use the theme's default
+      brollStyle: z.string().trim().max(4000).nullable().optional().transform((v) => (v === "" ? null : v)),
+      expertId: z.string().max(64).nullable().optional(),
+    })
+    .parse(await req.json());
+  if (data.expertId && !(await prisma.expert.findUnique({ where: { id: data.expertId }, select: { id: true } }))) return json({ error: "Nie znaleziono eksperta" }, 404);
+  return json(await prisma.category.update({ where: { id }, data }));
 });
 
 export const DELETE = route(async (_req: Request, ctx: Ctx) => {

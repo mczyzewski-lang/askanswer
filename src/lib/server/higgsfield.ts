@@ -58,6 +58,7 @@ interface StatusResponse {
   status: "queued" | "in_progress" | "completed" | "failed" | "nsfw" | string;
   request_id: string;
   video?: { url: string } | null;
+  images?: Array<{ url: string }> | null;
   error?: string | null;
   detail?: unknown;
 }
@@ -102,9 +103,20 @@ export async function submitVideo(prompt: string, modelId: string, duration: num
   return r.request_id;
 }
 
-/** Poll until the clip is ready; returns the video URL. */
-export async function waitForVideo(requestId: string, opts: { timeoutMs?: number; onStatus?: (s: string) => void } = {}): Promise<string> {
-  const deadline = Date.now() + (opts.timeoutMs ?? 20 * 60_000);
+/** Text-to-image model used for infographic illustrations (README of the official SDK). */
+export function imageModelId() {
+  return process.env.HIGGSFIELD_IMAGE_MODEL || "flux-pro/kontext/max/text-to-image";
+}
+
+export async function submitImage(prompt: string, aspectRatio: "9:16" | "16:9" | "1:1"): Promise<string> {
+  const r = await call(`/${imageModelId()}`, { method: "POST", body: JSON.stringify({ prompt, aspect_ratio: aspectRatio, safety_tolerance: 2 }) });
+  if (!r?.request_id) throw new HiggsfieldError("Higgsfield nie zwrócił identyfikatora zadania", true);
+  return r.request_id;
+}
+
+/** Poll until the request is done; returns the finished response (video and/or images). */
+async function waitForResult(requestId: string, timeoutMs: number): Promise<StatusResponse> {
+  const deadline = Date.now() + timeoutMs;
   let delay = 3000;
   for (;;) {
     const r = await call(`/requests/${encodeURIComponent(requestId)}/status`).catch((e: HiggsfieldError) => {
@@ -112,11 +124,7 @@ export async function waitForVideo(requestId: string, opts: { timeoutMs?: number
       throw e;
     });
     if (r) {
-      opts.onStatus?.(r.status);
-      if (r.status === "completed") {
-        if (!r.video?.url) throw new HiggsfieldError("Higgsfield zakończył zadanie, ale nie zwrócił wideo", false);
-        return r.video.url;
-      }
+      if (r.status === "completed") return r;
       if (r.status === "nsfw") throw new HiggsfieldError("Higgsfield odrzucił prompt przez moderację treści (kredyty zwrócone). Zmień opis sceny.", false);
       if (r.status === "failed") throw new HiggsfieldError(`Generowanie w Higgsfield nie powiodło się (kredyty zwrócone)${r.error ? `: ${r.error}` : ""}`, false);
     }
@@ -126,8 +134,23 @@ export async function waitForVideo(requestId: string, opts: { timeoutMs?: number
   }
 }
 
-export async function downloadVideo(url: string, dest: string) {
+/** Poll until the clip is ready; returns the video URL. */
+export async function waitForVideo(requestId: string, timeoutMs = 20 * 60_000): Promise<string> {
+  const r = await waitForResult(requestId, timeoutMs);
+  if (!r.video?.url) throw new HiggsfieldError("Higgsfield zakończył zadanie, ale nie zwrócił wideo", false);
+  return r.video.url;
+}
+
+/** Poll until the image is ready; returns the image URL. */
+export async function waitForImage(requestId: string, timeoutMs = 10 * 60_000): Promise<string> {
+  const r = await waitForResult(requestId, timeoutMs);
+  const url = r.images?.[0]?.url;
+  if (!url) throw new HiggsfieldError("Higgsfield zakończył zadanie, ale nie zwrócił obrazu", false);
+  return url;
+}
+
+export async function downloadFile(url: string, dest: string) {
   const res = await fetch(url, { signal: AbortSignal.timeout(5 * 60_000) });
-  if (!res.ok || !res.body) throw new HiggsfieldError(`Nie udało się pobrać wideo z Higgsfield (HTTP ${res.status})`, true);
+  if (!res.ok || !res.body) throw new HiggsfieldError(`Nie udało się pobrać pliku z Higgsfield (HTTP ${res.status})`, true);
   await pipeline(Readable.fromWeb(res.body as import("node:stream/web").ReadableStream), fs.createWriteStream(dest));
 }

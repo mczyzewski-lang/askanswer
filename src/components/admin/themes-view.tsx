@@ -6,6 +6,7 @@ import { Button, Card, EmptyState, Input, Label, NativeSelect, useToast } from "
 import { api, cn } from "@/lib/utils";
 import { FONT_FAMILIES, THEME_PRESETS, themeFromRow } from "@/lib/themes";
 import { ThemePreview } from "./theme-preview";
+import { AiStyleCard, type StyleCategory } from "./ai-style-card";
 
 interface ThemeRow {
   id: string;
@@ -22,7 +23,8 @@ interface ThemeRow {
   labelFont: string;
   logoAssetId: string | null;
   logoUrl: string | null;
-  projects: Array<{ id: string; name: string }>;
+  brollStyle: string | null;
+  projects: Array<{ id: string; name: string; categories: StyleCategory[] }>;
 }
 
 const COLORS: Array<[keyof ThemeRow, string, string]> = [
@@ -34,7 +36,7 @@ const COLORS: Array<[keyof ThemeRow, string, string]> = [
   ["backgroundColor", "Tło", "plansze i przerwy"],
 ];
 
-export function ThemesView({ themes, initialId }: { themes: ThemeRow[]; initialId: string | null }) {
+export function ThemesView({ themes, experts, initialId }: { themes: ThemeRow[]; experts: Array<{ id: string; name: string }>; initialId: string | null }) {
   const router = useRouter();
   const { toast, toastNode } = useToast();
   const [id, setId] = useState(initialId);
@@ -214,6 +216,7 @@ export function ThemesView({ themes, initialId }: { themes: ThemeRow[]; initialI
               Anuluj zmiany
             </Button>
           </div>
+          <AiStyleCard themeId={current.id} themeStyle={current.brollStyle} tokens={tokens} projects={current.projects} experts={experts} toast={toast} />
         </div>
         <div className="lg:sticky lg:top-20 lg:self-start">
           <p className="mb-2 text-xs font-medium text-muted">Podgląd na żywo</p>

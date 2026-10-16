@@ -35,3 +35,19 @@ test("bulk paste adds several questions", async ({ page }) => {
   await expect(page.getByText("Dodano 2 pytania")).toBeVisible();
   await expect(page.getByText("Czym jest znak słowno-graficzny?")).toBeVisible();
 });
+
+test("theme settings: AI scene style per category with theme colours", async ({ page }) => {
+  await login(page);
+  await page.goto("/admin/themes");
+  const card = page.getByTestId("ai-style-card");
+  await expect(card).toBeVisible();
+  const row = card.getByTestId("category-style").first();
+  await row.getByRole("button", { name: "Wstaw styl tuszu" }).click();
+  await row.getByRole("button", { name: "Zapisz" }).click();
+  await expect(page.getByText(/Zapisano styl kategorii/)).toBeVisible();
+  await page.reload();
+  await expect(page.getByTestId("category-style").first().getByRole("textbox")).toHaveValue(/Hand-drawn editorial ink animation/);
+  // the theme default shows the style with this theme's colours filled in
+  await card.getByRole("button", { name: "Rysunek tuszem (editorial)" }).click();
+  await expect(card.locator("p", { hasText: "Po podstawieniu kolorów" })).toContainText(/deep \w+/);
+});

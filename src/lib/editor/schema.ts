@@ -157,6 +157,7 @@ export const EditorDocumentSchema = z.object({
       .array(
         z.object({
           id: z.string().max(64),
+          kind: z.enum(["video", "infographic"]).optional(),
           start: num.min(0),
           end: num.min(0),
           quote: z.string().max(2000),
@@ -166,6 +167,16 @@ export const EditorDocumentSchema = z.object({
           duration: num.min(1).max(30),
           model: z.string().max(120),
           status: z.enum(["suggested", "generating", "done", "failed"]),
+          imagePrompt: z.string().max(3000).optional(),
+          illustration: z.boolean().optional(),
+          infographic: z
+            .object({
+              headline: z.string().max(200),
+              items: z.array(z.object({ value: z.string().max(60), label: z.string().max(240) })).max(6),
+              note: z.string().max(300).nullable().optional(),
+            })
+            .optional(),
+          warning: z.string().max(1000).nullable().optional(),
           jobId: z.string().max(64).nullable().optional(),
           overlayId: z.string().max(64).nullable().optional(),
           error: z.string().max(1000).nullable().optional(),

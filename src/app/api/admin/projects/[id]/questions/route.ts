@@ -25,9 +25,12 @@ export const POST = route(async (req: Request, ctx: { params: Promise<{ id: stri
         });
         categoryId = c.id;
       }
+      let defaultExpertId: string | null = null;
       if (categoryId) {
         const ok = await tx.category.findFirst({ where: { id: categoryId, projectId } });
         if (!ok) categoryId = null;
+        // a category can name its usual expert (e.g. Growth → Marek Czyżewski)
+        defaultExpertId = ok?.expertId ?? null;
       }
       // thematic subcategory (e.g. "[dzieci]" when pasting), always inside the chosen category
       let subcategoryId: string | null = null;
@@ -45,7 +48,7 @@ export const POST = route(async (req: Request, ctx: { params: Promise<{ id: stri
       }
       out.push(
         await tx.question.create({
-          data: { projectId, text: it.text, categoryId, subcategoryId, instructions: it.instructions ?? null, maxDurationSec: it.maxDurationSec ?? null, expertId: it.expertId ?? null, order: order++ },
+          data: { projectId, text: it.text, categoryId, subcategoryId, instructions: it.instructions ?? null, maxDurationSec: it.maxDurationSec ?? null, expertId: it.expertId ?? defaultExpertId, order: order++ },
         }),
       );
     }

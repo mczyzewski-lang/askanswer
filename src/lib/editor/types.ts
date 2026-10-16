@@ -243,6 +243,8 @@ export interface EditorDocument {
 
 export interface AiBrollItem {
   id: string;
+  /** full-screen AI video scene, or an infographic image (absent = video, for older documents) */
+  kind?: "video" | "infographic";
   start: number; // timeline seconds
   end: number;
   quote: string;
@@ -252,6 +254,11 @@ export interface AiBrollItem {
   duration: number; // seconds requested from the video model
   model: string;
   status: "suggested" | "generating" | "done" | "failed";
+  /** infographic: background illustration prompt and content */
+  imagePrompt?: string;
+  illustration?: boolean;
+  infographic?: { headline: string; items: Array<{ value: string; label: string }>; note?: string | null };
+  warning?: string | null;
   jobId?: string | null;
   overlayId?: string | null;
   error?: string | null;

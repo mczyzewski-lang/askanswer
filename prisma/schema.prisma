@@ -97,6 +97,7 @@ model Expert {
   questions   Question[]
   invitations Invitation[]
   recordings  Recording[]
+  categories  Category[]
 }
 
 model Theme {
@@ -114,6 +115,8 @@ model Theme {
   subtitleFont    String    @default("Inter")
   labelFont       String    @default("Inter")
   logoAssetId     String?
+  /// default visual style for AI scenes (Higgsfield); categories can override it
+  brollStyle      String?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
   projects        Project[]
@@ -147,6 +150,11 @@ model Category {
   projectId String
   project   Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
   order     Int        @default(0)
+  /// visual style prompt for AI scenes of this category ({{paper}}, {{ink}}, {{accent}}… = theme colours)
+  brollStyle String?
+  /// default expert for new questions in this category
+  expertId  String?
+  expert    Expert?    @relation(fields: [expertId], references: [id], onDelete: SetNull)
   questions Question[]
   subcategories Subcategory[]
 

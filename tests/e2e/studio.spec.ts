@@ -85,10 +85,21 @@ test("studio: pauses, cuts, subtitles, zoom, theme, persistence and real MP4 exp
   await expect(page.getByTestId("ai-item").first()).toBeVisible({ timeout: 30_000 });
   await page.getByTestId("ai-accept").first().click();
   await expect(page.getByTestId("ai-done")).toBeVisible({ timeout: 120_000 });
+  // …and an infographic (custom proposal switched to "Infografika", AI illustration from the image mock)
+  await page.getByPlaceholder(/Close-up of hands/).fill("Hands holding a calendar, slow push-in");
+  await page.getByRole("button", { name: "Dodaj propozycję" }).click();
+  const custom = page.getByTestId("ai-item").filter({ hasText: "Hands holding a calendar" });
+  await custom.getByRole("button", { name: "Infografika" }).click();
+  await custom.getByLabel("Nagłówek infografiki").fill("Trzy kroki do rozwodu");
+  await custom.getByLabel("Wartość 1").fill("6 mies.");
+  await custom.getByLabel("Opis 1").fill("średni czas sprawy w sądzie");
+  await custom.getByTestId("ai-accept").click();
+  await expect(custom.getByTestId("ai-done")).toBeVisible({ timeout: 90_000 });
   await waitSaved(page);
   const saved = await (await request.get(`/api/admin/compositions/${compId}`)).json();
   const doc = saved.document ?? saved.composition?.document;
   expect(doc.overlays.some((o: { kind: string; w: number }) => o.kind === "video" && o.w === 1)).toBeTruthy();
+  expect(doc.overlays.some((o: { kind: string; w: number; name: string }) => o.kind === "image" && o.w === 1 && o.name.includes("Trzy kroki"))).toBeTruthy();
 
   // Test 12 — theme accent/highlight change propagates (stored on the project theme)
   await page.getByTestId("tab-theme").click();

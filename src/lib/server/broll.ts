@@ -3,11 +3,17 @@ import path from "node:path";
 import Anthropic from "@anthropic-ai/sdk";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { z } from "zod";
+import { Prisma } from "@prisma/client";
 import { prisma } from "./db";
 import { env } from "./env";
 import { makeTempDir } from "./storage";
 import { ingestOverlayVideo } from "./uploads";
-import { downloadVideo, submitVideo, waitForVideo, videoModel } from "./higgsfield";
+import { downloadFile, HiggsfieldError, submitImage, submitVideo, waitForImage, waitForVideo, videoModel } from "./higgsfield";
+import { renderInfographic, type InfographicData } from "./infographic";
+import { colorName, fillStyle } from "../broll-style";
+import { putFile } from "./storage";
+import { randomToken } from "./crypto";
+import { higgsfieldConfigured } from "./env";
 import type { ThemeTokens } from "../editor/types";
 import { themeFromRow } from "../themes";
 
@@ -18,51 +24,83 @@ export interface SpokenSegment {
   text: string;
 }
 
+export interface InfographicContent {
+  headline: string;
+  items: Array<{ value: string; label: string }>;
+  note: string | null;
+}
+
 export interface BrollSuggestion {
   id: string;
+  kind: "video" | "infographic";
   start: number;
   end: number;
+  duration: number;
   quote: string;
   title: string;
   reason: string;
+  /** full text-to-video prompt (style + shots) */
   prompt: string;
+  /** text-to-image prompt for the infographic's background illustration */
+  imagePrompt: string;
+  infographic: InfographicContent;
 }
+
+type RawSuggestion = Omit<BrollSuggestion, "id">;
 
 const SuggestionSchema = z.object({
   suggestions: z
     .array(
       z.object({
-        start: z.number().describe("Timeline second where the B-roll starts"),
-        end: z.number().describe("Timeline second where the B-roll ends"),
+        kind: z.enum(["video", "infographic"]).describe("What fits this moment better"),
+        start: z.number().describe("Timeline second where the visual starts"),
+        end: z.number().describe("Timeline second where the visual ends"),
+        duration: z.number().describe("Video clip length to generate: 5 or 10 seconds"),
         quote: z.string().describe("The exact words the expert says during this moment (Polish, verbatim from the transcript)"),
-        title: z.string().describe("Short Polish label for the scene, max 6 words"),
+        title: z.string().describe("Short Polish label for the moment, max 6 words"),
         reason: z.string().describe("One Polish sentence: why this visual helps the viewer at this moment"),
-        prompt: z.string().describe("English text-to-video prompt for the scene"),
+        scene: z.string().describe("English: the video SHOT LIST (or, without a style, the full video prompt) for this moment"),
+        illustration: z.string().describe("English: one still illustration for the infographic background, no text"),
+        infographic: z.object({
+          headline: z.string().describe("Polish headline, max 7 words"),
+          items: z.array(z.object({ value: z.string().describe("Short key figure or step, e.g. '6–12 mies.', '50%', 'Krok 1'"), label: z.string().describe("Polish, max 9 words") })).describe("2 to 4 rows"),
+          note: z.string().nullable().describe("Optional short Polish footnote, or null"),
+        }),
       }),
     )
-    .describe("3 to 5 B-roll moments in chronological order, never overlapping"),
+    .describe("3 to 6 moments in chronological order, never overlapping"),
 });
 
-const SYSTEM = `You are a video editor for short vertical (9:16) expert videos on TikTok, Reels and Shorts.
-An expert (often a lawyer or other professional) answers a viewer's question to camera in Polish.
-Your job: pick the moments where a short AI-generated B-roll clip, shown full-screen over the expert while their voice continues, would make the answer clearer or more engaging, and write a text-to-video prompt for each.
+function system(style: string | null) {
+  return `You are a video editor for short vertical (9:16) expert videos on TikTok, Reels and Shorts.
+An expert (often a lawyer, therapist or business coach) answers a viewer's question to camera in Polish.
+Pick the moments where a full-screen visual over the expert (their voice continues) makes the answer clearer: either an AI-generated video scene or an infographic.
 
 Choosing moments:
-- Propose 3 to 5 moments. Each lasts 3 to 8 seconds and must lie inside the transcript's time range, aligned with sentence boundaries where possible.
-- Pick concrete, visualisable ideas: objects, places, documents, situations, metaphors for what is being said. Skip greetings, the first 2 seconds and the final call to action.
-- Never overlap moments and keep at least 4 seconds of the expert on camera between them.
+- Propose 3 to 6 moments, each 4 to 10 seconds, inside the transcript's time range and aligned with sentence boundaries. Skip greetings, the first 2 seconds and the final call to action.
+- Never overlap; keep at least 4 seconds of the expert on camera between moments.
+- kind "infographic" when the expert gives numbers, deadlines, amounts, steps, lists, conditions or comparisons; kind "video" for situations, emotions, places and metaphors. Alternate the kinds where the content allows, and include at least one infographic when anything list-like or numeric is said.
+- duration: 5 for moments up to ~6 s, otherwise 10.
+- Fill BOTH the video fields and the infographic fields for every moment (the editor may switch the kind).
 
-Writing each prompt (English, 40-90 words):
-- Describe one continuous cinematic shot: subject, setting, action, camera movement (slow push-in, gentle dolly, rack focus...), lighting and mood.
-- Vertical 9:16 composition with the main subject in the centre third (the top and bottom of the frame carry captions).
-- Colour grade it in the brand palette you are given, describing the colours in words (e.g. "deep navy shadows with warm amber highlights"), not as hex codes.
-- No readable text, letters, numbers, logos, watermarks or UI. No people speaking to camera and no recognisable real people. Prefer hands, silhouettes, objects and environments over faces.
-- Keep it realistic, calm and premium: this is professional content, not an advert.
+Infographic (Polish, crisp and factual, only what the expert actually said — never invent figures): a short headline and 2-4 rows of key value + label.
 
-Write "title" and "reason" in Polish. "quote" must be copied verbatim from the transcript.`;
+${
+  style
+    ? `Video SCENE = a shot list only (the visual style is prepended automatically, do not repeat it). Use this exact format, one shot per ~2 seconds, covering exactly the clip duration:
+"SHOT 1 0.0-2.0s WIDE front angle: <what happens, motion from frame one>. HARD CUT. SHOT 2 2.0-4.0s CU side angle: <...>. HARD CUT. ..."
+Vary shot sizes (WIDE, MEDIUM, CU, ECU) and angles (front, side, low, high, top-down). Tell a small visual story of what the expert says through objects, rooms, hands and faceless silhouettes; recurring objects across shots. No readable text, no talking characters.
+The visual style used for this video: ${style}
+ILLUSTRATION = one still frame in the same style, a calm scene related to the moment, uncluttered in the centre.`
+    : `Video SCENE = a complete English text-to-video prompt (40-90 words): one continuous cinematic shot with subject, setting, action, camera movement, lighting and mood; vertical 9:16 with the subject in the centre third; colour grade in the brand palette described in words; no readable text, logos or people speaking to camera; prefer hands, silhouettes, objects and environments.
+ILLUSTRATION = a matching still image prompt, calm and uncluttered in the centre.`
+}
+
+Write "title", "reason" and the infographic in Polish. "quote" must be copied verbatim from the transcript.`;
+}
 
 function themeLine(t: ThemeTokens) {
-  return `Brand palette — primary ${t.primary}, accent ${t.accent}, secondary ${t.secondary}, highlight ${t.highlight}, background ${t.background}.`;
+  return `Brand palette — primary ${colorName(t.primary)}, accent ${colorName(t.accent)}, secondary ${colorName(t.secondary)}, highlight ${colorName(t.highlight)}, background ${colorName(t.background)}.`;
 }
 
 function transcriptText(segments: SpokenSegment[]) {
@@ -70,7 +108,7 @@ function transcriptText(segments: SpokenSegment[]) {
 }
 
 /** Clamp, sort and de-overlap model output so the UI can trust it. */
-export function sanitize(list: Array<Omit<BrollSuggestion, "id">>, duration: number): BrollSuggestion[] {
+export function sanitize(list: RawSuggestion[], duration: number): BrollSuggestion[] {
   const out: BrollSuggestion[] = [];
   for (const s of [...list].sort((a, b) => a.start - b.start)) {
     let start = Math.max(0, Math.min(s.start, duration - 1));
@@ -78,13 +116,29 @@ export function sanitize(list: Array<Omit<BrollSuggestion, "id">>, duration: num
     const prev = out[out.length - 1];
     if (prev && start < prev.end + 1) start = prev.end + 1;
     if (end - start > 10) end = start + 10;
-    if (end - start < 1.5 || !s.prompt.trim()) continue;
-    out.push({ ...s, id: `sug_${out.length}_${Math.round(start * 10)}`, start: Math.round(start * 10) / 10, end: Math.round(end * 10) / 10 });
+    if (end - start < 1.5 || (!s.prompt.trim() && !s.infographic.items.length)) continue;
+    const items = s.infographic.items.filter((i) => i.value.trim() || i.label.trim()).slice(0, 4);
+    out.push({
+      ...s,
+      kind: s.kind === "infographic" && items.length ? "infographic" : "video",
+      duration: s.duration > 7 ? 10 : 5,
+      infographic: { headline: s.infographic.headline.slice(0, 120), items, note: s.infographic.note?.trim() || null },
+      id: `sug_${out.length}_${Math.round(start * 10)}`,
+      start: Math.round(start * 10) / 10,
+      end: Math.round(end * 10) / 10,
+    });
   }
   return out.slice(0, 6);
 }
 
-async function suggestWithClaude(question: string, segments: SpokenSegment[], theme: ThemeTokens, duration: number) {
+function compose(style: string | null, scene: string) {
+  return style ? `${style} ${scene.trim()}` : scene.trim();
+}
+function composeImage(style: string | null, scene: string) {
+  return style ? `${style} Single still illustration frame, vertical 9:16, calm uncluttered centre. ${scene.trim()}` : `${scene.trim()} Vertical 9:16 still image, calm uncluttered centre, no text, no logos.`;
+}
+
+async function suggestWithClaude(question: string, segments: SpokenSegment[], theme: ThemeTokens, duration: number, style: string | null): Promise<RawSuggestion[]> {
   const client = new Anthropic();
   const response = await client.beta.messages.parse({
     model: env.claudeModel,
@@ -93,7 +147,7 @@ async function suggestWithClaude(question: string, segments: SpokenSegment[], th
     // server-side refusal fallback: if the model declines, the API reroutes the same request
     betas: ["server-side-fallback-2026-07-01"],
     fallbacks: "default",
-    system: SYSTEM,
+    system: system(style),
     messages: [
       {
         role: "user",
@@ -103,11 +157,11 @@ async function suggestWithClaude(question: string, segments: SpokenSegment[], th
   });
   if (response.stop_reason === "refusal") throw new Error("Model odmówił przygotowania propozycji dla tego nagrania.");
   if (!response.parsed_output) throw new Error("Nie udało się odczytać propozycji AI — spróbuj ponownie.");
-  return response.parsed_output.suggestions;
+  return response.parsed_output.suggestions.map(({ scene, illustration, ...s }) => ({ ...s, prompt: compose(style, scene), imagePrompt: composeImage(style, illustration) }));
 }
 
-/** Without an Anthropic key: pick the longest sentences, spread out, with a templated prompt. */
-function suggestHeuristic(segments: SpokenSegment[], theme: ThemeTokens, duration: number) {
+/** Without an Anthropic key: longest sentences, spread out, alternating video / infographic, templated prompts. */
+function suggestHeuristic(segments: SpokenSegment[], theme: ThemeTokens, duration: number, style: string | null): RawSuggestion[] {
   const inside = segments.filter((s) => s.t0 > 1 && s.t1 < duration - 0.5);
   const wordy = inside.filter((s) => s.text.split(/\s+/).length >= 4);
   const usable = wordy.length ? wordy : inside.length ? inside : segments;
@@ -117,14 +171,33 @@ function suggestHeuristic(segments: SpokenSegment[], theme: ThemeTokens, duratio
     if (picked.some((p) => Math.abs(p.t0 - s.t0) < 6)) continue;
     picked.push(s);
   }
-  return picked.map((s) => ({
-    start: s.t0,
-    end: Math.min(s.t1, s.t0 + 6),
-    quote: s.text,
-    title: s.text.split(/\s+/).slice(0, 5).join(" "),
-    reason: "Ilustracja tego, o czym ekspert mówi w tym zdaniu (tryb podstawowy — dodaj ANTHROPIC_API_KEY, aby AI dobierało sceny).",
-    prompt: `Cinematic vertical 9:16 B-roll shot, slow push-in, soft natural light, shallow depth of field, calm premium mood. Visual metaphor for: "${s.text}". Colour grade inspired by the brand palette ${theme.primary} and ${theme.accent}. No text, no logos, no faces looking at camera.`,
-  }));
+  picked.sort((a, b) => a.t0 - b.t0);
+  return picked.map((s, i) => {
+    const words = s.text.split(/\s+/);
+    const parts = s.text.split(/[,;:]| i | oraz /).map((x) => x.trim()).filter((x) => x.length > 2).slice(0, 3);
+    const scene = style
+      ? `SHOT 1 0.0-2.0s WIDE front angle: a quiet room that illustrates "${s.text}", motion from frame one. HARD CUT. SHOT 2 2.0-4.0s CU side angle: hands and objects related to it. HARD CUT. SHOT 3 4.0-5.0s MEDIUM high angle: a faceless silhouette reacts.`
+      : `Cinematic vertical 9:16 B-roll shot, slow push-in, soft natural light, shallow depth of field, calm premium mood. Visual metaphor for: "${s.text}". Colour grade in ${colorName(theme.primary)} and ${colorName(theme.accent)} tones. No text, no logos, no faces looking at camera.`;
+    return {
+      kind: i % 2 === 1 ? ("infographic" as const) : ("video" as const),
+      start: s.t0,
+      end: Math.min(s.t1, s.t0 + 6),
+      duration: 5,
+      quote: s.text,
+      title: words.slice(0, 5).join(" "),
+      reason: "Ilustracja tego, o czym ekspert mówi w tym zdaniu (tryb podstawowy — dodaj ANTHROPIC_API_KEY, aby AI dobierało sceny i treść infografik).",
+      prompt: compose(style, scene),
+      imagePrompt: composeImage(style, `A calm scene that illustrates: "${s.text}"`),
+      infographic: { headline: words.slice(0, 6).join(" "), items: (parts.length ? parts : [s.text]).map((p, k) => ({ value: `${k + 1}.`, label: p.split(/\s+/).slice(0, 9).join(" ") })), note: null },
+    };
+  });
+}
+
+/** Visual style for this video: the question's category, else the theme default; colours filled from the theme. */
+async function styleFor(comp: { questionId: string | null; project: { theme: { brollStyle: string | null } | null } }, theme: ThemeTokens) {
+  const q = comp.questionId ? await prisma.question.findUnique({ where: { id: comp.questionId }, select: { category: { select: { brollStyle: true } } } }) : null;
+  const raw = q?.category?.brollStyle ?? comp.project.theme?.brollStyle ?? null;
+  return raw?.trim() ? fillStyle(raw.trim(), theme) : null;
 }
 
 export async function suggestBroll(compositionId: string, segments: SpokenSegment[], duration: number) {
@@ -133,8 +206,9 @@ export async function suggestBroll(compositionId: string, segments: SpokenSegmen
   const theme = comp.project.theme ? themeFromRow(comp.project.theme) : doc.theme;
   if (!segments.length) throw new Error("Brak transkrypcji — najpierw wygeneruj napisy, żeby AI wiedziało, o czym mówi ekspert.");
   const question = comp.question?.text ?? doc.meta?.questionText ?? "";
-  const raw = env.anthropicConfigured ? await suggestWithClaude(question, segments, theme, duration) : suggestHeuristic(segments, theme, duration);
-  return { suggestions: sanitize(raw, duration), engine: env.anthropicConfigured ? "claude" : "basic" };
+  const style = await styleFor(comp, theme);
+  const raw = env.anthropicConfigured ? await suggestWithClaude(question, segments, theme, duration, style) : suggestHeuristic(segments, theme, duration, style);
+  return { suggestions: sanitize(raw, duration), engine: env.anthropicConfigured ? "claude" : "basic", styled: !!style };
 }
 
 /**
@@ -153,9 +227,65 @@ export async function generateBroll(jobId: string, p: { compositionId: string; p
   const dir = await makeTempDir("broll");
   try {
     const file = path.join(dir, "higgsfield.mp4");
-    await downloadVideo(url, file);
+    await downloadFile(url, file);
     const asset = await ingestOverlayVideo(file, dir, comp.projectId, `AI: ${p.prompt.slice(0, 60)}`, { source: "higgsfield", model: videoModel(p.model).id, requestId });
     return { assetId: asset.id, requestId };
+  } finally {
+    await fsp.rm(dir, { recursive: true, force: true });
+  }
+}
+
+/**
+ * Worker: infographic image — optional Higgsfield illustration in the category style as the
+ * background, then crisp text rendered with the theme fonts. An illustration failure does not
+ * lose the infographic: it is rendered on the theme background and the warning is returned.
+ */
+export async function generateInfographic(
+  jobId: string,
+  p: { compositionId: string; infographic: InfographicData; imagePrompt?: string | null; requestId?: string; width?: number; height?: number },
+) {
+  const comp = await prisma.videoComposition.findUniqueOrThrow({ where: { id: p.compositionId }, include: { project: { include: { theme: true } } } });
+  const theme = comp.project.theme ? themeFromRow(comp.project.theme) : (comp.document as unknown as { theme: ThemeTokens }).theme;
+  const dir = await makeTempDir("infographic");
+  try {
+    let background: string | null = null;
+    let warning: string | null = null;
+    if (p.imagePrompt && higgsfieldConfigured()) {
+      try {
+        let requestId = p.requestId;
+        if (!requestId) {
+          const aspect = (p.width ?? 1080) >= (p.height ?? 1920) ? ((p.width ?? 1080) === (p.height ?? 1920) ? "1:1" : "16:9") : "9:16";
+          requestId = await submitImage(p.imagePrompt, aspect);
+          await prisma.job.update({ where: { id: jobId }, data: { payload: { ...p, requestId } as unknown as Prisma.InputJsonValue } });
+        }
+        background = path.join(dir, "illustration");
+        await downloadFile(await waitForImage(requestId), background);
+      } catch (e) {
+        if (e instanceof HiggsfieldError && e.retryable) throw e; // transient: retry the job (resumes the same request)
+        background = null;
+        warning = `Ilustracja AI nie powstała (${(e as Error).message}) — infografika ma tło z motywu.`;
+      }
+    }
+    const out = path.join(dir, "infographic.png");
+    await renderInfographic(p.infographic, theme, out, { width: p.width, height: p.height, background });
+    const key = `projects/${comp.projectId}/uploads/${randomToken(12)}.png`;
+    const size = await putFile(key, out, "image/png");
+    const asset = await prisma.mediaAsset.create({
+      data: {
+        kind: "IMAGE",
+        projectId: comp.projectId,
+        storageKey: key,
+        mimeType: "image/png",
+        sizeBytes: size,
+        width: p.width ?? 1080,
+        height: p.height ?? 1920,
+        hasAudio: false,
+        hasVideo: true,
+        originalName: `Infografika: ${p.infographic.headline}`.slice(0, 120),
+        meta: { source: "infographic", illustrated: !!background },
+      },
+    });
+    return { assetId: asset.id, warning };
   } finally {
     await fsp.rm(dir, { recursive: true, force: true });
   }
