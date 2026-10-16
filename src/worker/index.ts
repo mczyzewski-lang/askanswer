@@ -34,6 +34,10 @@ async function handle(job: { id: string; type: string; payload: unknown }) {
       const { autoVisuals } = await import("../lib/server/auto-visuals");
       return autoVisuals(job.id, p.compositionId, Boolean((job.payload as { force?: boolean }).force));
     }
+    case "auto-polish": {
+      const { autoPolish } = await import("../lib/server/auto-polish");
+      return autoPolish(p.compositionId);
+    }
     case "segment-asset": {
       const { segmentAsset } = await import("../lib/server/segment");
       return segmentAsset(p.assetId);

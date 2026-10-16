@@ -35,6 +35,10 @@ export function SettingsPanel({ data, refresh, toast }: PanelProps) {
     voiceCollectionId: p.voiceCollectionId ?? "",
     naturalFillers: p.naturalFillers,
     autoInfographics: p.autoInfographics,
+    autoBlur: p.autoBlur,
+    autoVoice: p.autoVoice,
+    autoZooms: p.autoZooms,
+    autoImageEnhance: p.autoImageEnhance,
   });
   const [voices, setVoices] = useState<VoiceList | null>(null);
   const [collections, setCollections] = useState<Array<{ id: string; name: string; items: unknown[] }>>([]);
@@ -94,6 +98,28 @@ export function SettingsPanel({ data, refresh, toast }: PanelProps) {
           </span>
           <Switch checked={form.autoInfographics} onCheckedChange={(v) => set("autoInfographics", v)} />
         </label>
+        <div className="space-y-3 rounded-xl border border-line p-3" data-testid="auto-polish-settings">
+          <p className="text-sm font-medium">
+            Automatycznie w każdym nowym filmie
+            <span className="block text-xs font-normal text-muted">Od razu po wgraniu i przetworzeniu nagrania, w tle — tak jak ilustracje. Każdą rzecz można potem zmienić lub wyłączyć w Studio.</span>
+          </p>
+          {(
+            [
+              ["autoBlur", "Rozmyte tło za ekspertem", "Sylwetka jest wykrywana automatycznie; w Studio możesz wyłączyć rozmycie dla wybranych klipów."],
+              ["autoVoice", "Głos: podcast + ElevenLabs", "Usunięcie szumów i pogłosu (ElevenLabs Voice Isolator) + mastering „podcast”."],
+              ["autoZooms", "Dynamiczne zbliżenia", "Płynne przybliżenia na granicach zdań, jak w montażu reelsów."],
+              ["autoImageEnhance", "Magiczna poprawa obrazu", "Automatyczna jasność, kontrast i kolory — jak „Popraw” w iMovie."],
+            ] as const
+          ).map(([k, label, hint]) => (
+            <label key={k} className="flex items-center justify-between gap-4 text-sm">
+              <span>
+                {label}
+                <span className="block text-xs text-muted">{hint}</span>
+              </span>
+              <Switch checked={form[k]} onCheckedChange={(v) => set(k, v)} aria-label={label} />
+            </label>
+          ))}
+        </div>
         <div className="space-y-1.5">
           <Label htmlFor="s-daily">Pytań na dziś na liście eksperta</Label>
           <Input id="s-daily" type="number" min={0} max={500} className="w-28" value={form.dailyQuestionLimit} onChange={(e) => set("dailyQuestionLimit", Math.max(0, Math.round(Number(e.target.value) || 0)))} />

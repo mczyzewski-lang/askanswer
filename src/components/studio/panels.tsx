@@ -1,10 +1,11 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Check, CircleDot, Combine, ImagePlus, Loader2, Music2, Plus, RefreshCw, Scissors, Sparkles, Split, Square, Trash2, Undo2, X } from "lucide-react";
-import type { AssetInfo, AudioClip, EditorDocument, Overlay, TextOverlay } from "@/lib/editor/types";
+import type { AssetInfo, AudioClip, AVClip, EditorDocument, Overlay, TextOverlay } from "@/lib/editor/types";
 import {
   applyAcceptedPauses,
   applyPause,
+  clipEnd,
   docDuration,
   formatShort,
   mergeSegmentWithNext,
@@ -112,9 +113,12 @@ function BackgroundBlurSection({ meta }: { meta: StudioMeta }) {
   // masks from before the edge refinement: recompute them once in the background (old one stays until then)
   const outdated = blur > 0 && doc.clips.some((c) => assets[c.assetId]?.maskUrl && (assets[c.assetId]?.maskVersion ?? 1) < MASK_VERSION);
   const upgrading = useRef(false);
-  const setBlur = (v: number) => apply((d) => ({ ...d, clips: d.clips.map((c) => ({ ...c, background: v > 0 ? { blur: v } : undefined })) }));
+  // whole recording: all clips; the strength slider keeps the clips switched off in the list below off
+  const setBlur = (v: number, onlyBlurred = false) =>
+    apply((d) => ({ ...d, clips: d.clips.map((c) => (onlyBlurred && !(c.background?.blur ?? 0) ? c : { ...c, background: v > 0 ? { blur: v } : undefined })) }));
 
-  const enable = async () => {
+  /** `keep`: only (re)compute the masks — the per-clip blur choices stay as they are */
+  const enable = async (keep = false) => {
     setErr(null);
     setBusy(true);
     try {
@@ -135,7 +139,7 @@ function BackgroundBlurSection({ meta }: { meta: StudioMeta }) {
         if (Date.now() - started > 15 * 60_000) throw new Error("Analiza trwa zbyt długo — spróbuj ponownie później.");
       }
       useStudio.getState().addAssets(data.assets);
-      setBlur(strength);
+      if (!keep) setBlur(strength);
     } catch (e) {
       setErr((e as Error).message);
     } finally {
@@ -146,7 +150,7 @@ function BackgroundBlurSection({ meta }: { meta: StudioMeta }) {
   useEffect(() => {
     if (!outdated || upgrading.current) return;
     upgrading.current = true;
-    void enable();
+    void enable(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [outdated]);
 
@@ -175,17 +179,88 @@ function BackgroundBlurSection({ meta }: { meta: StudioMeta }) {
               step={5}
               onChange={(v) => {
                 setStrength(v);
-                setBlur(v);
+                setBlur(v, true);
               }}
             />
           </Row>
           {!masksReady ? <p className="text-[11.5px] text-amber-300">Maska jeszcze się wczytuje…</p> : null}
+          {doc.clips.length > 1 ? (
+            <div className="space-y-1" data-testid="blur-clips">
+              <p className="text-[11.5px] text-studio-muted">Rozmycie w klipach (nagranie jest pocięte):</p>
+              {[...doc.clips]
+                .sort((a, b) => a.start - b.start)
+                .map((c, i) => (
+                  <label key={c.id} className="flex items-center justify-between gap-2 rounded-md border border-studio-line px-2 py-1 text-[12px]">
+                    <span>
+                      Klip {i + 1} <span className="text-studio-muted">· {formatShort(c.start)}–{formatShort(clipEnd(c))}</span>
+                    </span>
+                    <input
+                      type="checkbox"
+                      aria-label={`Rozmycie w klipie ${i + 1}`}
+                      checked={(c.background?.blur ?? 0) > 0}
+                      onChange={(e) => apply((d) => ({ ...d, clips: d.clips.map((x) => (x.id === c.id ? { ...x, background: e.target.checked ? { blur: strength } : undefined } : x)) }), `blur-clip:${c.id}`)}
+                    />
+                  </label>
+                ))}
+            </div>
+          ) : null}
           <p className="text-[11.5px] text-studio-muted" data-testid="blur-on">
             Ekspert zostaje ostry, tło jest rozmyte — w podglądzie i w eksporcie.
           </p>
         </>
       ) : (
         <p className="text-[11.5px] text-studio-muted">Rozmywa pokój za ekspertem, żeby wyglądało jak z obiektywu z małą głębią ostrości. Sylwetka jest wykrywana automatycznie (raz na nagranie).</p>
+      )}
+      {err ? <p className="text-[12px] text-red-300">{err}</p> : null}
+    </Section>
+  );
+}
+
+/** "Magic" picture correction like iMovie's Enhance: brightness / contrast / colour measured from the recording. */
+function PictureLookSection({ meta }: { meta: StudioMeta }) {
+  const doc = useStudio((s) => s.doc)!;
+  const apply = useStudio((s) => s.apply);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const on = doc.clips.some((c) => !!c.look);
+  const toggle = async (enable: boolean) => {
+    setErr(null);
+    if (!enable) return apply((d) => ({ ...d, clips: d.clips.map((c) => ({ ...c, look: undefined })) }), "look");
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/admin/compositions/${meta.compositionId}/look`, { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? `Błąd HTTP ${res.status}`);
+      const looks = data.looks as Record<string, AVClip["look"]>;
+      apply((d) => ({ ...d, clips: d.clips.map((c) => ({ ...c, look: looks[c.assetId] ?? c.look })) }), "look");
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const look = doc.clips.find((c) => c.look)?.look;
+  return (
+    <Section title="Poprawa obrazu">
+      <Seg<"off" | "on">
+        value={on ? "on" : "off"}
+        onChange={(v) => void toggle(v === "on")}
+        options={[
+          ["off", "Oryginał"],
+          ["on", "Magiczna poprawa"],
+        ]}
+      />
+      {busy ? (
+        <p className="flex items-center gap-1.5 text-[11.5px] text-sky-300">
+          <Loader2 className="h-3.5 w-3.5 animate-spin" /> Analizuję jasność i kolory nagrania…
+        </p>
+      ) : null}
+      {on && look ? (
+        <p className="text-[11.5px] text-studio-muted" data-testid="look-on">
+          Jasność {Math.round(look.brightness * 100)}% · kontrast {Math.round(look.contrast * 100)}% · nasycenie {Math.round(look.saturate * 100)}% — dobrane automatycznie, jak „Popraw” w iMovie. Plik nagrania się nie zmienia.
+        </p>
+      ) : (
+        <p className="text-[11.5px] text-studio-muted">Automatycznie rozjaśnia ciemne nagrania, dodaje kontrastu i ożywia wyblakłe kolory. Działa w podglądzie i w eksporcie.</p>
       )}
       {err ? <p className="text-[12px] text-red-300">{err}</p> : null}
     </Section>
@@ -200,6 +275,7 @@ export function TakesPanel({ meta, onReplaceTake }: { meta: StudioMeta; onReplac
   return (
     <div>
       <BackgroundBlurSection meta={meta} />
+      <PictureLookSection meta={meta} />
       <Section title="Nagrania">
         {meta.takes.length === 0 ? <p className="text-[12.5px] text-studio-muted">Brak innych ujęć.</p> : null}
         {meta.takes.map((t) => {

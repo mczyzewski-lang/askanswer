@@ -1,4 +1,5 @@
 "use client";
+import { useRef } from "react";
 import { Trash2 } from "lucide-react";
 import { DEFAULT_BUBBLE, type AudioClip, type AVClip, type CalloutOverlay, type EditorDocument, type FaceBubble, type ImageOverlay, type Overlay, type ShapeOverlay, type TextOverlay, type VideoOverlay, type ZoomEffect } from "@/lib/editor/types";
 import { NarrationVoiceChanger } from "./narration";
@@ -302,8 +303,9 @@ function ImageProps({ o }: { o: ImageOverlay }) {
           </label>
           {b ? (
             <>
-              <p className="text-[11px] leading-snug text-studio-muted">Przeciągnij kółko na podglądzie, a białym uchwytem zmień jego wielkość.</p>
-              <Row label="Miejsce">
+              <p className="text-[11px] leading-snug text-studio-muted">Przeciągnij kółko na podglądzie (albo kropkę poniżej) w dowolne miejsce, a białym uchwytem zmień jego wielkość.</p>
+              <BubblePad b={b} onMove={(x, y) => setB({ x, y }, "pos")} />
+              <Row label="Szybko">
                 <div className="flex gap-1">
                   {corners.map(([label, x, y]) => (
                     <SButton key={label} variant="ghost" className="h-7 w-8 px-0" onClick={() => setB({ x, y }, "pos")} aria-label={`Kółko ${label}`}>
@@ -615,6 +617,43 @@ function CompositionProps() {
       <Section title="Wskazówka">
         <p className="text-[12px] leading-relaxed text-studio-muted">Kliknij element na podglądzie lub na osi czasu, aby edytować jego właściwości. Skróty: Spacja — odtwarzanie, S — podziel, Delete — usuń, Shift+Delete — usuń z zamknięciem luki, ⌘/Ctrl+Z — cofnij.</p>
       </Section>
+    </div>
+  );
+}
+
+/** Mini frame: drag the dot to put the face bubble anywhere. */
+function BubblePad({ b, onMove }: { b: FaceBubble; onMove: (x: number, y: number) => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const W = 90;
+  const H = 160;
+  const d = Math.max(8, b.size * W);
+  const at = (e: React.PointerEvent) => {
+    const r = ref.current!.getBoundingClientRect();
+    const half = b.size / 2;
+    const halfY = (half * 1080) / 1920;
+    onMove(Math.min(1 - half, Math.max(half, (e.clientX - r.left) / r.width)), Math.min(1 - halfY, Math.max(halfY, (e.clientY - r.top) / r.height)));
+  };
+  return (
+    <div className="flex items-center gap-3">
+      <div
+        ref={ref}
+        className="relative shrink-0 cursor-crosshair touch-none rounded-md border border-studio-line bg-studio-3"
+        style={{ width: W, height: H }}
+        onPointerDown={(e) => {
+          (e.target as HTMLElement).setPointerCapture(e.pointerId);
+          at(e);
+        }}
+        onPointerMove={(e) => {
+          if (e.buttons) at(e);
+        }}
+        data-testid="bubble-pad"
+        aria-label="Położenie kółka"
+      >
+        <span className="pointer-events-none absolute rounded-full border-2 border-sky-400 bg-sky-400/30" style={{ width: d, height: d, left: b.x * W - d / 2, top: b.y * H - d / 2 }} />
+      </div>
+      <p className="text-[11px] leading-snug text-studio-muted">
+        X {Math.round(b.x * 100)}% · Y {Math.round(b.y * 100)}%
+      </p>
     </div>
   );
 }

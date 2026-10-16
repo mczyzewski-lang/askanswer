@@ -392,6 +392,8 @@ function drawVideoOverlay(ctx: Ctx, doc: EditorDocument, o: VideoOverlay, t: num
 export interface MainVideo {
   frame: FrameSource;
   rect: Rect;
+  /** picture correction filter of the clip ("none" = off) */
+  look?: string;
 }
 
 /**
@@ -433,6 +435,7 @@ export function drawFaceBubble(ctx: Ctx, doc: EditorDocument, b: FaceBubble, mai
   ctx.arc(cx, cy, R - ring, 0, Math.PI * 2);
   ctx.clip();
   ctx.imageSmoothingEnabled = true;
+  ctx.filter = main.look ?? "none";
   ctx.drawImage(main.frame.image, sx, sy, sw, sh, cx - R + ring, cy - R + ring, (R - ring) * 2, (R - ring) * 2);
   ctx.restore();
 }
@@ -715,7 +718,13 @@ function floatBoxBlur(a: Float32Array, w: number, h: number, ch: number, r: numb
  * browser and in the export), then the sharp person is drawn on top through the segmentation mask.
  * `blur` 1..100 = strength.
  */
-function drawWithBlurredBackground(ctx: Ctx, doc: EditorDocument, frame: FrameSource, mask: FrameSource, r: Rect, blur: number, scratch: NonNullable<RenderEnv["scratch"]>) {
+/** CSS filter string for a picture look (brightness/contrast/saturation factors). */
+export function lookFilter(l: { brightness: number; contrast: number; saturate: number }): string {
+  const f = (v: number) => Math.round(v * 1000) / 1000;
+  return `brightness(${f(l.brightness)}) contrast(${f(l.contrast)}) saturate(${f(l.saturate)})`;
+}
+
+function drawWithBlurredBackground(ctx: Ctx, doc: EditorDocument, frame: FrameSource, mask: FrameSource, r: Rect, blur: number, scratch: NonNullable<RenderEnv["scratch"]>, look = "none") {
   const W = doc.width;
   const H = doc.height;
   // 1) blurred background: two-step downscale keeps it smooth instead of blocky
@@ -731,7 +740,9 @@ function drawWithBlurredBackground(ctx: Ctx, doc: EditorDocument, frame: FrameSo
     (s.ctx as unknown as { imageSmoothingQuality: string }).imageSmoothingQuality = "high";
   }
   mid.ctx.clearRect(0, 0, midW, midH);
+  mid.ctx.filter = look;
   mid.ctx.drawImage(frame.image, (r.x * midW) / W, (r.y * midH) / H, (r.w * midW) / W, (r.h * midH) / H);
+  mid.ctx.filter = "none";
   sm.ctx.clearRect(0, 0, smW, smH);
   sm.ctx.drawImage(mid.canvas, 0, 0, smW, smH);
   // the person's own colours are removed from the background first and the hole is filled from the
@@ -756,7 +767,9 @@ function drawWithBlurredBackground(ctx: Ctx, doc: EditorDocument, frame: FrameSo
   person.ctx.clearRect(0, 0, W, H);
   person.ctx.imageSmoothingEnabled = true;
   (person.ctx as unknown as { imageSmoothingQuality: string }).imageSmoothingQuality = "high";
+  person.ctx.filter = look;
   person.ctx.drawImage(frame.image, r.x, r.y, r.w, r.h);
+  person.ctx.filter = "none";
   person.ctx.globalCompositeOperation = "destination-in";
   person.ctx.drawImage(mask.image, r.x, r.y, r.w, r.h);
   person.ctx.globalCompositeOperation = "source-over";
@@ -785,10 +798,17 @@ export function drawFrame(ctx: Ctx, doc: EditorDocument, t: number, env: RenderE
       (ctx as unknown as { imageSmoothingQuality: string }).imageSmoothingQuality = "high";
       const blur = clip.background?.blur ?? 0;
       const mask = blur > 0 ? env.getMask?.(clip.assetId, frame.time ?? src) : null;
-      if (blur > 0 && mask && env.scratch) drawWithBlurredBackground(ctx, doc, frame, mask, r, blur, env.scratch);
-      else ctx.drawImage(frame.image, r.x, r.y, r.w, r.h);
+      // automatic picture correction: the same filter in the browser and in the export
+      const look = clip.look ? lookFilter(clip.look) : "none";
+      if (blur > 0 && mask && env.scratch) drawWithBlurredBackground(ctx, doc, frame, mask, r, blur, env.scratch, look);
+      else {
+        ctx.save();
+        ctx.filter = look;
+        ctx.drawImage(frame.image, r.x, r.y, r.w, r.h);
+        ctx.restore();
+      }
       drewVideo = true;
-      main = { frame, rect: r };
+      main = { frame, rect: r, look };
     }
   }
   if (!drewVideo) {

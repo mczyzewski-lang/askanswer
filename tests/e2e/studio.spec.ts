@@ -62,6 +62,17 @@ test("studio: pauses, cuts, subtitles, zoom, theme, persistence and real MP4 exp
   const autoItems = auto!.document.meta.aiBroll as Array<{ status: string; variants?: string[] }>;
   expect(autoItems.filter((i) => i.status === "done").every((i) => i.variants?.length === 3)).toBeTruthy();
 
+  // the project's default finishing, also right after processing: blurred background, voice podcast + ElevenLabs, dynamic zooms
+  let polished: { document: { clips: Array<{ background?: { blur: number }; audioAssetId?: string | null }>; zooms: unknown[]; meta: { autoPolish?: string } } } | null = null;
+  for (let i = 0; i < 80 && !polished?.document.meta.autoPolish; i++) {
+    await new Promise((r) => setTimeout(r, 1500));
+    polished = (await (await request.get(`/api/admin/compositions/${compId}`)).json()).composition;
+  }
+  expect(polished?.document.meta.autoPolish).toBeTruthy();
+  expect(polished!.document.clips.every((c) => (c.background?.blur ?? 0) > 0)).toBeTruthy();
+  expect(polished!.document.clips.every((c) => !!c.audioAssetId)).toBeTruthy();
+  expect(polished!.document.zooms.length).toBeGreaterThan(0);
+
   await login(page);
   await page.goto(`/studio/${compId}`);
   await expect(page.getByTestId("timeline")).toBeVisible();
@@ -218,8 +229,17 @@ test("studio: pauses, cuts, subtitles, zoom, theme, persistence and real MP4 exp
 
   // Background blur: person mask computed by the worker (ONNX), used by the preview and the export below
   await page.getByTestId("tab-takes").click();
+  // magic picture correction (measured from the recording, applied in the preview and the export)
+  await page.getByRole("button", { name: "Magiczna poprawa" }).click();
+  await expect(page.getByTestId("look-on")).toContainText("Jasność");
   await page.getByRole("button", { name: "Rozmyte" }).click();
   await expect(page.getByTestId("blur-on")).toBeVisible({ timeout: 120_000 });
+  // the recording is cut into clips: blur can be switched off for one clip only
+  const clip1 = page.getByTestId("blur-clips").getByLabel("Rozmycie w klipie 1");
+  await clip1.uncheck();
+  await expect(clip1).not.toBeChecked();
+  await expect(page.getByTestId("blur-clips").getByLabel("Rozmycie w klipie 2")).toBeChecked();
+  await clip1.check();
   await waitSaved(page);
   const blurred = await (await request.get(`/api/admin/compositions/${compId}`)).json();
   expect(blurred.composition.document.clips.every((c: { background?: { blur: number } }) => (c.background?.blur ?? 0) > 0)).toBeTruthy();

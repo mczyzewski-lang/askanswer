@@ -46,7 +46,7 @@ import { AudioPanel, GraphicsPanel, PausesPanel, QuestionPanel, SubtitlesPanel, 
 import { Row, Section, Seg, Select, SButton } from "./controls";
 import { QUESTION_POSITIONS, QUESTION_STYLES, syncTheme } from "@/lib/question-styles";
 import { AiPanel, useBrollJobs, type AiConfig, type AutoVisualsJob } from "./ai-panel";
-import { mergeAutoVisuals } from "@/lib/editor/ai-overlays";
+import { automaticChanged, mergeAutomatic, mergeAutoPolish, mergeAutoVisuals } from "@/lib/editor/ai-overlays";
 
 interface StudioPayload {
   composition: { id: string; name: string; version: number; status: string; document: EditorDocument };
@@ -60,6 +60,8 @@ interface StudioPayload {
   ai: AiConfig;
   /** the worker is still generating the automatic infographics */
   autoVisualsPending?: boolean;
+  /** the worker is still applying the project's default finishing (blur, voice, zooms, picture) */
+  autoPolishPending?: boolean;
   autoVisualsJob?: AutoVisualsJob | null;
 }
 
@@ -188,6 +190,32 @@ export function Studio({ id }: { id: string }) {
     };
   }, [payload?.autoVisualsPending, autoRun, id, toast]);
 
+  // automatic finishing (blur, voice, zooms, picture) still running: take it over when done
+  useEffect(() => {
+    if (!payload?.autoPolishPending) return;
+    let stopped = false;
+    const t = setInterval(async () => {
+      const latest = await (await fetch(`/api/admin/compositions/${id}`, { cache: "no-store" })).json().catch(() => null);
+      if (stopped || !latest?.composition || latest.autoPolishPending) return;
+      clearInterval(t);
+      const job = latest.autoPolishJob as { status: string; error?: string | null; result?: { done?: string[]; warnings?: string[] } | null } | null;
+      if (job?.status === "FAILED") return toast(`Automatyczna obróbka: ${job.error ?? "błąd"}`, "err");
+      const serverDoc = latest.composition.document as EditorDocument;
+      const st = useStudio.getState();
+      if (!st.doc || !serverDoc.meta.autoPolish || st.doc.meta.autoPolish === serverDoc.meta.autoPolish) return;
+      st.addAssets(latest.assets ?? []);
+      useStudio.setState({ doc: mergeAutoPolish(st.doc, serverDoc), version: latest.composition.version, dirty: st.dirty || st.saving === "saving" });
+      const names: Record<string, string> = { blur: "rozmyte tło", voice: "głos podcast + ElevenLabs", zooms: "dynamiczne zbliżenia", look: "poprawa obrazu" };
+      const done = (job?.result?.done ?? []).map((d) => names[d] ?? d);
+      if (done.length) toast(`Dodano automatycznie: ${done.join(", ")}`);
+      for (const w of job?.result?.warnings ?? []) toast(w, "err");
+    }, 3000);
+    return () => {
+      stopped = true;
+      clearInterval(t);
+    };
+  }, [payload?.autoPolishPending, id, toast]);
+
   // ---- autosave (debounced + periodic) and unload protection ----
   const save = useCallback(async () => {
     const st = useStudio.getState();
@@ -205,10 +233,10 @@ export function Studio({ id }: { id: string }) {
         // the AI placed infographics meanwhile: take them over and save again instead of failing
         const latest = await (await fetch(`/api/admin/compositions/${st.compositionId}`, { cache: "no-store" })).json().catch(() => null);
         const serverDoc = latest?.composition?.document as EditorDocument | undefined;
-        if (serverDoc?.meta?.autoVisuals && serverDoc.meta.autoVisuals !== docToSave.meta.autoVisuals) {
+        if (serverDoc && automaticChanged(docToSave, serverDoc)) {
           useStudio.getState().addAssets(latest.assets ?? []);
-          useStudio.setState({ doc: mergeAutoVisuals(useStudio.getState().doc ?? docToSave, serverDoc), version: latest.composition.version, dirty: true, saving: "idle" });
-          toast("AI dodało infografiki — połączono z Twoimi zmianami");
+          useStudio.setState({ doc: mergeAutomatic(useStudio.getState().doc ?? docToSave, serverDoc), version: latest.composition.version, dirty: true, saving: "idle" });
+          toast("Automatyczne zmiany (AI / obróbka) połączono z Twoimi zmianami");
           setTimeout(() => void save(), 50);
           return;
         }

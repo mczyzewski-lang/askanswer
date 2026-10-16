@@ -159,6 +159,14 @@ model Project {
   naturalFillers     Boolean            @default(true)
   /// after processing: AI picks moments and places infographics automatically (OpenAI when configured)
   autoInfographics   Boolean            @default(true)
+  /// right after processing: blur the background behind the expert
+  autoBlur           Boolean            @default(true)
+  /// right after processing: voice "podcast + ElevenLabs" (voice isolation + mastering)
+  autoVoice          Boolean            @default(true)
+  /// right after processing: dynamic zooms on sentence boundaries
+  autoZooms          Boolean            @default(true)
+  /// right after processing: automatic picture correction (brightness, contrast, colour)
+  autoImageEnhance   Boolean            @default(false)
   recordingMode      RecordingMode      @default(CONTINUOUS)
   sequential         Boolean            @default(false)
   /// questions on the expert's list per day, mixed evenly across categories (0 = whole list)

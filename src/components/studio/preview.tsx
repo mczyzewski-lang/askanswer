@@ -298,6 +298,22 @@ export function Preview({ engine }: { engine: PlaybackEngine | null }) {
               ))
             : null}
           {!clean
+            ? bubblesAt(doc, time).map((o) => {
+                // grab area over every visible face bubble: drag it anywhere on the frame
+                const b = o.bubble!;
+                const R = (b.size * doc.width * scale) / 2;
+                return (
+                  <div
+                    key={`grab-${o.id}`}
+                    className="absolute cursor-move rounded-full hover:ring-2 hover:ring-sky-400/70"
+                    style={{ left: b.x * doc.width * scale - R, top: b.y * doc.height * scale - R, width: R * 2, height: R * 2 }}
+                    title="Przeciągnij kółko w dowolne miejsce"
+                    data-testid="bubble-grab"
+                  />
+                );
+              })
+            : null}
+          {!clean
             ? selRects
                 .filter(({ o }) => o.kind === "image" && !!o.bubble && visibleAt(doc, time).some((v) => v.id === o.id))
                 .map(({ o }) => {

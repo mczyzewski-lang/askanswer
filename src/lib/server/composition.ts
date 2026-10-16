@@ -80,8 +80,11 @@ export async function loadStudio(id: string) {
 /** The automatic infographics job of a composition: pending flag + last outcome (shown in the Studio AI tab). */
 export async function autoVisualsState(compositionId: string) {
   const job = await prisma.job.findUnique({ where: { idempotencyKey: `auto-visuals:${compositionId}` }, select: { id: true, status: true, error: true, result: true, updatedAt: true } });
+  const polish = await prisma.job.findUnique({ where: { idempotencyKey: `auto-polish:${compositionId}` }, select: { status: true, error: true, result: true } });
   return {
     autoVisualsPending: !!job && (job.status === "QUEUED" || job.status === "RUNNING"),
+    autoPolishPending: !!polish && (polish.status === "QUEUED" || polish.status === "RUNNING"),
+    autoPolishJob: polish ? { status: polish.status, error: polish.error, result: polish.result as Record<string, unknown> | null } : null,
     autoVisualsJob: job ? { id: job.id, status: job.status, error: job.error, result: job.result as Record<string, unknown> | null, updatedAt: job.updatedAt.toISOString() } : null,
   };
 }

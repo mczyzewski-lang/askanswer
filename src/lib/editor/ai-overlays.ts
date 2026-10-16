@@ -41,3 +41,26 @@ export function mergeAutoVisuals(local: EditorDocument, server: EditorDocument):
     meta: { ...local.meta, aiBroll: [...(local.meta.aiBroll ?? []), ...added], autoVisuals: server.meta.autoVisuals },
   };
 }
+
+/**
+ * Take over the automatic finishing done by the worker (blur, enhanced voice, picture correction,
+ * zooms) into a document edited meanwhile in the Studio — without undoing what the user set.
+ */
+export function mergeAutoPolish(local: EditorDocument, server: EditorDocument): EditorDocument {
+  if (!server.meta.autoPolish || local.meta.autoPolish === server.meta.autoPolish) return local;
+  const clips = local.clips.map((c) => {
+    const s = server.clips.find((x) => x.id === c.id) ?? server.clips.find((x) => x.assetId === c.assetId);
+    if (!s) return c;
+    return { ...c, background: c.background ?? s.background, audioAssetId: c.audioAssetId ?? s.audioAssetId ?? null, look: c.look ?? s.look };
+  });
+  return { ...local, clips, zooms: local.zooms.length ? local.zooms : server.zooms, meta: { ...local.meta, autoPolish: server.meta.autoPolish } };
+}
+
+/** Everything the worker adds on its own after a recording is processed. */
+export function mergeAutomatic(local: EditorDocument, server: EditorDocument): EditorDocument {
+  return mergeAutoPolish(mergeAutoVisuals(local, server), server);
+}
+
+export function automaticChanged(local: EditorDocument, server: EditorDocument): boolean {
+  return (!!server.meta.autoVisuals && server.meta.autoVisuals !== local.meta.autoVisuals) || (!!server.meta.autoPolish && server.meta.autoPolish !== local.meta.autoPolish);
+}

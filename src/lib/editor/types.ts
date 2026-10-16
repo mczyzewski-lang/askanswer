@@ -44,6 +44,12 @@ export interface ThemeTokens {
 }
 
 /** Linked expert video + microphone audio. Shown on two timeline rows but edited together, so they never drift. */
+export interface PictureLook {
+  brightness: number;
+  contrast: number;
+  saturate: number;
+}
+
 export interface AVClip {
   id: string;
   assetId: string;
@@ -56,6 +62,8 @@ export interface AVClip {
   framing: { scale: number; cx: number; cy: number };
   /** Background behind the expert: blur strength 0 (off) .. 100, via the recording's person mask. */
   background?: { blur: number };
+  /** automatic picture correction ("magic" like iMovie): CSS-style filter factors, absent = off */
+  look?: PictureLook;
   label?: string;
   /** Optional replacement audio with identical timing (e.g. enhanced voice). Video stays from assetId. */
   audioAssetId?: string | null;
@@ -268,6 +276,8 @@ export interface EditorDocument {
     aiBroll?: AiBrollItem[];
     /** set once the automatic infographics have been placed */
     autoVisuals?: string;
+    /** set once the automatic finishing (blur, voice, zooms, picture) has been applied */
+    autoPolish?: string;
   };
 }
 
