@@ -1,12 +1,14 @@
 import { prisma } from "./db";
 import { sha256 } from "./crypto";
 import { env } from "./env";
-import { synthesize, ttsCacheKey } from "./elevenlabs";
+import { listVoices, synthesize, ttsCacheKey } from "./elevenlabs";
 import { putBuffer, makeTempDir } from "./storage";
 import { probe } from "./ffmpeg";
 import fsp from "node:fs/promises";
 import path from "node:path";
 import { stablePick, withFillers } from "../fillers";
+import { detectSpeakerGender, genderFromVoiceLabels, genderFromVoiceName } from "../speaker-gender";
+import { elevenLabsConfigured } from "./env";
 
 const inflight = new Map<string, Promise<string>>();
 
@@ -68,11 +70,42 @@ interface NarrationProject {
   naturalFillers: boolean;
 }
 
-/** The narrator voice for a question: a stable random pick from the project's collection, else the project voice. */
-export async function narratorVoice(project: NarrationProject, questionId: string): Promise<string | null> {
+let voiceCache: { at: number; map: Map<string, { name: string; labels: Record<string, string> }> } | null = null;
+/** ElevenLabs voice names/labels (cached 10 min) — for collection items without a "Pan"/"Pani" label. */
+async function accountVoices() {
+  if (voiceCache && Date.now() - voiceCache.at < 600_000) return voiceCache.map;
+  const map = new Map<string, { name: string; labels: Record<string, string> }>();
+  if (elevenLabsConfigured()) {
+    try {
+      for (const v of await listVoices()) map.set(v.voice_id, { name: v.name, labels: v.labels ?? {} });
+    } catch {
+      /* fall back to labels only */
+    }
+  }
+  voiceCache = { at: Date.now(), map };
+  return map;
+}
+
+/**
+ * The narrator voice for a question: a stable random pick from the project's collection, else the
+ * project voice. When the question reveals the asker ("…powiedzieć mężowi…" → a woman), only the
+ * collection's matching voices are used: "Pani …" for women, "Pan …" for men.
+ */
+export async function narratorVoice(project: NarrationProject, question: { id: string; text: string }): Promise<string | null> {
   if (project.voiceCollectionId) {
-    const items = await prisma.voiceCollectionItem.findMany({ where: { collectionId: project.voiceCollectionId }, orderBy: [{ order: "asc" }, { createdAt: "asc" }], select: { voiceId: true } });
-    const pick = stablePick(items.map((i) => i.voiceId), `${project.id}:${questionId}`);
+    const items = await prisma.voiceCollectionItem.findMany({ where: { collectionId: project.voiceCollectionId }, orderBy: [{ order: "asc" }, { createdAt: "asc" }], select: { voiceId: true, label: true } });
+    let pool = items;
+    const asker = detectSpeakerGender(question.text);
+    if (asker && items.length > 1) {
+      let genders = items.map((i) => genderFromVoiceName(i.label));
+      if (genders.some((g) => g === null)) {
+        const account = await accountVoices();
+        genders = items.map((i, k) => genders[k] ?? genderFromVoiceName(account.get(i.voiceId)?.name) ?? genderFromVoiceLabels(account.get(i.voiceId)?.labels));
+      }
+      const matching = items.filter((_, k) => genders[k] === asker);
+      if (matching.length) pool = matching;
+    }
+    const pick = stablePick(pool.map((i) => i.voiceId), `${project.id}:${question.id}`);
     if (pick) return pick;
   }
   return project.voiceId;
@@ -82,6 +115,6 @@ export async function narratorVoice(project: NarrationProject, questionId: strin
 export async function questionNarration(project: NarrationProject, question: { id: string; text: string }, override: { voiceId?: string | null; modelId?: string | null; text?: string } = {}) {
   const base = override.text ?? question.text;
   const text = project.naturalFillers ? withFillers(base, question.id) : base;
-  const voiceId = override.voiceId || (await narratorVoice(project, question.id));
+  const voiceId = override.voiceId || (await narratorVoice(project, { id: question.id, text: base }));
   return ensureNarration(text, { voiceId, modelId: override.modelId || project.ttsModel, projectId: project.id });
 }

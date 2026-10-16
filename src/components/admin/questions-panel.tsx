@@ -1,7 +1,6 @@
 "use client";
 import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import Papa from "papaparse";
 import { DndContext, closestCenter, PointerSensor, KeyboardSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy, sortableKeyboardCoordinates } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -51,6 +50,7 @@ import type { PanelProps } from "./project-view";
 import { QuestionPreview } from "./question-preview";
 import { parseBulk, parseBulkScripts } from "@/lib/bulk-questions";
 import { terms } from "@/lib/project-terms";
+import { csvTemplate, decodeCsv, parseImportCsv } from "@/lib/csv-import";
 
 type Q = PanelProps["data"]["questions"][number];
 type Take = Q["takes"][number];
@@ -104,42 +104,34 @@ export function QuestionsPanel({ data, refresh, toast }: PanelProps) {
     }
   };
 
-  const importCsv = (file: File) => {
-    Papa.parse<Record<string, string>>(file, {
-      header: true,
-      skipEmptyLines: true,
-      complete: async (res) => {
-        const rows = res.data
-          .map((r) => {
-            const get = (...keys: string[]) => {
-              for (const k of Object.keys(r)) if (keys.includes(k.trim().toLowerCase())) return (r[k] ?? "").trim();
-              return "";
-            };
-            const max = Number(get("czas", "maks", "max", "maxdurationsec", "duration"));
-            return {
-              text: T.prompter ? get("hook", "pytanie", "tytuł", "tytul", "title") : get("pytanie", "question", "text", "treść", "tresc"),
-              script: T.prompter ? get("treść", "tresc", "script", "skrypt", "content", "tekst") || null : undefined,
-              categoryName: get("kategoria", "category") || undefined,
-              subcategoryName: get("podkategoria", "temat", "subcategory") || undefined,
-              instructions: get("instrukcje", "instructions", "wskazówki") || null,
-              maxDurationSec: Number.isFinite(max) && max > 0 ? Math.round(max) : null,
-            };
-          })
-          .filter((r) => r.text.length >= 3);
-        if (!rows.length) {
-          toast(T.prompter ? "Nie znaleziono skryptów. Plik CSV powinien mieć kolumny: hook, treść, kategoria" : "Nie znaleziono pytań. Plik CSV powinien mieć kolumny: pytanie, kategoria, instrukcje, czas", "err");
-          return;
-        }
-        try {
-          const r = await api<{ created: number }>(`/api/admin/projects/${data.project.id}/questions`, { method: "POST", json: { items: rows } });
-          toast(`Zaimportowano ${r.created} ${plural(r.created, T.one, T.few, T.many)}`);
-          refresh();
-        } catch (err) {
-          toast((err as Error).message, "err");
-        }
-      },
-      error: (err) => toast(`Błąd CSV: ${err.message}`, "err"),
-    });
+  const importCsv = async (file: File) => {
+    let rows;
+    try {
+      rows = parseImportCsv(decodeCsv(await file.arrayBuffer()), T.prompter);
+    } catch (err) {
+      toast(`Błąd CSV: ${(err as Error).message}`, "err");
+      return;
+    }
+    if (!rows.length) {
+      toast(T.prompter ? "Nie znaleziono skryptów. Plik CSV powinien mieć nagłówek: Kategoria;Podkategoria;Hook;Treść" : "Nie znaleziono pytań. Plik CSV powinien mieć nagłówek: Kategoria;Podkategoria;Pytanie;Instrukcje;Czas", "err");
+      return;
+    }
+    try {
+      const r = await api<{ created: number }>(`/api/admin/projects/${data.project.id}/questions`, { method: "POST", json: { items: rows } });
+      toast(`Zaimportowano ${r.created} ${plural(r.created, T.one, T.few, T.many)}`);
+      refresh();
+    } catch (err) {
+      toast((err as Error).message, "err");
+    }
+  };
+
+  const downloadTemplate = () => {
+    const url = URL.createObjectURL(new Blob([csvTemplate(T.prompter)], { type: "text/csv;charset=utf-8" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = T.prompter ? "wzor-skrypty-prompter.csv" : "wzor-pytania.csv";
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
   return (
@@ -153,6 +145,9 @@ export function QuestionsPanel({ data, refresh, toast }: PanelProps) {
         </Button>
         <Button variant="outline" onClick={() => fileRef.current?.click()}>
           <FileUp /> Import CSV
+        </Button>
+        <Button variant="ghost" onClick={downloadTemplate} title={T.prompter ? "Kolumny: Kategoria;Podkategoria;Hook;Treść" : "Kolumny: Kategoria;Podkategoria;Pytanie;Instrukcje;Czas"}>
+          <Download /> Wzór CSV
         </Button>
         <input
           ref={fileRef}

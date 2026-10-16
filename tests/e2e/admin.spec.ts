@@ -82,7 +82,7 @@ test("narrator: Eleven v4 by default, random voice from a collection, subtle fil
   const project = (await (await request.get(`/api/admin/projects/${pid}`)).json()).project;
   expect(project.ttsModel).toBe("eleven_v4");
   const col = await (await request.post("/api/admin/voice-collections", { data: { name: "Lektorzy losowi" } })).json();
-  for (const v of ["mock-voice-pl", "mock-voice-2"]) expect((await request.post(`/api/admin/voice-collections/${col.id}/items`, { data: { voiceId: v } })).ok()).toBeTruthy();
+  for (const [v, label] of [["mock-voice-pl", "Pani Anna"], ["mock-voice-2", "Pan Marek"]]) expect((await request.post(`/api/admin/voice-collections/${col.id}/items`, { data: { voiceId: v, label } })).ok()).toBeTruthy();
   await request.patch(`/api/admin/projects/${pid}`, { data: { name: project.name, voiceCollectionId: col.id, naturalFillers: true } });
   const texts = Array.from({ length: 8 }, (_, i) => `Czy w sprawie numer ${i + 1} mogę złożyć wniosek, jeśli termin już minął?`);
   const created = await (await request.post(`/api/admin/projects/${pid}/questions`, { data: { items: texts.map((text) => ({ text })) } })).json();
@@ -97,6 +97,18 @@ test("narrator: Eleven v4 by default, random voice from a collection, subtle fil
       expect(c.settings).not.toHaveProperty("style"); // v4 has no style control
       expect((c.text.match(/…/g) ?? []).length).toBeLessThanOrEqual(1);
     }
+    // a woman asks ("mężowi") → only "Pani" voices; a man asks ("żonie") → only "Pan" voices
+    const gendered = await (
+      await request.post(`/api/admin/projects/${pid}/questions`, {
+        data: { items: [1, 2, 3, 4].flatMap((i) => [{ text: `Jak powiedzieć mężowi o rozwodzie, wersja ${i}?` }, { text: `Jak powiedzieć żonie o rozwodzie, wersja ${i}?` }]) },
+      })
+    ).json();
+    created.items.push(...gendered.items);
+    for (const q of gendered.items) expect((await request.post(`/api/admin/questions/${q.id}/narration`)).ok()).toBeTruthy();
+    const st2 = await (await request.get("http://127.0.0.1:4010/__stats", { headers: { "xi-api-key": "mock-key" } })).json();
+    const g = st2.tts.filter((c: { text: string }) => /(mężowi|żonie).*rozwodzie.*wersja \d/.test(c.text));
+    expect(g.length).toBe(8);
+    for (const c of g) expect(c.voiceId).toBe(/mężowi/.test(c.text) ? "mock-voice-pl" : "mock-voice-2");
     // the same question always gets the same voice and wording (cached, consistent re-records)
     const again = await (await request.post(`/api/admin/questions/${created.items[0].id}/narration`)).json();
     const first = await (await request.post(`/api/admin/questions/${created.items[0].id}/narration`)).json();
@@ -104,5 +116,27 @@ test("narrator: Eleven v4 by default, random voice from a collection, subtle fil
   } finally {
     await request.patch(`/api/admin/projects/${pid}`, { data: { name: project.name, voiceCollectionId: null } });
     for (const q of created.items) await request.delete(`/api/admin/questions/${q.id}`);
+  }
+});
+
+test("Prompter CSV import: Kategoria;Podkategoria;Hook;Treść (Excel Windows-1250)", async ({ page, request }) => {
+  await adminRequest(request);
+  const project = await (await request.post("/api/admin/projects", { data: { name: "CSV prompter", format: "PROMPTER", preset: "pravna" } })).json();
+  try {
+    await login(page);
+    await page.goto(`/admin/projects/${project.id}`);
+    const csv = 'Kategoria;Podkategoria;Hook;Treść\r\nGrowth;sprzedaż;3 błędy, które kosztują Cię klientów;"Pierwszy błąd.\r\nDrugi błąd."\r\nGrowth;;Dlaczego reklamy nie działają?;Bo liczy się komunikat.\r\n';
+    // encode as cp1250 the way Polish Excel saves "CSV (rozdzielany średnikami)"
+    const cp: Record<string, number> = { ą: 0xb9, ć: 0xe6, ę: 0xea, ł: 0xb3, ń: 0xf1, ó: 0xf3, ś: 0x9c, ź: 0x9f, ż: 0xbf, Ś: 0x8c, Ż: 0xaf };
+    const buf = Buffer.from([...csv].map((ch) => cp[ch] ?? ch.charCodeAt(0)));
+    await page.locator('input[type="file"][accept*="csv"]').setInputFiles({ name: "skrypty.csv", mimeType: "text/csv", buffer: buf });
+    await expect(page.getByText("Zaimportowano 2 skrypty")).toBeVisible();
+    await expect(page.getByText("3 błędy, które kosztują Cię klientów")).toBeVisible();
+    const d = await (await request.get(`/api/admin/projects/${project.id}`)).json();
+    const s = d.questions.find((q: { text: string }) => q.text.startsWith("3 błędy"));
+    expect(s.script).toBe("Pierwszy błąd.\nDrugi błąd.");
+    expect(s).toMatchObject({ categoryName: "Growth", subcategoryName: "sprzedaż" });
+  } finally {
+    await request.delete(`/api/admin/projects/${project.id}`);
   }
 });
