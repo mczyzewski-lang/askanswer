@@ -12,7 +12,7 @@
  *  ..  data
  */
 /** Bumped when the masks get better: older ones are recomputed when blur is used. */
-export const MASK_VERSION = 2;
+export const MASK_VERSION = 3;
 
 export interface MaskHeader {
   width: number;

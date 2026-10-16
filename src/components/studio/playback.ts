@@ -6,6 +6,7 @@
  * so what you see here is what the server renderer produces.
  */
 import type { AssetInfo, AudioClip, EditorDocument } from "@/lib/editor/types";
+import { inflateSync } from "fflate";
 import { maskFrameIndex, maskToRgba, parseMaskHeader, type MaskHeader } from "@/lib/render/mask-format";
 
 interface MaskEntry {
@@ -14,11 +15,13 @@ interface MaskEntry {
   h?: MaskHeader;
   buf?: Uint8Array;
   canvas?: HTMLCanvasElement;
+  gray?: Uint8Array;
+  img?: ImageData;
   index: number;
-  decoded: Map<number, Uint8Array>;
-  inflight: Set<number>;
   fallback?: MaskEntry;
 }
+
+type FrameCallbackVideo = HTMLVideoElement & { requestVideoFrameCallback?: (cb: (now: number, meta: { mediaTime: number }) => void) => number };
 import { clipAt, clipEnd, docDuration, overlayEnd, sortedClips } from "@/lib/editor/timeline";
 import { drawFrame, overlayVideoTime, type FrameSource } from "@/lib/render/compositor";
 import type { VideoOverlay } from "@/lib/editor/types";
@@ -39,6 +42,8 @@ export class PlaybackEngine {
   private audios = new Map<string, HTMLAudioElement>(); // per audio clip id
   private images = new Map<string, HTMLImageElement>();
   private masks = new Map<string, MaskEntry>();
+  /** media time of the frame each video element currently shows (requestVideoFrameCallback) */
+  private presented = new WeakMap<HTMLVideoElement, number>();
   private scratchCanvases = new Map<string, HTMLCanvasElement>();
   private overlayVideos = new Map<string, HTMLVideoElement>(); // per video overlay id
   private raf = 0;
@@ -133,6 +138,15 @@ export class PlaybackEngine {
         if (a) v.src = playableUrl(a);
         v.addEventListener("seeked", () => this.invalidate());
         v.addEventListener("loadeddata", () => this.invalidate());
+        // which source frame is on screen right now (for the blur mask)
+        const fv = v as FrameCallbackVideo;
+        if (fv.requestVideoFrameCallback) {
+          const onFrame = (_: number, meta: { mediaTime: number }) => {
+            this.presented.set(v, meta.mediaTime);
+            fv.requestVideoFrameCallback!(onFrame);
+          };
+          fv.requestVideoFrameCallback(onFrame);
+        }
         this.container.appendChild(v);
         return v;
       });
@@ -155,18 +169,18 @@ export class PlaybackEngine {
   }
 
   /**
-   * Person mask (background blur) at a source time. The compressed AMSK file is loaded once; frames
-   * are inflated on demand a little ahead of the playhead (a full-resolution mask of a long recording
-   * would not fit in memory decoded), keeping a small window of decoded frames.
+   * Person mask (background blur) at a source time. The compressed AMSK file is loaded once and
+   * each frame is inflated synchronously when shown (~1 ms), so the mask is always the exact frame
+   * of the picture — never a late one that would make the edge jump.
    */
   private mask(assetId: string, sourceTime: number): FrameSource | null {
     const a = this.assets[assetId];
     if (!a?.maskUrl) return null;
     let m = this.masks.get(assetId);
     if (!m || m.url !== a.maskUrl) {
-      const entry: MaskEntry = { url: a.maskUrl, state: "loading", index: -1, decoded: new Map(), inflight: new Set() };
+      const entry: MaskEntry = { url: a.maskUrl, state: "loading", index: -1 };
       // keep showing the previous mask while a better one loads
-      if (m?.state === "ready") Object.assign(entry, { fallback: m });
+      if (m?.state === "ready") entry.fallback = m;
       m = entry;
       this.masks.set(assetId, m);
       void (async () => {
@@ -187,37 +201,15 @@ export class PlaybackEngine {
     if (m.state !== "ready" || !m.h || !m.buf || !m.canvas) return null;
     const h = m.h;
     const i = maskFrameIndex(h, sourceTime);
-    for (let k = 0; k < 12; k++) this.inflateMask(m, Math.min(h.count - 1, i + k));
-    // exact frame, else the nearest decoded one before it (only while it is being inflated)
-    let use = i;
-    while (use >= 0 && !m.decoded.has(use) && i - use < 6) use--;
-    const gray = use >= 0 ? m.decoded.get(use) : undefined;
-    if (!gray) return m.index >= 0 ? { image: m.canvas, width: h.width, height: h.height } : null;
-    if (use !== m.index) {
+    if (i !== m.index) {
+      const gray = inflateSync(m.buf.subarray(h.dataStart + h.offsets[i], h.dataStart + h.offsets[i + 1]), { out: (m.gray ??= new Uint8Array(h.width * h.height)) });
       const ctx = m.canvas.getContext("2d")!;
-      const img = ctx.createImageData(h.width, h.height);
-      maskToRgba(gray, img.data);
-      ctx.putImageData(img, 0, 0);
-      m.index = use;
+      m.img ??= ctx.createImageData(h.width, h.height);
+      maskToRgba(gray, m.img.data);
+      ctx.putImageData(m.img, 0, 0);
+      m.index = i;
     }
-    // drop frames well behind the playhead
-    for (const k of m.decoded.keys()) if (k < i - 8 || k > i + 40) m.decoded.delete(k);
     return { image: m.canvas, width: h.width, height: h.height };
-  }
-
-  private inflateMask(m: MaskEntry, i: number) {
-    if (!m.h || !m.buf || m.decoded.has(i) || m.inflight.has(i)) return;
-    m.inflight.add(i);
-    const size = m.h.width * m.h.height;
-    const part = m.buf.subarray(m.h.dataStart + m.h.offsets[i], m.h.dataStart + m.h.offsets[i + 1]);
-    void new Response(new Blob([part as BlobPart]).stream().pipeThrough(new DecompressionStream("deflate-raw")))
-      .arrayBuffer()
-      .then((ab) => {
-        m.decoded.set(i, new Uint8Array(ab).subarray(0, size));
-        if (i === m.index + 1 || m.index < 0 || !this.isPlaying()) this.invalidate();
-      })
-      .catch(() => {})
-      .finally(() => m.inflight.delete(i));
   }
 
   private scratch(key: string, w: number, h: number) {
@@ -415,7 +407,7 @@ export class PlaybackEngine {
         const list = this.videos.get(assetId);
         const el = list?.find((v) => this.assignment.get(v) === clipId);
         if (!el || el.readyState < 2 || !el.videoWidth) return null;
-        return { image: el, width: el.videoWidth, height: el.videoHeight };
+        return { image: el, width: el.videoWidth, height: el.videoHeight, time: this.presented.get(el) ?? el.currentTime };
       },
       getImage: (id) => {
         const img = this.image(id);

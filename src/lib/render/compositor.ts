@@ -19,6 +19,11 @@ export interface FrameSource {
   image: Drawable;
   width: number;
   height: number;
+  /**
+   * Source time of the picture actually in `image` (a playing <video> can be a few frames off
+   * the playhead): the person mask is taken for this time so it sits exactly on the expert.
+   */
+  time?: number;
 }
 
 export interface RenderEnv {
@@ -706,7 +711,7 @@ export function drawFrame(ctx: Ctx, doc: EditorDocument, t: number, env: RenderE
       ctx.imageSmoothingEnabled = true;
       (ctx as unknown as { imageSmoothingQuality: string }).imageSmoothingQuality = "high";
       const blur = clip.background?.blur ?? 0;
-      const mask = blur > 0 ? env.getMask?.(clip.assetId, src) : null;
+      const mask = blur > 0 ? env.getMask?.(clip.assetId, frame.time ?? src) : null;
       if (blur > 0 && mask && env.scratch) drawWithBlurredBackground(ctx, doc, frame, mask, r, blur, env.scratch);
       else ctx.drawImage(frame.image, r.x, r.y, r.w, r.h);
       drewVideo = true;

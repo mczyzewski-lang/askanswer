@@ -140,6 +140,20 @@ export function refineMask(coarse: Float32Array, cw: number, ch: number, luma: F
   return out;
 }
 
+/**
+ * Temporal stabilisation of the refined mask: small frame-to-frame differences (sensor noise,
+ * compression, the guided filter reacting to them) are pulled towards the previous frame, so a
+ * still edge stays still; real movement (big differences) passes through at once, without lag.
+ */
+export function stabilize(cur: Uint8Array, prev: Uint8Array) {
+  for (let i = 0; i < cur.length; i++) {
+    const d = Math.abs(cur[i] - prev[i]);
+    if (d === 0 || d > 90) continue;
+    const keep = 0.7 * (1 - d / 90);
+    cur[i] = Math.round(prev[i] * keep + cur[i] * (1 - keep));
+  }
+}
+
 export async function segmentVideoFile(file: string, onProgress?: (done: number, total: number) => void): Promise<Uint8Array> {
   const info = await probe(file);
   if (!info.hasVideo || !info.width || !info.height) throw new Error("Nagranie nie ma obrazu");
@@ -159,6 +173,7 @@ export async function segmentVideoFile(file: string, onProgress?: (done: number,
   const luma = new Float32Array(gw * gh);
   const frames: Uint8Array[] = [];
   let prev: Float32Array | null = null;
+  let prevOut: Uint8Array | null = null;
   let pending: Buffer = Buffer.alloc(0);
   const handle = async (raw: Buffer) => {
     for (let i = 0, j = 0; i < luma.length; i++, j += 3) luma[i] = (raw[j] * 0.299 + raw[j + 1] * 0.587 + raw[j + 2] * 0.114) / 255;
@@ -199,7 +214,10 @@ export async function segmentVideoFile(file: string, onProgress?: (done: number,
       }
     }
     prev = cur;
-    frames.push(zlib.deflateRawSync(refineMask(cur, box.cw, box.ch, luma, gw, gh), { level: 6 }));
+    const refined = refineMask(cur, box.cw, box.ch, luma, gw, gh);
+    if (prevOut) stabilize(refined, prevOut);
+    prevOut = refined;
+    frames.push(zlib.deflateRawSync(refined, { level: 6 }));
     onProgress?.(frames.length, total);
   };
   for await (const chunk of ff.stdout as AsyncIterable<Buffer>) {

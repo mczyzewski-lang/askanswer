@@ -119,3 +119,16 @@ describe("mask refinement and background fill", () => {
     expect(at(5, 20)).toBe(200); // the room itself is untouched
   });
 });
+
+describe("mask stability over time", () => {
+  it("damps small frame-to-frame noise but lets real movement through", async () => {
+    const { stabilize } = await import("../../src/lib/server/segment");
+    const prev = new Uint8Array([128, 128, 0, 255]);
+    const cur = new Uint8Array([140, 128, 255, 0]); // noise, unchanged, person moved in, person moved out
+    stabilize(cur, prev);
+    expect(Math.abs(cur[0] - 128)).toBeLessThan(8);
+    expect(cur[1]).toBe(128);
+    expect(cur[2]).toBe(255);
+    expect(cur[3]).toBe(0);
+  });
+});
