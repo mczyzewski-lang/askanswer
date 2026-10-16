@@ -54,7 +54,14 @@ export async function putFile(key: string, file: string, mime: string): Promise<
   } else {
     const dest = localPathFor(key);
     await fsp.mkdir(path.dirname(dest), { recursive: true });
-    await fsp.copyFile(file, dest);
+    // temp files live on the same volume: a hard link stores the file without a second copy
+    // (the work file can still be used and deleted afterwards); copy across filesystems
+    await fsp.rm(dest, { force: true });
+    try {
+      await fsp.link(file, dest);
+    } catch {
+      await fsp.copyFile(file, dest);
+    }
   }
   return stat.size;
 }
@@ -125,4 +132,63 @@ export function verifyLocalSignature(key: string, exp: string, sig: string, dl: 
 
 export function systemTmp(): string {
   return os.tmpdir();
+}
+
+/** Free / total bytes of the volume that holds local media and temp files. */
+export async function diskUsage(): Promise<{ free: number; total: number; used: number } | null> {
+  try {
+    await fsp.mkdir(env.storageDir, { recursive: true });
+    const s = await fsp.statfs(env.storageDir);
+    const total = s.blocks * s.bsize;
+    const free = s.bavail * s.bsize;
+    return { free, total, used: total - free };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Remove leftovers of interrupted work (a job killed by a deploy or out-of-memory never reaches its
+ * cleanup): temp work dirs older than `workHours`, abandoned upload chunks older than `uploadDays`.
+ */
+export async function cleanupTemp(opts: { workHours?: number; uploadDays?: number } = {}): Promise<{ removed: number; freed: number }> {
+  const base = tmpDir();
+  const now = Date.now();
+  let removed = 0;
+  let freed = 0;
+  const sizeOf = async (p: string): Promise<number> => {
+    const st = await fsp.lstat(p).catch(() => null);
+    if (!st) return 0;
+    if (!st.isDirectory()) return st.size;
+    let n = 0;
+    for (const e of await fsp.readdir(p).catch(() => [] as string[])) n += await sizeOf(path.join(p, e));
+    return n;
+  };
+  const newest = async (p: string): Promise<number> => {
+    const st = await fsp.lstat(p).catch(() => null);
+    if (!st) return 0;
+    let t = st.mtimeMs;
+    if (st.isDirectory()) for (const e of await fsp.readdir(p).catch(() => [] as string[])) t = Math.max(t, await newest(path.join(p, e)));
+    return t;
+  };
+  const sweep = async (dir: string, maxAgeMs: number) => {
+    for (const name of await fsp.readdir(dir).catch(() => [] as string[])) {
+      if (dir === base && name === "uploads") continue;
+      const p = path.join(dir, name);
+      if (now - (await newest(p)) < maxAgeMs) continue;
+      freed += await sizeOf(p);
+      await fsp.rm(p, { recursive: true, force: true }).catch(() => {});
+      removed++;
+    }
+  };
+  await sweep(base, (opts.workHours ?? 6) * 3600_000);
+  await sweep(path.join(base, "uploads"), (opts.uploadDays ?? 3) * 86400_000);
+  return { removed, freed };
+}
+
+/** Human message for a full disk (shown on the take instead of a raw ENOSPC). */
+export function diskFullMessage(e: unknown): string | null {
+  const err = e as NodeJS.ErrnoException;
+  if (err?.code !== "ENOSPC" && !/ENOSPC|no space left/i.test(err?.message ?? "")) return null;
+  return "Brak miejsca na dysku serwera (wolumen z nagraniami jest pełny). Zwiększ wolumen w Railway albo podłącz magazyn S3/R2, a potem kliknij „Ponów przetwarzanie”.";
 }

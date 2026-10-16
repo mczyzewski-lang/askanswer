@@ -25,6 +25,29 @@ Kliknij usługę aplikacji prawym przyciskiem (albo **+ Create → Volume**) i d
 
 Bez tego nagrania znikną przy każdym ponownym wdrożeniu.
 
+### Ile miejsca potrzeba
+
+Jedno ujęcie odpowiedzi (ok. 1 min) zajmuje razem z wersjami roboczymi ok. **80–120 MB** (oryginał z telefonu, wersja MP4, podgląd, dźwięk do transkrypcji, eksporty). Railway daje wolumen **0,5 GB na planie Trial/Free**, **5 GB na Hobby** i **50 GB na Pro** — na Trial wystarczy to tylko na kilka nagrań. Gdy dysk się zapełni, przetwarzanie kończy się komunikatem „Brak miejsca na dysku serwera”, a w panelu admina pojawia się czerwona plakietka „Dysk: wolne …”.
+
+Masz dwie drogi:
+
+1. **Większy wolumen** — w usłudze aplikacji kliknij wolumen → **Settings → Size** (na planie Hobby do 5 GB, na Pro więcej). Zmiana działa bez restartu.
+2. **Zewnętrzny magazyn S3 (zalecane przy wielu nagraniach)** — np. **Cloudflare R2** (10 GB za darmo, bez opłat za pobieranie). Utwórz bucket i klucz API (R2 → *Manage R2 API Tokens*, uprawnienie *Object Read & Write*), a potem ustaw zmienne:
+
+   ```
+   STORAGE_DRIVER=s3
+   S3_ENDPOINT=https://<ACCOUNT_ID>.r2.cloudflarestorage.com
+   S3_REGION=auto
+   S3_BUCKET=askby-media
+   S3_ACCESS_KEY_ID=...
+   S3_SECRET_ACCESS_KEY=...
+   S3_FORCE_PATH_STYLE=true
+   ```
+
+   Wolumen `/data` zostaje wtedy tylko na pliki robocze. Uwaga: nagrania zapisane wcześniej na wolumenie nie są przenoszone automatycznie — przełącz magazyn najlepiej przed nagrywaniem na większą skalę.
+
+Po zwolnieniu miejsca kliknij w projekcie **„Ponów wszystkie”** przy czerwonym pasku z nieudanymi nagraniami — oryginały z telefonu są zapisane i nic nie trzeba nagrywać ponownie. Aplikacja sama co godzinę usuwa pliki tymczasowe po przerwanych zadaniach (np. po restarcie w trakcie wdrożenia).
+
 ## 4. Zmienne środowiskowe
 Wejdź w usługę aplikacji, zakładka **Variables**, i wybierz **Raw Editor**. Wklej poniższe i uzupełnij swoje wartości:
 

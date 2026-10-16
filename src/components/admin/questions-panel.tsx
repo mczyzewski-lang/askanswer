@@ -202,6 +202,7 @@ export function QuestionsPanel({ data, refresh, toast }: PanelProps) {
       </div>
 
       <UnassignedBanner data={data} refresh={refresh} toast={toast} />
+      <FailedBanner data={data} refresh={refresh} toast={toast} />
 
       <div className="mt-5">
         {visible.length === 0 ? (
@@ -231,6 +232,44 @@ export function QuestionsPanel({ data, refresh, toast }: PanelProps) {
           ) : null}
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+/** Failed recordings (e.g. the server disk was full): retry them all at once. */
+function FailedBanner({ data, refresh, toast }: PanelProps) {
+  const failed = data.questions.flatMap((q) => q.takes).filter((t) => t.status === "FAILED");
+  const [busy, setBusy] = useState(false);
+  if (!failed.length) return null;
+  const diskFull = failed.some((t) => /miejsca na dysku|ENOSPC|no space left/i.test(t.processingError ?? ""));
+  return (
+    <div className="mt-4 flex flex-wrap items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900" data-testid="failed-banner">
+      <AlertCircle className="h-4 w-4 shrink-0" />
+      <span className="min-w-0 flex-1">
+        <b>
+          {failed.length} {plural(failed.length, "nagranie", "nagrania", "nagrań")} z błędem przetwarzania.
+        </b>{" "}
+        {diskFull ? "Zabrakło miejsca na dysku serwera — po zwiększeniu wolumenu (lub podłączeniu S3/R2) ponów przetwarzanie. Oryginały są bezpieczne." : "Oryginały są bezpieczne — możesz ponowić przetwarzanie."}
+      </span>
+      <Button
+        size="sm"
+        variant="outline"
+        disabled={busy}
+        onClick={async () => {
+          setBusy(true);
+          try {
+            const r = await api<{ requeued: number }>(`/api/admin/projects/${data.project.id}/reprocess-failed`, { method: "POST" });
+            toast(`Ponowiono ${r.requeued} ${plural(r.requeued, "nagranie", "nagrania", "nagrań")}`);
+            refresh();
+          } catch (err) {
+            toast((err as Error).message, "err");
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        <RotateCcw /> Ponów wszystkie
+      </Button>
     </div>
   );
 }

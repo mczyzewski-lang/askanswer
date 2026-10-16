@@ -7,7 +7,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/server/db";
 import { json, route } from "@/lib/server/http";
 import { resolveToken } from "@/lib/server/invitations";
-import { putFile, tmpDir } from "@/lib/server/storage";
+import { diskFullMessage, putFile, tmpDir } from "@/lib/server/storage";
 import { enqueue } from "@/lib/server/jobs";
 import { env } from "@/lib/server/env";
 
@@ -39,11 +39,20 @@ export const POST = route(async (req: Request, ctx: { params: Promise<{ token: s
 
   const dir = tmpDir("uploads", take.id);
   const assembled = path.join(dir, "assembled.bin");
-  const out = fs.createWriteStream(assembled);
-  for (let i = 0; i < body.totalChunks; i++) {
-    await pipeline(fs.createReadStream(path.join(dir, `${String(i).padStart(5, "0")}.part`)), out, { end: false });
+  const parts = Array.from({ length: body.totalChunks }, (_, i) => path.join(dir, `${String(i).padStart(5, "0")}.part`));
+  try {
+    const out = fs.createWriteStream(assembled);
+    for (const part of parts) await pipeline(fs.createReadStream(part), out, { end: false });
+    await new Promise<void>((r, j) => out.end((e?: Error | null) => (e ? j(e) : r())));
+  } catch (e) {
+    await fsp.rm(assembled, { force: true });
+    const full = diskFullMessage(e);
+    // the chunks are kept, so the phone can simply retry later
+    if (full) return json({ error: full, code: "disk_full" }, 507);
+    throw e;
   }
-  await new Promise<void>((r, j) => out.end((e?: Error | null) => (e ? j(e) : r())));
+  // the parts are no longer needed — free the space before storing the original
+  await Promise.all(parts.map((p) => fsp.rm(p, { force: true })));
   const fd = await fsp.open(assembled, "r");
   const head = Buffer.alloc(16);
   await fd.read(head, 0, 16, 0);

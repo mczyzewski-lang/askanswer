@@ -11,6 +11,7 @@ import { enhanceComposition } from "../lib/server/enhance";
 import { ElevenLabsError } from "../lib/server/elevenlabs";
 import { generateBroll, generateInfographic } from "../lib/server/broll";
 import { HiggsfieldError } from "../lib/server/higgsfield";
+import { cleanupTemp } from "../lib/server/storage";
 
 const workerId = `${os.hostname()}-${process.pid}`;
 let stopping = false;
@@ -35,8 +36,20 @@ async function handle(job: { id: string; type: string; payload: unknown }) {
   }
 }
 
+/** Leftovers of interrupted jobs/uploads would otherwise slowly fill the volume. */
+async function sweepTemp() {
+  try {
+    const r = await cleanupTemp();
+    if (r.removed) console.log(`[worker] cleaned ${r.removed} stale temp entries (${(r.freed / 1e6).toFixed(1)} MB)`);
+  } catch (e) {
+    console.error("[worker] temp cleanup failed", (e as Error).message);
+  }
+}
+
 async function loop() {
   console.log(`[worker] ${workerId} started`);
+  void sweepTemp();
+  setInterval(() => void sweepTemp(), 3600_000).unref();
   while (!stopping) {
     let job;
     try {

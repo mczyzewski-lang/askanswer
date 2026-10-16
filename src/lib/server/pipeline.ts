@@ -10,7 +10,7 @@ import path from "node:path";
 import { Prisma } from "@prisma/client";
 import { prisma } from "./db";
 import { decodeDuration, decodePcm, extractSpeechAudio, makePreviewProxy, normalizeRecording, probe } from "./ffmpeg";
-import { makeTempDir, putFile, toLocalFile } from "./storage";
+import { makeTempDir, putFile, toLocalFile, diskFullMessage } from "./storage";
 import { computeWaveform, detectPauses } from "../editor/silence";
 import { buildSegments } from "../editor/subtitles";
 import { buildInitialDocument } from "../editor/factory";
@@ -151,7 +151,7 @@ export async function processTake(takeId: string): Promise<void> {
     const q = await prisma.question.findUnique({ where: { id: take.recording.questionId } });
     if (q && (q.status === "TO_RECORD" || q.status === "IN_PROGRESS")) await prisma.question.update({ where: { id: q.id }, data: { status: "RECORDED" } });
   } catch (e) {
-    await prisma.recordingTake.update({ where: { id: takeId }, data: { status: "FAILED", processingError: (e as Error).message.slice(0, 2000) } });
+    await prisma.recordingTake.update({ where: { id: takeId }, data: { status: "FAILED", processingError: (diskFullMessage(e) ?? (e as Error).message).slice(0, 2000) } });
     throw e;
   } finally {
     await src.cleanup();
