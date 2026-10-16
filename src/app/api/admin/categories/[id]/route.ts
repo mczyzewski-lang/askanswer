@@ -2,6 +2,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/server/db";
 import { requireAdmin } from "@/lib/server/auth";
 import { json, route } from "@/lib/server/http";
+import { ensureProjectExpert } from "@/lib/server/project-experts";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -17,7 +18,9 @@ export const PATCH = route(async (req: Request, ctx: Ctx) => {
     })
     .parse(await req.json());
   if (data.expertId && !(await prisma.expert.findUnique({ where: { id: data.expertId }, select: { id: true } }))) return json({ error: "Nie znaleziono eksperta" }, 404);
-  return json(await prisma.category.update({ where: { id }, data }));
+  const cat = await prisma.category.update({ where: { id }, data });
+  if (data.expertId) await ensureProjectExpert(cat.projectId, data.expertId);
+  return json(cat);
 });
 
 export const DELETE = route(async (_req: Request, ctx: Ctx) => {

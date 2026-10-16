@@ -98,6 +98,7 @@ model Expert {
   invitations Invitation[]
   recordings  Recording[]
   categories  Category[]
+  projects    ProjectExpert[]
 }
 
 model Theme {
@@ -122,6 +123,22 @@ model Theme {
   projects        Project[]
 }
 
+enum ProjectFormat {
+  ANSWERS
+  PROMPTER
+}
+
+/// experts taking part in a project (shown in "Eksperci i linki", offered when assigning questions)
+model ProjectExpert {
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  expertId  String
+  expert    Expert   @relation(fields: [expertId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@id([projectId, expertId])
+}
+
 model Project {
   id                 String             @id @default(cuid())
   name               String
@@ -134,6 +151,9 @@ model Project {
   sequential         Boolean            @default(false)
   /// questions on the expert's list per day, mixed evenly across categories (0 = whole list)
   dailyQuestionLimit Int                @default(10)
+  /// ANSWERS = expert answers questions (narrated); PROMPTER = expert reads a script (Hook + Treść) from a teleprompter
+  format             ProjectFormat      @default(ANSWERS)
+  experts            ProjectExpert[]
   questionVisibility QuestionVisibility @default(FULL)
   questionSeconds    Float              @default(4)
   createdAt          DateTime           @default(now())
@@ -184,6 +204,8 @@ model Question {
   category       Category?          @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   subcategoryId  String?
   subcategory    Subcategory?       @relation(fields: [subcategoryId], references: [id], onDelete: SetNull)
+  /// PROMPTER projects: the script the expert reads (text = the hook)
+  script         String?
   expertId       String?
   expert         Expert?            @relation(fields: [expertId], references: [id], onDelete: SetNull)
   text           String

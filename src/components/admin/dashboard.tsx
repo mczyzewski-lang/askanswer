@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import { FORMAT_LABELS, type ProjectFormat } from "@/lib/project-terms";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { ArrowUpRight, FolderPlus, Users } from "lucide-react";
@@ -92,6 +93,7 @@ function NewProjectDialog() {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [preset, setPreset] = useState("pravna");
+  const [format, setFormat] = useState<ProjectFormat>("ANSWERS");
   const [busy, setBusy] = useState(false);
   const { toast, toastNode } = useToast();
   return (
@@ -109,7 +111,7 @@ function NewProjectDialog() {
               e.preventDefault();
               setBusy(true);
               try {
-                const p = await api<{ id: string }>("/api/admin/projects", { method: "POST", json: { name, description: description || null, preset } });
+                const p = await api<{ id: string }>("/api/admin/projects", { method: "POST", json: { name, description: description || null, preset, format } });
                 router.push(`/admin/projects/${p.id}`);
               } catch (err) {
                 toast((err as Error).message, "err");
@@ -124,6 +126,16 @@ function NewProjectDialog() {
             <div className="space-y-1.5">
               <Label htmlFor="pdesc">Opis (opcjonalnie)</Label>
               <Textarea id="pdesc" value={description} onChange={(e) => setDescription(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="pformat">Format</Label>
+              <NativeSelect id="pformat" value={format} onChange={(e) => setFormat(e.target.value as ProjectFormat)}>
+                {(Object.keys(FORMAT_LABELS) as ProjectFormat[]).map((k) => (
+                  <option key={k} value={k}>
+                    {FORMAT_LABELS[k].name} — {FORMAT_LABELS[k].description}
+                  </option>
+                ))}
+              </NativeSelect>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="ptheme">Motyw startowy</Label>

@@ -9,6 +9,8 @@
  * Words are placeholders ("słowo1", …) — clearly not a real transcription.
  */
 import http from "node:http";
+import crypto from "node:crypto";
+import type { Duplex } from "node:stream";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
@@ -45,13 +47,20 @@ function voicedRegions(audio: Buffer): Array<[number, number]> {
   const win = 160;
   const regions: Array<[number, number]> = [];
   let start = -1;
+  const levels: number[] = [];
   for (let i = 0; i * win < s.length; i++) {
     let sq = 0;
     for (let k = i * win; k < Math.min(s.length, (i + 1) * win); k++) sq += s[k] * s[k];
-    const db = 20 * Math.log10(Math.sqrt(sq / win) + 1e-9);
+    levels.push(20 * Math.log10(Math.sqrt(sq / win) + 1e-9));
+  }
+  // relative threshold: Chrome's mic auto-gain makes later takes quieter than the fixture
+  const loud = [...levels].sort((a, b) => b - a)[Math.floor(levels.length * 0.1)] ?? -20;
+  const threshold = Math.max(-55, Math.min(-35, loud - 25));
+  for (let i = 0; i < levels.length; i++) {
+    const db = levels[i];
     const t = i / 100;
-    if (db > -35 && start < 0) start = t;
-    if (db <= -35 && start >= 0) {
+    if (db > threshold && start < 0) start = t;
+    if (db <= threshold && start >= 0) {
       if (t - start > 0.15) regions.push([start, t]);
       start = -1;
     }
@@ -124,6 +133,9 @@ const server = http.createServer(async (req, res) => {
     // ---- MOCK Higgsfield (text-to-video): POST /{model} → request_id; GET /requests/:id/status ----
     if (url.pathname.startsWith("/hf/")) return higgsfield(req, res, url.pathname.slice(3), json);
     if (!req.headers["xi-api-key"]) return json(401, { detail: "missing api key" });
+    if (req.method === "POST" && url.pathname === "/v1/single-use-token/realtime_scribe") {
+      return json(200, { token: `mock-rt-${Date.now().toString(36)}` });
+    }
     if (req.method === "GET" && url.pathname === "/v1/voices") {
       return json(200, { voices: [{ voice_id: "mock-voice-pl", name: "Mock — Polski lektor", labels: { accent: "polish", gender: "female" } }, { voice_id: "mock-voice-2", name: "Mock — Drugi głos", labels: {} }] });
     }
@@ -174,6 +186,85 @@ const server = http.createServer(async (req, res) => {
   } catch (e) {
     json(500, { detail: (e as Error).message });
   }
+});
+
+// ---- MOCK Scribe v2 Realtime (WebSocket) ----
+// "Speaks" a fixed sentence while audio chunks arrive: one word per audio message, committed every
+// 6 words. It contains a filler ad-lib and skips a whole sentence of the test script, so the e2e test
+// proves the prompter follows real speech, not a timer.
+export const MOCK_SPEECH =
+  "Trzy błędy które kosztują Cię klientów eee tak myślę że pierwszy błąd to brak odpowiedzi w ciągu dwudziestu czterech godzin trzeci błąd to brak follow-upu po spotkaniu z klientem";
+function wsSend(socket: Duplex, data: unknown) {
+  const payload = Buffer.from(JSON.stringify(data));
+  const len = payload.length;
+  const head = len < 126 ? Buffer.from([0x81, len]) : len < 65536 ? Buffer.from([0x81, 126, len >> 8, len & 255]) : (() => {
+    const b = Buffer.alloc(10);
+    b[0] = 0x81;
+    b[1] = 127;
+    b.writeBigUInt64BE(BigInt(len), 2);
+    return b;
+  })();
+  socket.write(Buffer.concat([head, payload]));
+}
+server.on("upgrade", (req, socket) => {
+  const url = new URL(req.url ?? "/", `http://localhost:${PORT}`);
+  if (url.pathname !== "/v1/speech-to-text/realtime" || !url.searchParams.get("token") || url.searchParams.get("model_id") !== "scribe_v2_realtime") {
+    socket.end("HTTP/1.1 401 Unauthorized\r\n\r\n");
+    return;
+  }
+  const accept = crypto.createHash("sha1").update(`${req.headers["sec-websocket-key"]}258EAFA5-E914-47DA-95CA-C5AB0DC85B11`).digest("base64");
+  socket.write(`HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${accept}\r\n\r\n`);
+  wsSend(socket, { message_type: "session_started", session_id: "mock" });
+  const words = MOCK_SPEECH.split(" ");
+  let spoken = 0;
+  let committedAt = 0;
+  let buf = Buffer.alloc(0);
+  socket.on("data", (chunk: Buffer) => {
+    buf = Buffer.concat([buf, chunk]);
+    for (;;) {
+      if (buf.length < 2) return;
+      const op = buf[0] & 0x0f;
+      let len = buf[1] & 0x7f;
+      let off = 2;
+      if (len === 126) {
+        if (buf.length < 4) return;
+        len = buf.readUInt16BE(2);
+        off = 4;
+      } else if (len === 127) {
+        if (buf.length < 10) return;
+        len = Number(buf.readBigUInt64BE(2));
+        off = 10;
+      }
+      const masked = (buf[1] & 0x80) !== 0;
+      const total = off + (masked ? 4 : 0) + len;
+      if (buf.length < total) return;
+      const mask = masked ? buf.subarray(off, off + 4) : null;
+      const data = Buffer.from(buf.subarray(off + (masked ? 4 : 0), total));
+      if (mask) for (let i = 0; i < data.length; i++) data[i] ^= mask[i % 4];
+      buf = buf.subarray(total);
+      if (op === 0x8) {
+        socket.end();
+        return;
+      }
+      if (op !== 0x1) continue;
+      let msg: { message_type?: string; audio_base_64?: string; sample_rate?: number };
+      try {
+        msg = JSON.parse(data.toString());
+      } catch {
+        continue;
+      }
+      if (msg.message_type !== "input_audio_chunk" || !msg.audio_base_64 || msg.sample_rate !== 16000) continue;
+      if (spoken >= words.length) continue;
+      spoken++;
+      if (spoken - committedAt >= 6 || spoken === words.length) {
+        wsSend(socket, { message_type: "committed_transcript", text: words.slice(committedAt, spoken).join(" ") });
+        committedAt = spoken;
+      } else {
+        wsSend(socket, { message_type: "partial_transcript", text: words.slice(committedAt, spoken).join(" ") });
+      }
+    }
+  });
+  socket.on("error", () => {});
 });
 
 server.listen(PORT, "127.0.0.1", () => console.log(`[mock-elevenlabs] listening on ${PORT}`));

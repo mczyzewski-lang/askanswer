@@ -10,6 +10,7 @@ import { QuestionsPanel } from "./questions-panel";
 import { InvitationsPanel } from "./invitations-panel";
 import { SettingsPanel } from "./settings-panel";
 import { CombinedPanel } from "./combined-panel";
+import { terms } from "@/lib/project-terms";
 
 export function ProjectView({ data }: { data: ProjectData }) {
   const router = useRouter();
@@ -56,7 +57,7 @@ export function ProjectView({ data }: { data: ProjectData }) {
       <Tabs.Root value={tab} onValueChange={setTab} className="mt-6">
         <Tabs.List className="flex gap-1 border-b border-line">
           {[
-            ["questions", "Pytania i nagrania"],
+            ["questions", terms(data.project.format).tab],
             ["experts", "Eksperci i linki"],
             ["export", "Eksport"],
             ["settings", "Ustawienia"],

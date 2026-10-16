@@ -3,6 +3,7 @@ import { prisma } from "@/lib/server/db";
 import { requireAdmin } from "@/lib/server/auth";
 import { json, route } from "@/lib/server/http";
 import { QuestionInput } from "@/lib/server/schemas";
+import { ensureProjectExpert } from "@/lib/server/project-experts";
 
 /** Add one question or many at once (paste / CSV import). Unknown category names are created. */
 export const POST = route(async (req: Request, ctx: { params: Promise<{ id: string }> }) => {
@@ -48,11 +49,12 @@ export const POST = route(async (req: Request, ctx: { params: Promise<{ id: stri
       }
       out.push(
         await tx.question.create({
-          data: { projectId, text: it.text, categoryId, subcategoryId, instructions: it.instructions ?? null, maxDurationSec: it.maxDurationSec ?? null, expertId: it.expertId ?? defaultExpertId, order: order++ },
+          data: { projectId, text: it.text, script: it.script ?? null, categoryId, subcategoryId, instructions: it.instructions ?? null, maxDurationSec: it.maxDurationSec ?? null, expertId: it.expertId ?? defaultExpertId, order: order++ },
         }),
       );
     }
     return out;
   });
+  for (const e of new Set(created.map((q) => q.expertId).filter((x): x is string => !!x))) await ensureProjectExpert(projectId, e);
   return json({ created: created.length, items: created }, 201);
 });

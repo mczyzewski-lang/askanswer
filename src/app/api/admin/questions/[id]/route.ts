@@ -2,6 +2,7 @@ import { prisma } from "@/lib/server/db";
 import { requireAdmin } from "@/lib/server/auth";
 import { json, route } from "@/lib/server/http";
 import { QuestionInput } from "@/lib/server/schemas";
+import { ensureProjectExpert } from "@/lib/server/project-experts";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -24,6 +25,7 @@ export const PATCH = route(async (req: Request, ctx: Ctx) => {
     const ok = categoryId ? await prisma.subcategory.findFirst({ where: { id: subId, categoryId } }) : null;
     if (!ok) data.subcategoryId = null;
   }
+  if (data.expertId) await ensureProjectExpert(current.projectId, data.expertId);
   return json(await prisma.question.update({ where: { id }, data }));
 });
 

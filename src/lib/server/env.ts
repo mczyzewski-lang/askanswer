@@ -32,6 +32,9 @@ export const env = {
   get ttsModel() {
     return str("ELEVENLABS_TTS_MODEL", "eleven_multilingual_v2");
   },
+  get realtimeSttModel() {
+    return str("ELEVENLABS_REALTIME_STT_MODEL", "scribe_v2_realtime");
+  },
   get sttModel() {
     return str("ELEVENLABS_STT_MODEL", "scribe_v2");
   },

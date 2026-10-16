@@ -36,3 +36,31 @@ export function parseBulk(text: string): BulkLine[] {
     .map(parseBulkLine)
     .filter((l): l is BulkLine => !!l);
 }
+
+export interface BulkScript extends BulkLine {
+  script: string;
+}
+
+/**
+ * "Wklej wiele" for Prompter projects: one script per block, blocks separated by an empty line.
+ * The first line is the hook (with the same optional [temat] / [Kategoria/temat] prefix), the rest is
+ * the script body ("Treść"). Optional "Hook:" / "Treść:" labels are stripped.
+ */
+export function parseBulkScripts(text: string): BulkScript[] {
+  return text
+    .replace(/\r/g, "")
+    .split(/\n\s*\n+/)
+    .map((block) => {
+      const lines = block.split("\n").map((l) => l.trim()).filter(Boolean);
+      if (!lines.length) return null;
+      const head = parseBulkLine(lines[0].replace(/^hook\s*[:–-]\s*/i, ""));
+      if (!head) return null;
+      const script = lines
+        .slice(1)
+        .join("\n")
+        .replace(/^(treść|tresc|content|script)\s*[:–-]\s*/i, "")
+        .trim();
+      return { ...head, script };
+    })
+    .filter((b): b is BulkScript => !!b);
+}

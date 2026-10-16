@@ -16,7 +16,7 @@ export function InvitationsPanel({ data, refresh, toast }: PanelProps) {
       const qs = data.questions.filter((q) => q.expertId === e.id);
       return { expert: e, total: qs.length, recorded: qs.filter((q) => q.takes.length > 0).length, links: data.invitations.filter((i) => i.expertId === e.id) };
     })
-    .filter((x) => x.total > 0 || x.links.length > 0);
+    .filter((x) => x.total > 0 || x.links.length > 0 || data.projectExpertIds.includes(x.expert.id));
 
   const copy = async (url: string, id: string) => {
     try {
@@ -149,9 +149,9 @@ export function InvitationsPanel({ data, refresh, toast }: PanelProps) {
             onSubmit={async (e) => {
               e.preventDefault();
               try {
-                await api("/api/admin/experts", { method: "POST", json: { name: newName } });
+                await api(`/api/admin/projects/${data.project.id}/experts`, { method: "POST", json: { name: newName } });
                 setNewName("");
-                toast("Dodano eksperta");
+                toast("Dodano eksperta do projektu");
                 refresh();
               } catch (err) {
                 toast((err as Error).message, "err");
@@ -163,7 +163,7 @@ export function InvitationsPanel({ data, refresh, toast }: PanelProps) {
               Dodaj
             </Button>
           </form>
-          <p className="text-xs text-muted">Następnie przypisz mu pytania w zakładce „Pytania i nagrania”.</p>
+          <p className="text-xs text-muted">Istniejących ekspertów dodasz do projektu w „Ustawienia → Eksperci projektu”, a pytania przypiszesz w „Pytania i nagrania”.</p>
         </Card>
       </div>
     </div>

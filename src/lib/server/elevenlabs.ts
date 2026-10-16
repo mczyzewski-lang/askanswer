@@ -131,3 +131,22 @@ export async function isolateVoice(filePath: string): Promise<Buffer> {
   const res = await call("/v1/audio-isolation", { method: "POST", body: form }, 600_000);
   return Buffer.from(await res.arrayBuffer());
 }
+
+/**
+ * Scribe v2 Realtime for the teleprompter: a single-use token (15 min, consumed on connect) lets the
+ * expert's browser stream microphone audio straight to ElevenLabs without ever seeing the API key.
+ */
+export async function realtimeSttSession() {
+  const res = await call("/v1/single-use-token/realtime_scribe", { method: "POST" }, 15_000);
+  const { token } = (await res.json()) as { token: string };
+  const params = new URLSearchParams({
+    model_id: env.realtimeSttModel,
+    token,
+    audio_format: "pcm_16000",
+    commit_strategy: "vad",
+    vad_silence_threshold_secs: "0.6",
+    language_code: "pl",
+  });
+  const wsBase = env.elevenLabsBaseUrl.replace(/^http/, "ws");
+  return { url: `${wsBase}/v1/speech-to-text/realtime?${params}`, sampleRate: 16000 };
+}

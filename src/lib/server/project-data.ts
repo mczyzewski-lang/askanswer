@@ -39,6 +39,7 @@ export async function projectData(id: string) {
       theme: true,
       categories: { orderBy: { order: "asc" }, include: { subcategories: { orderBy: [{ order: "asc" }, { name: "asc" }] } } },
       invitations: { orderBy: { createdAt: "desc" }, include: { expert: true } },
+      experts: { select: { expertId: true } },
       questions: {
         orderBy: [{ order: "asc" }, { createdAt: "asc" }],
         include: {
@@ -66,6 +67,7 @@ export async function projectData(id: string) {
     p.questions.map(async (q) => ({
       id: q.id,
       text: q.text,
+      script: q.script,
       instructions: q.instructions,
       maxDurationSec: q.maxDurationSec,
       order: q.order,
@@ -115,6 +117,7 @@ export async function projectData(id: string) {
       description: p.description,
       recordingMode: p.recordingMode,
       sequential: p.sequential,
+      format: p.format,
       dailyQuestionLimit: p.dailyQuestionLimit,
       questionVisibility: p.questionVisibility,
       questionSeconds: p.questionSeconds,
@@ -125,7 +128,12 @@ export async function projectData(id: string) {
       theme: p.theme,
     },
     categories: p.categories.map((c) => ({ id: c.id, name: c.name, subcategories: c.subcategories.map((s) => ({ id: s.id, name: s.name })) })),
-    experts: experts.map((e) => ({ id: e.id, name: e.name, email: e.email, title: e.title })),
+    // project members first, so pickers default to them
+    experts: [...experts]
+      .sort((a, b) => Number(p.experts.some((m) => m.expertId === b.id)) - Number(p.experts.some((m) => m.expertId === a.id)))
+      .map((e) => ({ id: e.id, name: e.name, email: e.email, title: e.title })),
+    /** experts assigned to this project (settings → "Eksperci projektu") */
+    projectExpertIds: p.experts.map((m) => m.expertId),
     invitations: p.invitations.map((i) => ({
       id: i.id,
       expertId: i.expertId,

@@ -48,6 +48,7 @@ All variables are listed in `.env.example`.
 | `ELEVENLABS_VOICE_ID` | no | Default narrator voice (each project can override it) |
 | `ELEVENLABS_TTS_MODEL` | no | Default `eleven_multilingual_v2` (Polish-capable) |
 | `ELEVENLABS_STT_MODEL` | no | Default `scribe_v2` |
+| `ELEVENLABS_REALTIME_STT_MODEL` | no | Prompter voice following, default `scribe_v2_realtime` (the browser gets a single-use token, never the key) |
 | `HIGGSFIELD_CREDENTIALS` | for AI B-roll | `KEY_ID:KEY_SECRET`; Studio → AI generates clips with Higgsfield (server-side only) |
 | `HIGGSFIELD_MODEL` | no | Default `kling-video/v3.0/pro/text-to-video` (Kling 3.0 Pro, 9:16); also `bytedance/seedance-2.5/text-to-video`, `kling-video/v3.0/std/text-to-video` |
 | `HIGGSFIELD_IMAGE_MODEL` | no | Text-to-image model for infographic illustrations, default `flux-pro/kontext/max/text-to-image` |

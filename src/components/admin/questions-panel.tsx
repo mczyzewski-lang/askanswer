@@ -49,7 +49,8 @@ import { api, cn, formatDate, formatDuration, plural } from "@/lib/utils";
 import { themeFromRow, DEFAULT_THEME } from "@/lib/themes";
 import type { PanelProps } from "./project-view";
 import { QuestionPreview } from "./question-preview";
-import { parseBulk } from "@/lib/bulk-questions";
+import { parseBulk, parseBulkScripts } from "@/lib/bulk-questions";
+import { terms } from "@/lib/project-terms";
 
 type Q = PanelProps["data"]["questions"][number];
 type Take = Q["takes"][number];
@@ -77,6 +78,7 @@ export function QuestionsPanel({ data, refresh, toast }: PanelProps) {
   const fileRef = useRef<HTMLInputElement>(null);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }), useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }));
   const theme = data.project.theme ? themeFromRow(data.project.theme) : DEFAULT_THEME;
+  const T = terms(data.project.format);
 
   const visible = useMemo(
     () =>
@@ -115,7 +117,8 @@ export function QuestionsPanel({ data, refresh, toast }: PanelProps) {
             };
             const max = Number(get("czas", "maks", "max", "maxdurationsec", "duration"));
             return {
-              text: get("pytanie", "question", "text", "treść", "tresc"),
+              text: T.prompter ? get("hook", "pytanie", "tytuł", "tytul", "title") : get("pytanie", "question", "text", "treść", "tresc"),
+              script: T.prompter ? get("treść", "tresc", "script", "skrypt", "content", "tekst") || null : undefined,
               categoryName: get("kategoria", "category") || undefined,
               subcategoryName: get("podkategoria", "temat", "subcategory") || undefined,
               instructions: get("instrukcje", "instructions", "wskazówki") || null,
@@ -124,12 +127,12 @@ export function QuestionsPanel({ data, refresh, toast }: PanelProps) {
           })
           .filter((r) => r.text.length >= 3);
         if (!rows.length) {
-          toast("Nie znaleziono pytań. Plik CSV powinien mieć kolumny: pytanie, kategoria, instrukcje, czas", "err");
+          toast(T.prompter ? "Nie znaleziono skryptów. Plik CSV powinien mieć kolumny: hook, treść, kategoria" : "Nie znaleziono pytań. Plik CSV powinien mieć kolumny: pytanie, kategoria, instrukcje, czas", "err");
           return;
         }
         try {
           const r = await api<{ created: number }>(`/api/admin/projects/${data.project.id}/questions`, { method: "POST", json: { items: rows } });
-          toast(`Zaimportowano ${r.created} ${plural(r.created, "pytanie", "pytania", "pytań")}`);
+          toast(`Zaimportowano ${r.created} ${plural(r.created, T.one, T.few, T.many)}`);
           refresh();
         } catch (err) {
           toast((err as Error).message, "err");
@@ -143,7 +146,7 @@ export function QuestionsPanel({ data, refresh, toast }: PanelProps) {
     <div>
       <div className="flex flex-wrap items-center gap-2">
         <Button onClick={() => setEditing("new")}>
-          <Plus /> Dodaj pytanie
+          <Plus /> {T.add}
         </Button>
         <Button variant="outline" onClick={() => setBulk(true)}>
           <ClipboardPaste /> Wklej wiele
@@ -205,7 +208,7 @@ export function QuestionsPanel({ data, refresh, toast }: PanelProps) {
 
       <div className="mt-5">
         {visible.length === 0 ? (
-          <EmptyState title="Brak pytań">Dodaj pytania ręcznie, wklej listę lub zaimportuj plik CSV.</EmptyState>
+          <EmptyState title={T.prompter ? "Brak skryptów" : "Brak pytań"}>{T.prompter ? "Dodaj skrypty (Hook + Treść) ręcznie, wklej je blokami lub zaimportuj plik CSV." : "Dodaj pytania ręcznie, wklej listę lub zaimportuj plik CSV."}</EmptyState>
         ) : (
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
             <SortableContext items={visible.map((q) => q.id)} strategy={verticalListSortingStrategy}>
@@ -277,6 +280,7 @@ function QuestionRow({ q, index, data, refresh, toast, onEdit, onPreview }: { q:
           <span className="tabular mt-0.5 w-6 shrink-0 text-sm text-muted">{index + 1}.</span>
           <div className="min-w-0 flex-1">
             <p className="font-medium leading-snug">{q.text}</p>
+            {q.script ? <p className="mt-1 line-clamp-2 whitespace-pre-line text-sm leading-snug text-muted">{q.script}</p> : null}
             <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-muted">
               {q.categoryName ? (
                 <Badge>
@@ -327,9 +331,11 @@ function QuestionRow({ q, index, data, refresh, toast, onEdit, onPreview }: { q:
                 <DropdownMenuItem onSelect={onPreview}>
                   <Eye /> Podgląd na wideo
                 </DropdownMenuItem>
-                <DropdownMenuItem onSelect={playNarration} disabled={narrating}>
-                  <Volume2 /> Odsłuchaj lektora
-                </DropdownMenuItem>
+                {data.project.format !== "PROMPTER" ? (
+                  <DropdownMenuItem onSelect={playNarration} disabled={narrating}>
+                    <Volume2 /> Odsłuchaj lektora
+                  </DropdownMenuItem>
+                ) : null}
                 <DropdownMenuItem
                   onSelect={async () => {
                     try {
@@ -557,7 +563,9 @@ function QuestionDialog({ open, question, data, onClose, refresh, toast }: { ope
   const [newSub, setNewSub] = useState("");
   const [expertId, setExpertId] = useState<string>("");
   const [instructions, setInstructions] = useState("");
+  const [script, setScript] = useState("");
   const [max, setMax] = useState<string>("");
+  const T = terms(data.project.format);
   const [lastKey, setLastKey] = useState<string | null>(null);
   const key = open ? (question?.id ?? "new") : null;
   if (key !== lastKey) {
@@ -568,12 +576,13 @@ function QuestionDialog({ open, question, data, onClose, refresh, toast }: { ope
     setNewSub("");
     setExpertId(question?.expertId ?? data.experts[0]?.id ?? "");
     setInstructions(question?.instructions ?? "");
+    setScript(question?.script ?? "");
     setMax(question?.maxDurationSec ? String(question.maxDurationSec) : "");
   }
   const theme = data.project.theme ? themeFromRow(data.project.theme) : DEFAULT_THEME;
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent title={question ? "Edytuj pytanie" : "Nowe pytanie"} className="max-w-3xl">
+      <DialogContent title={question ? T.editTitle : T.newTitle} className="max-w-3xl">
         <div className="grid gap-6 md:grid-cols-[1fr_auto]">
           <form
             id="qform"
@@ -585,11 +594,12 @@ function QuestionDialog({ open, question, data, onClose, refresh, toast }: { ope
                 categoryId: categoryId || null,
                 subcategoryId: subcategoryId && subcategoryId !== "__new" ? subcategoryId : null,
                 ...(subcategoryId === "__new" && newSub.trim() ? { subcategoryName: newSub.trim() } : {}),
-                expertId: expertId || null, instructions: instructions || null, maxDurationSec: max ? Number(max) : null };
+                expertId: expertId || null, instructions: instructions || null, maxDurationSec: max ? Number(max) : null,
+                ...(T.prompter ? { script: script.trim() || null } : {}) };
               try {
                 if (question) await api(`/api/admin/questions/${question.id}`, { method: "PATCH", json: body });
                 else await api(`/api/admin/projects/${data.project.id}/questions`, { method: "POST", json: body });
-                toast(question ? "Zapisano pytanie" : "Dodano pytanie");
+                toast(question ? `Zapisano ${T.one}` : `Dodano ${T.one}`);
                 onClose();
                 refresh();
               } catch (err) {
@@ -598,9 +608,19 @@ function QuestionDialog({ open, question, data, onClose, refresh, toast }: { ope
             }}
           >
             <div className="space-y-1.5">
-              <Label htmlFor="qtext">Treść pytania</Label>
-              <Textarea id="qtext" value={text} onChange={(e) => setText(e.target.value)} required minLength={3} rows={3} placeholder="np. Dlaczego warto zastrzec znak towarowy?" />
+              <Label htmlFor="qtext">{T.title}</Label>
+              <Textarea id="qtext" value={text} onChange={(e) => setText(e.target.value)} required minLength={3} rows={T.prompter ? 2 : 3} placeholder={T.prompter ? "np. 3 błędy, które kosztują Cię klientów" : "np. Dlaczego warto zastrzec znak towarowy?"} />
+              {T.prompter ? <p className="text-xs text-muted">Hook to pierwsze zdanie rolki — ekspert mówi je na początku, a na wideo pojawia się jako tytuł.</p> : null}
             </div>
+            {T.prompter ? (
+              <div className="space-y-1.5">
+                <Label htmlFor="qscript">Treść</Label>
+                <Textarea id="qscript" value={script} onChange={(e) => setScript(e.target.value)} rows={9} placeholder="Tekst, który ekspert przeczyta z promptera po hooku…" />
+                <p className="text-xs text-muted">
+                  {script.trim() ? `${script.trim().split(/\s+/).length} słów · ok. ${Math.max(1, Math.round((script.trim().split(/\s+/).length + text.trim().split(/\s+/).length) / 2.4))} s czytania` : "Prompter przewija tekst za głosem eksperta."}
+                </p>
+              </div>
+            ) : null}
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label htmlFor="qcat">Kategoria</Label>
@@ -658,12 +678,12 @@ function QuestionDialog({ open, question, data, onClose, refresh, toast }: { ope
               <Input id="qmax" type="number" min={5} max={1800} value={max} onChange={(e) => setMax(e.target.value)} placeholder="np. 60" />
             </div>
             <Button type="submit" className="w-full" disabled={text.trim().length < 3}>
-              {question ? "Zapisz" : "Dodaj pytanie"}
+              {question ? "Zapisz" : T.add}
             </Button>
           </form>
           <div className="hidden md:block">
             <p className="mb-2 text-xs font-medium text-muted">Podgląd na wideo</p>
-            <QuestionPreview text={text || "Treść pytania"} theme={theme} width={200} />
+            <QuestionPreview text={text || T.title} theme={theme} width={200} />
           </div>
         </div>
       </DialogContent>
@@ -675,17 +695,32 @@ function BulkDialog({ open, onClose, data, refresh, toast }: { open: boolean; on
   const [text, setText] = useState("");
   const [categoryId, setCategoryId] = useState(data.categories[0]?.id ?? "");
   const [expertId, setExpertId] = useState(data.experts[0]?.id ?? "");
-  const lines = parseBulk(text);
+  const T = terms(data.project.format);
+  const lines = T.prompter ? parseBulkScripts(text) : parseBulk(text).map((l) => ({ ...l, script: "" }));
   const catName = data.categories.find((c) => c.id === categoryId)?.name ?? null;
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent
-        title="Wklej wiele pytań"
-        description="Jedno pytanie w każdej linii. Temat (podkategorię) podaj w nawiasie na początku: [dzieci] Kto decyduje o opiece? — wiersz bez nawiasu nie ma podkategorii. Numeracja i punktory są usuwane automatycznie."
+        title={T.prompter ? "Wklej wiele skryptów" : "Wklej wiele pytań"}
+        description={
+          T.prompter
+            ? "Każdy skrypt to osobny blok oddzielony pustą linią: pierwsza linia to Hook, kolejne to Treść. Temat podaj w nawiasie na początku hooka: [dzieci] 3 błędy przy opiece nad dzieckiem."
+            : "Jedno pytanie w każdej linii. Temat (podkategorię) podaj w nawiasie na początku: [dzieci] Kto decyduje o opiece? — wiersz bez nawiasu nie ma podkategorii. Numeracja i punktory są usuwane automatycznie."
+        }
         className="max-w-2xl"
       >
         <div className="space-y-4">
-          <Textarea rows={8} value={text} onChange={(e) => setText(e.target.value)} placeholder={"[dzieci] Kto decyduje o opiece nad dzieckiem?\n[dzieci] Jak ustala się wysokość alimentów?\n[majątek] Jak dzieli się majątek po rozwodzie?\nIle trwa sprawa rozwodowa?"} aria-label="Pytania" />
+          <Textarea
+            rows={T.prompter ? 12 : 8}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder={
+              T.prompter
+                ? "[sprzedaż] 3 błędy, które kosztują Cię klientów\nPierwszy błąd to brak follow-upu. Większość klientów…\nDrugi błąd…\n\nDlaczego Twoje reklamy nie działają?\nNajczęściej problemem nie jest budżet, tylko…"
+                : "[dzieci] Kto decyduje o opiece nad dzieckiem?\n[dzieci] Jak ustala się wysokość alimentów?\n[majątek] Jak dzieli się majątek po rozwodzie?\nIle trwa sprawa rozwodowa?"
+            }
+            aria-label={T.prompter ? "Skrypty" : "Pytania"}
+          />
           {lines.length ? (
             <div className="max-h-48 overflow-y-auto rounded-xl border border-line">
               <table className="w-full text-left text-xs">
@@ -693,7 +728,7 @@ function BulkDialog({ open, onClose, data, refresh, toast }: { open: boolean; on
                   <tr>
                     <th className="px-3 py-1.5 font-medium">Kategoria</th>
                     <th className="px-3 py-1.5 font-medium">Podkategoria</th>
-                    <th className="px-3 py-1.5 font-medium">Pytanie</th>
+                    <th className="px-3 py-1.5 font-medium">{T.prompter ? "Hook / Treść" : "Pytanie"}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -704,7 +739,10 @@ function BulkDialog({ open, onClose, data, refresh, toast }: { open: boolean; on
                       <tr key={i} className="border-t border-line">
                         <td className="px-3 py-1.5 text-muted">{cat ?? "—"}</td>
                         <td className="px-3 py-1.5">{sub ? <Badge tone="violet">{sub}</Badge> : <span className="text-muted">—</span>}</td>
-                        <td className="px-3 py-1.5">{l.text}</td>
+                        <td className="px-3 py-1.5">
+                          {l.text}
+                          {l.script ? <span className="mt-0.5 block line-clamp-2 text-muted">{l.script}</span> : null}
+                        </td>
                       </tr>
                     );
                   })}
@@ -740,13 +778,14 @@ function BulkDialog({ open, onClose, data, refresh, toast }: { open: boolean; on
                   json: {
                     items: lines.map((l) => {
                       // [Kategoria/temat] wins; [temat] goes under the chosen category; with no category chosen [temat] becomes the category
-                      if (l.category) return { text: l.text, categoryName: l.category, subcategoryName: l.subcategory, expertId: expertId || null };
-                      if (categoryId) return { text: l.text, categoryId, subcategoryName: l.subcategory, expertId: expertId || null };
-                      return { text: l.text, categoryName: l.subcategory, expertId: expertId || null };
+                      const base = { text: l.text, expertId: expertId || null, ...(T.prompter ? { script: l.script || null } : {}) };
+                      if (l.category) return { ...base, categoryName: l.category, subcategoryName: l.subcategory };
+                      if (categoryId) return { ...base, categoryId, subcategoryName: l.subcategory };
+                      return { ...base, categoryName: l.subcategory };
                     }),
                   },
                 });
-                toast(`Dodano ${r.created} ${plural(r.created, "pytanie", "pytania", "pytań")}`);
+                toast(`Dodano ${r.created} ${plural(r.created, T.one, T.few, T.many)}`);
                 setText("");
                 onClose();
                 refresh();
@@ -755,7 +794,7 @@ function BulkDialog({ open, onClose, data, refresh, toast }: { open: boolean; on
               }
             }}
           >
-            Dodaj {lines.length || ""} {plural(lines.length, "pytanie", "pytania", "pytań")}
+            Dodaj {lines.length || ""} {plural(lines.length, T.one, T.few, T.many)}
           </Button>
         </div>
       </DialogContent>

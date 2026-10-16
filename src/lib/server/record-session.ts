@@ -37,16 +37,18 @@ export async function recordSession(token: string) {
   const byId = new Map(questions.map((q) => [q.id, q]));
   const listed = plan.ids.map((id) => byId.get(id)!).filter(Boolean);
   return {
-    project: { id: inv.project.id, name: inv.project.name, description: inv.project.description, mode: inv.project.recordingMode, sequential: inv.project.sequential },
+    project: { id: inv.project.id, name: inv.project.name, description: inv.project.description, mode: inv.project.recordingMode, sequential: inv.project.sequential, format: inv.project.format },
     dailyPlan: plan.applied ? { limit: inv.project.dailyQuestionLimit, pendingTotal: plan.pendingTotal, totalQuestions: questions.length } : null,
     expert: { name: inv.expert.name },
     consentGiven: !!inv.consentAt,
     expiresAt: inv.expiresAt.toISOString(),
-    narrationAvailable: elevenLabsConfigured(),
+    narrationAvailable: elevenLabsConfigured() && inv.project.format !== "PROMPTER",
+    voiceFollow: elevenLabsConfigured() && inv.project.format === "PROMPTER",
     theme: inv.project.theme ? { primary: inv.project.theme.primaryColor, accent: inv.project.theme.accentColor, font: inv.project.theme.questionFont } : null,
     questions: listed.map((q) => ({
       id: q.id,
       text: q.text,
+      script: q.script,
       instructions: q.instructions,
       maxDurationSec: q.maxDurationSec,
       category: q.category?.name ?? "Ogólne",

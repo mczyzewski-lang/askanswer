@@ -6,6 +6,8 @@ import { Button, Card, Input, Label, NativeSelect, Switch, Textarea } from "@/co
 import { api } from "@/lib/utils";
 import type { PanelProps } from "./project-view";
 import { VoicePicker } from "@/components/voice-picker";
+import { ProjectExpertsCard } from "./project-experts-card";
+import { FORMAT_LABELS, type ProjectFormat } from "@/lib/project-terms";
 
 interface VoiceList {
   configured: boolean;
@@ -23,6 +25,7 @@ export function SettingsPanel({ data, refresh, toast }: PanelProps) {
     description: p.description ?? "",
     recordingMode: p.recordingMode,
     sequential: p.sequential,
+    format: p.format,
     dailyQuestionLimit: p.dailyQuestionLimit,
     questionVisibility: p.questionVisibility,
     questionSeconds: p.questionSeconds,
@@ -48,6 +51,18 @@ export function SettingsPanel({ data, refresh, toast }: PanelProps) {
           <Textarea id="s-desc" value={form.description} onChange={(e) => set("description", e.target.value)} />
         </div>
         <div className="space-y-1.5">
+          <Label htmlFor="s-format">Format projektu</Label>
+          <NativeSelect id="s-format" value={form.format} onChange={(e) => set("format", e.target.value as typeof form.format)}>
+            {(Object.keys(FORMAT_LABELS) as ProjectFormat[]).map((k) => (
+              <option key={k} value={k}>
+                {FORMAT_LABELS[k].name} — {FORMAT_LABELS[k].description}
+              </option>
+            ))}
+          </NativeSelect>
+          <p className="text-xs text-muted">W formacie Prompter zamiast pytań są pozycje „Hook + Treść”, a ekspert czyta je z promptera (bez lektora).</p>
+        </div>
+        {form.format === "ANSWERS" ? (
+        <div className="space-y-1.5">
           <Label htmlFor="s-mode">Tryb nagrywania</Label>
           <NativeSelect id="s-mode" value={form.recordingMode} onChange={(e) => set("recordingMode", e.target.value as typeof form.recordingMode)}>
             <option value="CONTINUOUS">A — Ciągły wywiad (kamera nagrywa reakcję podczas pytania)</option>
@@ -55,6 +70,7 @@ export function SettingsPanel({ data, refresh, toast }: PanelProps) {
           </NativeSelect>
           <p className="text-xs text-muted">W trybie A mikrofon jest wyciszany podczas lektora, a głos ElevenLabs trafia na osobną ścieżkę. Gdy odtwarzanie się nie powiedzie, aplikacja automatycznie przejdzie do trybu B.</p>
         </div>
+        ) : null}
         <label className="flex items-center justify-between gap-4 text-sm">
           <span>
             Kolejność nagrywania wymuszona
@@ -70,7 +86,7 @@ export function SettingsPanel({ data, refresh, toast }: PanelProps) {
           </p>
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="s-vis">Widoczność pytania na wideo</Label>
+          <Label htmlFor="s-vis">Widoczność {form.format === "PROMPTER" ? "hooka" : "pytania"} na wideo</Label>
           <NativeSelect id="s-vis" value={form.questionVisibility} onChange={(e) => set("questionVisibility", e.target.value as typeof form.questionVisibility)}>
             <option value="FULL">Przez cały film (domyślnie)</option>
             <option value="NARRATION_ONLY">Tylko podczas czytania pytania</option>
@@ -86,6 +102,8 @@ export function SettingsPanel({ data, refresh, toast }: PanelProps) {
         <p className="text-xs text-muted">Ustawienia widoczności dotyczą nowych kompozycji. Istniejące filmy edytujesz w Studio.</p>
       </Card>
       <div className="space-y-6">
+        <ProjectExpertsCard data={data} refresh={refresh} toast={toast} />
+        {form.format === "ANSWERS" ? (
         <Card className="space-y-4 p-5">
           <p className="font-medium">Lektor ElevenLabs</p>
           {!voices?.configured ? (
@@ -110,6 +128,7 @@ export function SettingsPanel({ data, refresh, toast }: PanelProps) {
           </div>
           <p className="text-xs text-muted">Wygenerowane nagrania pytań są zapisywane w pamięci podręcznej — ten sam tekst i głos nie są syntezowane ponownie.</p>
         </Card>
+        ) : null}
         <Card className="space-y-3 p-5">
           <p className="font-medium">Motyw i branding</p>
           <p className="text-sm text-muted">

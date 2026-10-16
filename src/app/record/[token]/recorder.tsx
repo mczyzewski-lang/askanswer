@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { terms } from "@/lib/project-terms";
+import { primeAudio, Prompter } from "./prompter";
 import { AlertTriangle, Camera, Expand, Shrink, ZoomIn, Check, CheckCircle2, ChevronLeft, ChevronRight, CloudUpload, Loader2, Mic, Pause, Play, RefreshCw, RotateCcw, Square, SwitchCamera, Volume2, WifiOff } from "lucide-react";
 import { cn, formatDuration, plural } from "@/lib/utils";
 import { cameraErrorMessage, detectSupport, openCamera, requestWakeLock, setZoom, stopStream, zoomRange, type Facing, type RecorderSupport } from "@/lib/client/media";
@@ -13,15 +15,19 @@ interface Question {
   maxDurationSec: number | null;
   category: string;
   subcategory?: string | null;
+  /** Prompter projects: the script read after the hook (text) */
+  script?: string | null;
   status: string;
   takes: Array<{ id: string; takeNumber: number; status: string }>;
 }
 
 interface Session {
-  project: { id: string; name: string; description: string | null; mode: "CONTINUOUS" | "ANSWER_ONLY"; sequential: boolean };
+  project: { id: string; name: string; description: string | null; mode: "CONTINUOUS" | "ANSWER_ONLY"; sequential: boolean; format: "ANSWERS" | "PROMPTER" };
   expert: { name: string };
   consentGiven: boolean;
   narrationAvailable: boolean;
+  /** Prompter: ElevenLabs Scribe v2 Realtime can follow the expert's voice */
+  voiceFollow: boolean;
   theme: { primary: string; accent: string; font: string } | null;
   /** many questions: today's list, mixed evenly across categories */
   dailyPlan: { limit: number; pendingTotal: number; totalQuestions: number } | null;
@@ -215,6 +221,7 @@ export function Recorder({ token }: { token: string }) {
   }
 
   const unsupported = support && (!support.mediaDevices || !support.mediaRecorder || !support.mimeType);
+  const T = terms(session.project.format);
 
   if (screen === "welcome") {
     const remaining = questions.filter((q) => !isRecorded(q)).length;
@@ -229,12 +236,12 @@ export function Recorder({ token }: { token: string }) {
               <br />
               <span className="text-white/60">
                 {session.dailyPlan
-                  ? `Na dziś masz ${questions.length} ${plural(questions.length, "pytanie", "pytania", "pytań")} — po trochu z każdej kategorii.`
-                  : `Masz ${questions.length} ${plural(questions.length, "pytanie", "pytania", "pytań")} do nagrania.`}
+                  ? `Na dziś masz ${questions.length} ${plural(questions.length, T.one, T.few, T.many)} — po trochu z każdej kategorii.`
+                  : `Masz ${questions.length} ${plural(questions.length, T.one, T.few, T.many)} do nagrania.`}
               </span>
               {session.dailyPlan ? (
                 <span className="mt-3 block text-[15px] font-normal leading-snug text-white/45">
-                  Łącznie czeka {session.dailyPlan.pendingTotal} {plural(session.dailyPlan.pendingTotal, "pytanie", "pytania", "pytań")}. Kolejne pojawią się jutro.
+                  Łącznie czeka {session.dailyPlan.pendingTotal} {plural(session.dailyPlan.pendingTotal, T.one, T.few, T.many)}. Kolejne pojawią się jutro.
                 </span>
               ) : null}
             </h1>
@@ -346,7 +353,7 @@ export function Recorder({ token }: { token: string }) {
           <div className="sticky top-0 z-10 -mx-5 bg-[#0c0d10]/90 px-5 pb-3 pt-4 backdrop-blur">
             <p className="text-xs font-medium uppercase tracking-[0.18em] text-white/45">{session.project.name}</p>
             <div className="mt-1 flex items-end justify-between">
-              <h1 className="font-display text-2xl font-semibold">Twoje pytania</h1>
+              <h1 className="font-display text-2xl font-semibold">{T.prompter ? "Twoje skrypty" : "Twoje pytania"}</h1>
               <span className="tabular text-sm text-white/60">
                 {done}/{questions.length} nagrane
               </span>
@@ -410,7 +417,7 @@ export function Recorder({ token }: { token: string }) {
             <div className="mx-auto flex max-w-md gap-3">
               {firstOpen ? (
                 <button className="h-14 flex-1 rounded-2xl bg-white text-[16px] font-semibold text-black active:scale-[.98]" onClick={() => openQuestion(firstOpen)}>
-                  Nagraj następne pytanie
+                  {T.prompter ? "Nagraj następny skrypt" : "Nagraj następne pytanie"}
                 </button>
               ) : null}
               <button className={cn("h-14 rounded-2xl px-5 text-[16px] font-semibold active:scale-[.98]", firstOpen ? "bg-white/10" : "flex-1 bg-white text-black")} onClick={() => setScreen("done")}>
@@ -461,7 +468,7 @@ export function Recorder({ token }: { token: string }) {
           <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-full bg-emerald-400/15">
             <CheckCircle2 className="h-9 w-9 text-emerald-400" />
           </div>
-          <h1 className="text-center font-display text-[28px] font-semibold leading-tight">Dziękujemy! Twoje odpowiedzi zostały nagrane.</h1>
+          <h1 className="text-center font-display text-[28px] font-semibold leading-tight">Dziękujemy! {T.prompter ? "Twoje nagrania są zapisane." : "Twoje odpowiedzi zostały nagrane."}</h1>
           <div className="mt-8 grid grid-cols-3 gap-2">
             <Stat label="Nagrane" value={String(completed)} />
             <Stat label="Bez odpowiedzi" value={String(questions.length - completed)} />
@@ -531,6 +538,8 @@ function RecordScreen(props: {
   const modeRef = useRef<"CONTINUOUS" | "ANSWER_ONLY">(session.project.mode);
   const wakeLock = useRef<{ release: () => Promise<void> } | null>(null);
   const cancelCountdown = useRef(false);
+  const isPrompter = session.project.format === "PROMPTER";
+  const [takeKey, setTakeKey] = useState(0);
 
   const now = () => (clock.current.running ? clock.current.acc + (performance.now() - clock.current.since) / 1000 : clock.current.acc);
 
@@ -702,13 +711,21 @@ function RecordScreen(props: {
     if (startRecorder()) {
       setMic(true);
       setPhase("recording");
-      setAnswerCue(true);
+      if (!isPrompter) setAnswerCue(true);
       setTimeout(() => setAnswerCue(false), 2000);
     } else setPhase("idle");
   };
 
   const start = async () => {
     setRecError(null);
+    if (isPrompter) {
+      // Prompter: no narration — countdown, then the script scrolls with the expert's voice
+      modeRef.current = "ANSWER_ONLY";
+      if (session.voiceFollow) primeAudio();
+      setTakeKey((k) => k + 1);
+      await runCountdown();
+      return;
+    }
     const withNarration = narrationState === "ready" && !!narration;
     modeRef.current = session.project.mode;
     if (modeRef.current === "CONTINUOUS" && withNarration) {
@@ -794,7 +811,7 @@ function RecordScreen(props: {
         {phase === "idle" || phase === "review" ? (
           <button
             aria-label={props.fit === "cover" ? "Pokaż cały obraz z kamery" : "Wypełnij ekran"}
-            className="absolute right-4 top-1/2 z-10 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-black/45 backdrop-blur active:scale-95"
+            className={cn("absolute right-4 z-10 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-black/45 backdrop-blur active:scale-95", isPrompter ? "top-[64%]" : "top-1/2")}
             onClick={() => props.onFit(props.fit === "cover" ? "contain" : "cover")}
           >
             {props.fit === "cover" ? <Shrink className="h-5 w-5" /> : <Expand className="h-5 w-5" />}
@@ -806,10 +823,10 @@ function RecordScreen(props: {
         <div className="absolute inset-x-0 top-0 bg-gradient-to-b from-black/85 via-black/45 to-transparent px-5 pb-16 safe-top">
           <div className="flex items-center justify-between pt-1">
             <button aria-label="Wróć do listy" className="-ml-2 flex h-10 items-center gap-1 rounded-xl px-2 text-sm text-white/80 disabled:opacity-30" disabled={recordingLike || phase === "countdown"} onClick={props.onBack}>
-              <ChevronLeft className="h-5 w-5" /> Pytania
+              <ChevronLeft className="h-5 w-5" /> {isPrompter ? "Lista" : "Pytania"}
             </button>
             <span className="tabular text-xs font-medium text-white/60">
-              Pytanie {props.index + 1} z {props.total}
+              {isPrompter ? "Skrypt" : "Pytanie"} {props.index + 1} z {props.total}
             </span>
             {recordingLike ? (
               <span className="flex items-center gap-1.5 rounded-full bg-black/40 px-2.5 py-1 text-xs font-semibold tabular backdrop-blur">
@@ -820,12 +837,29 @@ function RecordScreen(props: {
               <span className="w-16" />
             )}
           </div>
-          <h1
-            className="mt-4 text-balance text-center text-[25px] font-extrabold uppercase leading-[1.13] tracking-[-0.01em] [text-shadow:0_2px_16px_rgba(0,0,0,.45)]"
-            style={{ fontFamily: `"${session.theme?.font ?? "Manrope"}", var(--font-display)` }}
-          >
-            {question.text}
-          </h1>
+          {isPrompter ? (
+            <div className="mt-3 h-[44dvh]">
+              <Prompter
+                hook={question.text}
+                script={question.script ?? null}
+                takeKey={takeKey}
+                armed={phase === "countdown" || recordingLike}
+                running={phase === "recording"}
+                voiceAvailable={session.voiceFollow}
+                recordToken={props.token}
+                stream={stream}
+                accent={accent}
+                font={session.theme?.font ?? "Manrope"}
+              />
+            </div>
+          ) : (
+            <h1
+              className="mt-4 text-balance text-center text-[25px] font-extrabold uppercase leading-[1.13] tracking-[-0.01em] [text-shadow:0_2px_16px_rgba(0,0,0,.45)]"
+              style={{ fontFamily: `"${session.theme?.font ?? "Manrope"}", var(--font-display)` }}
+            >
+              {question.text}
+            </h1>
+          )}
           {question.instructions && phase === "idle" ? <p className="mx-auto mt-3 max-w-sm text-center text-[13px] text-white/75">{question.instructions}</p> : null}
         </div>
 
@@ -859,7 +893,11 @@ function RecordScreen(props: {
           {phase === "idle" ? (
             <div className="flex flex-col items-center gap-3">
               <p className="text-center text-[13px] text-white/70">
-                {narrationState === "loading"
+                {isPrompter
+                  ? session.voiceFollow
+                    ? "Po odliczaniu 3‑2‑1 tekst przewija się za Twoim głosem. Stuknij słowo albo przewiń, żeby przeskoczyć."
+                    : "Po odliczaniu 3‑2‑1 tekst przewija się w stałym tempie. Stuknij słowo albo przewiń, żeby przeskoczyć."
+                  : narrationState === "loading"
                   ? "Przygotowuję lektora…"
                   : narrationState === "ready"
                     ? session.project.mode === "CONTINUOUS"
@@ -872,12 +910,12 @@ function RecordScreen(props: {
               <button
                 aria-label="Rozpocznij nagrywanie odpowiedzi"
                 className="flex h-20 w-20 items-center justify-center rounded-full border-4 border-white/90 transition active:scale-95 disabled:opacity-40"
-                disabled={narrationState === "loading" || !stream}
+                disabled={(!isPrompter && narrationState === "loading") || !stream}
                 onClick={start}
               >
                 <span className="h-14 w-14 rounded-full bg-rec" />
               </button>
-              <span className="text-sm font-medium">{narrationState === "loading" ? <Loader2 className="h-4 w-4 animate-spin" /> : "Start"}</span>
+              <span className="text-sm font-medium">{!isPrompter && narrationState === "loading" ? <Loader2 className="h-4 w-4 animate-spin" /> : "Start"}</span>
             </div>
           ) : null}
           {phase === "narrating" || phase === "recording" || phase === "paused" ? (
@@ -928,7 +966,7 @@ function RecordScreen(props: {
                   <RotateCcw className="h-5 w-5" /> Nagraj ponownie
                 </button>
                 <button className="h-14 rounded-2xl bg-white font-semibold text-black active:scale-[.98]" onClick={props.onNext}>
-                  Następne pytanie
+                  {isPrompter ? "Następny skrypt" : "Następne pytanie"}
                 </button>
               </div>
               <button className="h-11 w-full rounded-2xl text-sm font-medium text-white/70" onClick={props.onFinish}>
