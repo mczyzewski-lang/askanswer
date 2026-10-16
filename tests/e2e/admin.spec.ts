@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { login } from "./helpers";
+import { adminRequest, demoProject, login, newInvitation } from "./helpers";
 
 test("Test 1 — admin creates a category and a question that persist after refresh", async ({ page }) => {
   await login(page);
@@ -50,4 +50,27 @@ test("theme settings: AI scene style per category with theme colours", async ({ 
   // the theme default shows the style with this theme's colours filled in
   await card.getByRole("button", { name: "Rysunek tuszem (editorial)" }).click();
   await expect(card.locator("p", { hasText: "Po podstawieniu kolorów" })).toContainText(/deep \w+/);
+});
+
+test("expert's daily list mixes categories evenly", async ({ request }) => {
+  await adminRequest(request);
+  const data = await demoProject(request);
+  const pid = data.project.id;
+  const expert = await (await request.post("/api/admin/experts", { data: { name: "Ekspert Dzienny" } })).json();
+  const items = ["Alfa", "Beta", "Gamma"].flatMap((cat) => [1, 2, 3, 4].map((i) => ({ text: `${cat} pytanie numer ${i}?`, categoryName: `Dzienna ${cat}`, expertId: expert.id })));
+  expect((await request.post(`/api/admin/projects/${pid}/questions`, { data: { items } })).ok()).toBeTruthy();
+  const before = await (await request.get(`/api/admin/projects/${pid}`)).json();
+  const limit = before.project.dailyQuestionLimit;
+  await request.patch(`/api/admin/projects/${pid}`, { data: { name: before.project.name, dailyQuestionLimit: 4 } });
+  try {
+    const { token } = await newInvitation(request, pid, expert.id);
+    const session = await (await request.get(`/api/record/${token}`)).json();
+    expect(session.dailyPlan).toMatchObject({ limit: 4, pendingTotal: 12 });
+    const cats = session.questions.map((q: { category: string }) => q.category);
+    expect(cats).toHaveLength(4);
+    expect(new Set(cats).size).toBe(3); // every category on today's list
+    for (let i = 1; i < cats.length; i++) expect(cats[i]).not.toBe(cats[i - 1]);
+  } finally {
+    await request.patch(`/api/admin/projects/${pid}`, { data: { name: before.project.name, dailyQuestionLimit: limit } });
+  }
 });

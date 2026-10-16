@@ -23,6 +23,8 @@ interface Session {
   consentGiven: boolean;
   narrationAvailable: boolean;
   theme: { primary: string; accent: string; font: string } | null;
+  /** many questions: today's list, mixed evenly across categories */
+  dailyPlan: { limit: number; pendingTotal: number; totalQuestions: number } | null;
   questions: Question[];
 }
 
@@ -171,7 +173,8 @@ export function Recorder({ token }: { token: string }) {
 
   const questions = session?.questions ?? [];
   const isRecorded = useCallback(
-    (q: Question) => q.takes.length > 0 || Object.values(uploads).some((u) => u.questionId === q.id),
+    // "to fix" questions count as open until re-recorded
+    (q: Question) => (q.takes.length > 0 && q.status !== "NEEDS_FIX") || Object.values(uploads).some((u) => u.questionId === q.id),
     [uploads],
   );
   const firstOpen = questions.find((q) => !isRecorded(q));
@@ -225,8 +228,15 @@ export function Recorder({ token }: { token: string }) {
               Dzień dobry{session.expert.name ? `, ${session.expert.name.split(" ")[0]}` : ""}!
               <br />
               <span className="text-white/60">
-                Masz {questions.length} {plural(questions.length, "pytanie", "pytania", "pytań")} do nagrania.
+                {session.dailyPlan
+                  ? `Na dziś masz ${questions.length} ${plural(questions.length, "pytanie", "pytania", "pytań")} — po trochu z każdej kategorii.`
+                  : `Masz ${questions.length} ${plural(questions.length, "pytanie", "pytania", "pytań")} do nagrania.`}
               </span>
+              {session.dailyPlan ? (
+                <span className="mt-3 block text-[15px] font-normal leading-snug text-white/45">
+                  Łącznie czeka {session.dailyPlan.pendingTotal} {plural(session.dailyPlan.pendingTotal, "pytanie", "pytania", "pytań")}. Kolejne pojawią się jutro.
+                </span>
+              ) : null}
             </h1>
             <div className="mt-8 grid grid-cols-2 gap-3">
               <Stat label="Pytania" value={String(questions.length)} sub={remaining < questions.length ? `${remaining} pozostało` : "wszystkie do nagrania"} />
@@ -324,7 +334,11 @@ export function Recorder({ token }: { token: string }) {
 
   if (screen === "list") {
     const groups = new Map<string, Question[]>();
-    for (const q of questions) groups.set(q.category, [...(groups.get(q.category) ?? []), q]);
+    // daily plan: one mixed list in the planned order (the category is shown on each card)
+    for (const q of questions) {
+      const key = session.dailyPlan ? "Na dziś" : q.category;
+      groups.set(key, [...(groups.get(key) ?? []), q]);
+    }
     const done = questions.filter(isRecorded).length;
     return (
       <Shell>
@@ -367,7 +381,11 @@ export function Recorder({ token }: { token: string }) {
                         {recorded ? <Check className="h-4 w-4" /> : n}
                       </span>
                       <span className="flex-1">
-                        {q.subcategory ? <span className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.12em] text-white/45">{q.subcategory}</span> : null}
+                        {session.dailyPlan || q.subcategory ? (
+                          <span className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.12em] text-white/45">
+                            {session.dailyPlan ? [q.category, q.subcategory].filter(Boolean).join(" · ") : q.subcategory}
+                          </span>
+                        ) : null}
                         <span className="block text-[16px] font-medium leading-snug">{q.text}</span>
                         <span className="mt-1.5 block text-[12.5px] text-white/50">
                           {uploadingNow

@@ -20,6 +20,7 @@ export const ProjectInput = z.object({
   ttsModel: z.string().trim().max(100).nullable().optional(),
   recordingMode: z.enum(["CONTINUOUS", "ANSWER_ONLY"]).optional(),
   sequential: z.boolean().optional(),
+  dailyQuestionLimit: z.number().int().min(0).max(500).optional(),
   questionVisibility: z.enum(["NARRATION_ONLY", "FIRST_SECONDS", "FULL"]).optional(),
   questionSeconds: z.number().min(1).max(60).optional(),
 });

@@ -23,6 +23,7 @@ export function SettingsPanel({ data, refresh, toast }: PanelProps) {
     description: p.description ?? "",
     recordingMode: p.recordingMode,
     sequential: p.sequential,
+    dailyQuestionLimit: p.dailyQuestionLimit,
     questionVisibility: p.questionVisibility,
     questionSeconds: p.questionSeconds,
     voiceId: p.voiceId ?? "",
@@ -61,6 +62,13 @@ export function SettingsPanel({ data, refresh, toast }: PanelProps) {
           </span>
           <Switch checked={form.sequential} onCheckedChange={(v) => set("sequential", v)} />
         </label>
+        <div className="space-y-1.5">
+          <Label htmlFor="s-daily">Pytań na dziś na liście eksperta</Label>
+          <Input id="s-daily" type="number" min={0} max={500} className="w-28" value={form.dailyQuestionLimit} onChange={(e) => set("dailyQuestionLimit", Math.max(0, Math.round(Number(e.target.value) || 0)))} />
+          <p className="text-xs text-muted">
+            Gdy ekspert ma więcej pytań, codziennie widzi tyle — po równo z każdej kategorii (najpierw te najmniej nagrane), żeby nie nagrywał wszystkiego z jednej. Lista nie zmienia się w ciągu dnia. 0 = cała lista naraz.
+          </p>
+        </div>
         <div className="space-y-1.5">
           <Label htmlFor="s-vis">Widoczność pytania na wideo</Label>
           <NativeSelect id="s-vis" value={form.questionVisibility} onChange={(e) => set("questionVisibility", e.target.value as typeof form.questionVisibility)}>

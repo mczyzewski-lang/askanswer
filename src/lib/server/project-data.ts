@@ -115,6 +115,7 @@ export async function projectData(id: string) {
       description: p.description,
       recordingMode: p.recordingMode,
       sequential: p.sequential,
+      dailyQuestionLimit: p.dailyQuestionLimit,
       questionVisibility: p.questionVisibility,
       questionSeconds: p.questionSeconds,
       voiceId: p.voiceId,

@@ -2,6 +2,7 @@ import { prisma } from "./db";
 import { signedUrl } from "./storage";
 import { elevenLabsConfigured } from "./env";
 import { resolveToken } from "./invitations";
+import { dailyPlan, startOfDay } from "../daily-plan";
 
 /** Everything the expert recorder needs — limited strictly to questions assigned to this expert. */
 export async function recordSession(token: string) {
@@ -16,14 +17,34 @@ export async function recordSession(token: string) {
       recording: { include: { takes: { where: { status: { not: "UPLOADING" } }, orderBy: { takeNumber: "asc" }, select: { id: true, takeNumber: true, status: true, durationSec: true, createdAt: true } } } },
     },
   });
+  // many questions → today's list mixes categories evenly (see lib/daily-plan.ts)
+  const dayStart = startOfDay(new Date());
+  const plan = dailyPlan(
+    questions.map((q) => {
+      const takes = q.recording?.takes ?? [];
+      return {
+        id: q.id,
+        categoryKey: q.categoryId ?? "",
+        categoryOrder: q.category?.order ?? -1,
+        order: q.order,
+        recorded: takes.length > 0 && q.status !== "NEEDS_FIX",
+        recordedToday: takes.some((t) => t.createdAt >= dayStart),
+        needsFix: q.status === "NEEDS_FIX",
+      };
+    }),
+    inv.project.dailyQuestionLimit,
+  );
+  const byId = new Map(questions.map((q) => [q.id, q]));
+  const listed = plan.ids.map((id) => byId.get(id)!).filter(Boolean);
   return {
     project: { id: inv.project.id, name: inv.project.name, description: inv.project.description, mode: inv.project.recordingMode, sequential: inv.project.sequential },
+    dailyPlan: plan.applied ? { limit: inv.project.dailyQuestionLimit, pendingTotal: plan.pendingTotal, totalQuestions: questions.length } : null,
     expert: { name: inv.expert.name },
     consentGiven: !!inv.consentAt,
     expiresAt: inv.expiresAt.toISOString(),
     narrationAvailable: elevenLabsConfigured(),
     theme: inv.project.theme ? { primary: inv.project.theme.primaryColor, accent: inv.project.theme.accentColor, font: inv.project.theme.questionFont } : null,
-    questions: questions.map((q) => ({
+    questions: listed.map((q) => ({
       id: q.id,
       text: q.text,
       instructions: q.instructions,

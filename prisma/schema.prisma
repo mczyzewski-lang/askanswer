@@ -132,6 +132,8 @@ model Project {
   ttsModel           String?
   recordingMode      RecordingMode      @default(CONTINUOUS)
   sequential         Boolean            @default(false)
+  /// questions on the expert's list per day, mixed evenly across categories (0 = whole list)
+  dailyQuestionLimit Int                @default(10)
   questionVisibility QuestionVisibility @default(FULL)
   questionSeconds    Float              @default(4)
   createdAt          DateTime           @default(now())

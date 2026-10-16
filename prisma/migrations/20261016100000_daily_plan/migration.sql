@@ -1,0 +1,1 @@
+ALTER TABLE "Project" ADD COLUMN "dailyQuestionLimit" INTEGER NOT NULL DEFAULT 10;
