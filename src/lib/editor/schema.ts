@@ -158,7 +158,8 @@ export const EditorDocumentSchema = z.object({
       .array(
         z.object({
           id: z.string().max(64),
-          kind: z.enum(["video", "infographic"]).optional(),
+          kind: z.enum(["video", "infographic", "illustration"]).optional(),
+          passage: z.string().max(4000).optional(),
           start: num.min(0),
           end: num.min(0),
           quote: z.string().max(2000),

@@ -175,10 +175,10 @@ export function Studio({ id }: { id: string }) {
       }
       st.addAssets(latest.assets ?? []);
       const known = new Set((st.doc.meta.aiBroll ?? []).map((i) => i.id));
-      const n = (serverDoc.meta.aiBroll ?? []).filter((i) => i.status === "done" && i.kind === "infographic" && !known.has(i.id)).length;
+      const n = (serverDoc.meta.aiBroll ?? []).filter((i) => i.status === "done" && (i.kind === "infographic" || i.kind === "illustration") && !known.has(i.id)).length;
       if (st.dirty || st.saving === "saving") useStudio.setState({ doc: mergeAutoVisuals(st.doc, serverDoc), version: latest.composition.version, dirty: true });
       else useStudio.setState({ doc: mergeAutoVisuals(st.doc, serverDoc), version: latest.composition.version, dirty: false });
-      if (n) toast(`AI dodało ${n} ${n === 1 ? "infografikę" : n < 5 ? "infografiki" : "infografik"} — zobacz zakładkę AI`);
+      if (n) toast(`AI dodało ${n} ${n === 1 ? "grafikę" : n < 5 ? "grafiki" : "grafik"} — zobacz zakładkę AI`);
       else toast("Infografiki AI: nie znaleziono fragmentów do zilustrowania", "err");
     }, 3000);
     return () => {

@@ -2,12 +2,12 @@ import type { AiBrollItem, EditorDocument, ImageOverlay } from "./types";
 import { uid } from "./id";
 
 /** Full-frame infographic image for the moment's length (fades in under the question and captions). */
-export function infographicOverlay(item: Pick<AiBrollItem, "start" | "end" | "title" | "infographic">, assetId: string, total: number): ImageOverlay {
+export function infographicOverlay(item: Pick<AiBrollItem, "start" | "end" | "title" | "infographic"> & { kind?: AiBrollItem["kind"] }, assetId: string, total: number): ImageOverlay {
   const start = Math.max(0, Math.min(item.start, total - 0.5));
   return {
     id: uid("ovl"),
     kind: "image",
-    name: `Infografika: ${item.infographic?.headline ?? item.title}`.slice(0, 80),
+    name: (item.kind === "illustration" ? `Ilustracja: ${item.title}` : `Infografika: ${item.infographic?.headline ?? item.title}`).slice(0, 80),
     assetId,
     fit: "cover",
     start,

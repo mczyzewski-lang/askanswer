@@ -36,10 +36,50 @@ describe("AI B-roll suggestions", () => {
     expect(out.every((s) => s.end - s.start >= 1.5)).toBe(true);
   });
 
-  it("falls back to video when an infographic has no rows, and snaps durations to 5/10 s", () => {
+  it("an infographic without rows becomes an illustration (or a video without an image prompt); durations snap to 5/10 s", () => {
     const out = sanitize([{ ...base, kind: "infographic", duration: 8, start: 3, end: 9, infographic: { headline: "x", items: [], note: null } }], 30);
-    expect(out[0].kind).toBe("video");
+    expect(out[0].kind).toBe("illustration");
     expect(out[0].duration).toBe(10);
+    const noImage = sanitize([{ ...base, kind: "illustration", imagePrompt: " ", start: 3, end: 9 }], 30);
+    expect(noImage[0].kind).toBe("video");
+  });
+});
+
+describe("illustrations of the expert's thoughts", () => {
+  const seg = (t0: number, t1: number, text: string) => ({ t0, t1, text });
+  const segments = [
+    seg(0.2, 2.5, "Dzień dobry."),
+    seg(2.6, 6, "Sąd rozpatruje tylko to, co napiszesz w pozwie."),
+    seg(6.1, 10, "Jeśli czegoś nie wpiszesz, sąd sam tego nie doda."),
+    seg(10.1, 14.5, "Dlatego przed złożeniem pozwu zbierz wszystkie dokumenty."),
+    seg(14.6, 19, "Rachunki, umowy, wiadomości — wszystko, co pokazuje twoje racje."),
+    seg(19.1, 25, "Pamiętaj też o terminach, bo po nich nic już nie zmienisz."),
+  ];
+
+  it("groups sentences into passages instead of using single sentences", async () => {
+    const { passages, passageFor } = await import("../../src/lib/server/broll");
+    const ps = passages(segments, 25);
+    expect(ps.length).toBeGreaterThan(0);
+    expect(ps.length).toBeLessThan(segments.length);
+    expect(ps.every((p) => p.t1 - p.t0 <= 20.5)).toBeTruthy();
+    expect(ps[0].text).toContain("Sąd rozpatruje");
+    expect(ps[0].text).toContain("sam tego nie doda");
+    // context of a moment spans the neighbouring sentences
+    const ctx = passageFor(segments, 7, 9);
+    expect(ctx).toContain("Sąd rozpatruje");
+    expect(ctx).toContain("zbierz wszystkie dokumenty");
+  });
+
+  it("asks OpenAI for a full-screen, text-free picture of the thought in the theme colours", async () => {
+    const { illustrationPrompt } = await import("../../src/lib/server/broll");
+    const { DEFAULT_THEME } = await import("../../src/lib/themes");
+    const p = illustrationPrompt({ imagePrompt: "A judge reading a document with missing pages", passage: "Jeśli czegoś nie wpiszesz, sąd sam tego nie doda.", question: "Co wpisać do pozwu?" }, DEFAULT_THEME, false);
+    expect(p).toContain("9:16");
+    expect(p).toContain("«Jeśli czegoś nie wpiszesz, sąd sam tego nie doda.»");
+    expect(p).toContain("A judge reading a document");
+    expect(p).toMatch(/no text/i);
+    expect(p).toContain(DEFAULT_THEME.primary);
+    expect(p).toMatch(/edge to edge/);
   });
 });
 

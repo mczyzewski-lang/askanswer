@@ -36,7 +36,7 @@ test("studio: pauses, cuts, subtitles, zoom, theme, persistence and real MP4 exp
   expect(info.silences.some((s: { start: number; end: number }) => s.start > 2.5 && s.start < 3.2 && s.end > 4.0 && s.end < 4.7)).toBeTruthy();
   const compId = info.compositionIds[0];
 
-  // automatic infographics: placed by the worker right after processing, without any acceptance (OpenAI mock)
+  // automatic illustrations of the expert's thoughts: placed by the worker right after processing, without any acceptance (OpenAI mock)
   let auto: { document: { overlays: Array<{ kind: string; name: string }>; meta: { autoVisuals?: string; aiBroll?: Array<{ status: string; kind?: string; engine?: string }> } } } | null = null;
   for (let i = 0; i < 60 && !auto?.document.meta.autoVisuals; i++) {
     await new Promise((r) => setTimeout(r, 1500));
@@ -45,8 +45,14 @@ test("studio: pauses, cuts, subtitles, zoom, theme, persistence and real MP4 exp
   expect(auto?.document.meta.autoVisuals).toBe("done");
   const placedAuto = (auto!.document.meta.aiBroll ?? []).filter((i) => i.status === "done");
   expect(placedAuto.length).toBeGreaterThan(0);
-  expect(placedAuto.every((i) => i.kind === "infographic" && i.engine === "openai")).toBeTruthy();
-  expect(auto!.document.overlays.filter((o) => o.kind === "image" && o.name.startsWith("Infografika")).length).toBe(placedAuto.length);
+  expect(placedAuto.every((i) => i.kind === "illustration" && i.engine === "openai")).toBeTruthy();
+  expect(auto!.document.overlays.filter((o) => o.kind === "image" && o.name.startsWith("Ilustracja")).length).toBe(placedAuto.length);
+  // drawn from whole passages of the answer, full screen, no text, in the theme colours
+  const autoStats = await (await request.get("http://127.0.0.1:4010/__stats", { headers: { "xi-api-key": "mock-key" } })).json();
+  const illu = (autoStats.openai as Array<{ prompt: string; size: string }>).filter((c) => c.prompt.includes("Full-screen vertical 9:16 illustration"));
+  expect(illu.length).toBeGreaterThanOrEqual(placedAuto.length);
+  expect(illu[0].prompt).toMatch(/Absolutely no text/);
+  expect(illu[0].prompt).toMatch(/What the expert says at this moment \(Polish\): «[^»]{40,}»/);
 
   await login(page);
   await page.goto(`/studio/${compId}`);
@@ -100,12 +106,16 @@ test("studio: pauses, cuts, subtitles, zoom, theme, persistence and real MP4 exp
   await expect(page.getByTestId("ai-check-result")).toContainText("Połączenie z OpenAI działa");
   // the automatic run is visible in the AI tab and can be started again on demand
   await expect(page.getByTestId("auto-visuals-status")).toContainText("Dodano");
-  await expect(page.getByTestId("auto-visuals-status")).toContainText("(OpenAI)");
+  await expect(page.getByTestId("auto-visuals-status")).toContainText("ilustracje myśli");
   await page.getByTestId("auto-visuals-run").click();
-  await expect(page.getByText(/AI dodało \d+ infografik/)).toBeVisible({ timeout: 90_000 });
+  await expect(page.getByText(/AI dodało \d+ grafik/)).toBeVisible({ timeout: 90_000 });
   await waitSaved(page);
   await page.getByTestId("ai-suggest").click();
   await expect(page.getByTestId("ai-item").first()).toBeVisible({ timeout: 30_000 });
+  // proposals default to illustrations; switch one to an AI video scene
+  const first = page.getByTestId("ai-item").filter({ has: page.getByTestId("ai-accept") }).first();
+  await expect(first).toHaveAttribute("data-kind", "illustration");
+  await first.getByRole("button", { name: "Wideo AI" }).click();
   const videoItem = page.locator('[data-testid="ai-item"][data-kind="video"]').filter({ has: page.getByTestId("ai-accept") }).first();
   await videoItem.getByTestId("ai-accept").click();
   await expect(page.locator('[data-testid="ai-item"][data-kind="video"]').getByTestId("ai-done").first()).toBeVisible({ timeout: 120_000 });

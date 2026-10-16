@@ -247,8 +247,13 @@ export interface EditorDocument {
 
 export interface AiBrollItem {
   id: string;
-  /** full-screen AI video scene, or an infographic image (absent = video, for older documents) */
-  kind?: "video" | "infographic";
+  /**
+   * full-screen AI video scene, an illustration of the thought (OpenAI still image, no text) or an
+   * infographic with figures (absent = video, for older documents)
+   */
+  kind?: "video" | "infographic" | "illustration";
+  /** the longer piece of the answer the visual is based on (several sentences) */
+  passage?: string;
   start: number; // timeline seconds
   end: number;
   quote: string;

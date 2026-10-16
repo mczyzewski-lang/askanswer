@@ -1,6 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "./db";
-import { openaiConfigured } from "./env";
+import { higgsfieldConfigured, openaiConfigured } from "./env";
 import { generateInfographic, suggestBroll, type BrollSuggestion } from "./broll";
 import { docDuration, timedSegments } from "../editor/timeline";
 import { infographicOverlay } from "../editor/ai-overlays";
@@ -9,12 +9,13 @@ import { videoModel } from "./higgsfield";
 import type { AiBrollItem, EditorDocument } from "../editor/types";
 
 /**
- * Right after a recording is processed: let the AI pick the moments, generate the infographics
- * (OpenAI when configured, else the theme template) and place them in the video — no acceptance
- * needed. Video scenes (Higgsfield, paid per clip) stay as proposals in the Studio AI tab.
+ * Right after a recording is processed: the AI finds the main thoughts of the answer (whole
+ * passages, not single sentences), draws a full-screen illustration of each (OpenAI, theme colours,
+ * category style, no text) — or an infographic where figures are given — and places them under the
+ * captions, no acceptance needed. Video scenes (Higgsfield, paid per clip) stay as proposals.
  * Runs once per composition (doc.meta.autoVisuals).
  */
-const MAX_AUTO = 3;
+const MAX_AUTO = 4;
 
 export interface AutoVisualsResult {
   placed: number;
@@ -37,28 +38,39 @@ export async function autoVisuals(jobId: string, compositionId: string, force = 
   const duration = docDuration(doc0);
 
   const { suggestions, warning: suggestWarning } = await suggestBroll(compositionId, segments, duration, { fallback: true });
-  // infographics: the AI's picks first; with none, the strongest proposal becomes one
-  let infos = suggestions.filter((s) => s.kind === "infographic" && s.infographic.items.length);
-  if (!infos.length && suggestions[0]?.infographic.items.length) infos = [{ ...suggestions[0], kind: "infographic" }];
-  infos = infos.slice(0, MAX_AUTO);
-  const engine = openaiConfigured() ? "openai" : "template";
+  const canIllustrate = openaiConfigured() || higgsfieldConfigured();
+  // illustrations of the main thoughts (+ infographics where the expert gives figures); with no
+  // image provider only infographics can be made, rendered from the theme template
+  let picks = suggestions.filter((s) => (s.kind === "illustration" && canIllustrate) || (s.kind === "infographic" && s.infographic.items.length));
+  if (!picks.length && suggestions.length) picks = canIllustrate ? suggestions.slice(0, MAX_AUTO).map((s) => ({ ...s, kind: "illustration" as const })) : suggestions.filter((s) => s.infographic.items.length).slice(0, 1).map((s) => ({ ...s, kind: "infographic" as const }));
+  picks = picks.slice(0, MAX_AUTO);
+  const infoEngine = openaiConfigured() ? "openai" : "template";
 
   // in parallel (each OpenAI image takes up to a minute)
-  const placed: Array<{ s: BrollSuggestion; assetId: string; warning: string | null }> = await Promise.all(
-    infos.map(async (s) => {
+  const settled = await Promise.all(
+    picks.map(async (s): Promise<{ s: BrollSuggestion; assetId: string; warning: string | null; engine: "openai" | "template" } | { s: BrollSuggestion; failed: string }> => {
+      const base = { compositionId, width: doc0.width, height: doc0.height };
       try {
-        const r = await generateInfographic(jobId, { compositionId, infographic: s.infographic, engine, illustration: "none", width: doc0.width, height: doc0.height });
-        return { s, assetId: r.assetId, warning: r.warning };
+        if (s.kind === "illustration") {
+          const r = await generateInfographic(jobId, { ...base, engine: "illustration", infographic: { headline: s.title, items: [], note: null }, imagePrompt: s.imagePrompt, passage: s.passage, title: s.title });
+          return { s, assetId: r.assetId, warning: r.warning, engine: openaiConfigured() ? "openai" : "template" };
+        }
+        const r = await generateInfographic(jobId, { ...base, infographic: s.infographic, engine: infoEngine, illustration: "none" });
+        return { s, assetId: r.assetId, warning: r.warning, engine: infoEngine };
       } catch (e) {
-        // OpenAI failed for this one (moderation, quota…): fall back to the crisp template
-        if (engine !== "openai") throw e;
-        const r = await generateInfographic(jobId, { compositionId, infographic: s.infographic, engine: "template", illustration: "none", width: doc0.width, height: doc0.height });
-        return { s, assetId: r.assetId, warning: `OpenAI: ${(e as Error).message} — użyto szablonu.` };
+        // an illustration that failed (moderation, quota…) stays as a proposal with the reason
+        if (s.kind === "illustration") return { s, failed: (e as Error).message };
+        if (infoEngine !== "openai") throw e;
+        const r = await generateInfographic(jobId, { ...base, infographic: s.infographic, engine: "template", illustration: "none" });
+        return { s, assetId: r.assetId, warning: `OpenAI: ${(e as Error).message} — użyto szablonu.`, engine: "template" };
       }
     }),
   );
+  const placed = settled.filter((x): x is Extract<typeof x, { assetId: string }> => "assetId" in x);
+  const failed = settled.filter((x): x is Extract<typeof x, { failed: string }> => "failed" in x);
+  if (picks.length && !placed.length && failed.length) throw new Error(`Ilustracje nie powstały: ${failed[0].failed}`);
   const model = videoModel(null).id;
-  const proposals = suggestions.filter((s) => !infos.some((i) => i.id === s.id));
+  const proposals = suggestions.filter((s) => !placed.some((i) => i.s.id === s.id));
 
   // write into the latest document (the editor may have saved meanwhile): optimistic, retried
   for (let attempt = 0; attempt < 5; attempt++) {
@@ -71,7 +83,7 @@ export async function autoVisuals(jobId: string, compositionId: string, force = 
     for (const p of placed) {
       const ov = infographicOverlay(p.s, p.assetId, total);
       overlays.push(ov);
-      items.push(toItem(p.s, model, { kind: "infographic", status: "done", overlayId: ov.id, engine, warning: p.warning }));
+      items.push(toItem(p.s, model, { status: "done", overlayId: ov.id, engine: p.engine, illustration: p.s.kind === "illustration", illustrationSource: openaiConfigured() ? "openai" : "higgsfield", warning: p.warning }));
     }
     // on a re-run only new infographics; the earlier video proposals stay as they are
     for (const s of force && before ? [] : proposals) items.push(toItem(s, model, { status: "suggested", illustration: true, illustrationSource: openaiConfigured() ? "openai" : "higgsfield" }));
@@ -83,7 +95,8 @@ export async function autoVisuals(jobId: string, compositionId: string, force = 
       meta: { ...doc.meta, aiBroll: [...(doc.meta.aiBroll ?? []), ...items], autoVisuals: before ? `r${Date.now().toString(36)}` : "done" } as EditorDocument["meta"],
     };
     const r = await prisma.videoComposition.updateMany({ where: { id: compositionId, version: cur.version }, data: { document: next as unknown as Prisma.InputJsonValue, version: { increment: 1 } } });
-    const warnings = [suggestWarning, ...placed.map((p) => p.warning)].filter((w): w is string => !!w);
+    const warnings = [suggestWarning, ...placed.map((p) => p.warning), ...failed.map((f) => `Ilustracja „${f.s.title}” nie powstała: ${f.failed}`)].filter((w): w is string => !!w);
+    const engine = placed.some((p) => p.s.kind === "illustration") ? "illustration" : infoEngine;
     if (r.count === 1) return { placed: placed.length, proposed: force && before ? 0 : proposals.length, engine, warnings: [...new Set(warnings)] };
     await new Promise((res) => setTimeout(res, 500));
   }
@@ -102,6 +115,7 @@ function toItem(s: BrollSuggestion, model: string, extra: Partial<AiBrollItem>):
     prompt: s.prompt,
     imagePrompt: s.imagePrompt,
     infographic: s.infographic,
+    passage: s.passage || undefined,
     duration: s.duration,
     model,
     status: "suggested",

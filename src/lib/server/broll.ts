@@ -15,7 +15,7 @@ import { renderInfographic, type InfographicData } from "./infographic";
 import { colorName, fillStyle } from "../broll-style";
 import { putFile } from "./storage";
 import { randomToken } from "./crypto";
-import { higgsfieldConfigured } from "./env";
+import { higgsfieldConfigured, openaiConfigured } from "./env";
 import type { ThemeTokens } from "../editor/types";
 import { themeFromRow } from "../themes";
 
@@ -34,7 +34,7 @@ export interface InfographicContent {
 
 export interface BrollSuggestion {
   id: string;
-  kind: "video" | "infographic";
+  kind: "video" | "infographic" | "illustration";
   start: number;
   end: number;
   duration: number;
@@ -43,18 +43,20 @@ export interface BrollSuggestion {
   reason: string;
   /** full text-to-video prompt (style + shots) */
   prompt: string;
-  /** text-to-image prompt for the infographic's background illustration */
+  /** text-to-image prompt: the full-screen illustration of the thought (or an infographic background) */
   imagePrompt: string;
   infographic: InfographicContent;
+  /** the surrounding passage of the answer (several sentences) the visual expresses */
+  passage: string;
 }
 
-type RawSuggestion = Omit<BrollSuggestion, "id">;
+type RawSuggestion = Omit<BrollSuggestion, "id" | "passage"> & { passage?: string };
 
 const SuggestionSchema = z.object({
   suggestions: z
     .array(
       z.object({
-        kind: z.enum(["video", "infographic"]).describe("What fits this moment better"),
+        kind: z.enum(["illustration", "video", "infographic"]).describe("What fits this moment better"),
         start: z.number().describe("Timeline second where the visual starts"),
         end: z.number().describe("Timeline second where the visual ends"),
         duration: z.number().describe("Video clip length to generate: 5 or 10 seconds"),
@@ -62,7 +64,9 @@ const SuggestionSchema = z.object({
         title: z.string().describe("Short Polish label for the moment, max 6 words"),
         reason: z.string().describe("One Polish sentence: why this visual helps the viewer at this moment"),
         scene: z.string().describe("English: the video SHOT LIST (or, without a style, the full video prompt) for this moment"),
-        illustration: z.string().describe("English: one still illustration for the infographic background, no text"),
+        illustration: z
+          .string()
+          .describe("English, 40-90 words: a full-screen still illustration that shows the THOUGHT developed in the surrounding passage as one clear visual metaphor — subject, metaphor, composition, mood; no text in the image"),
         infographic: z.object({
           headline: z.string().describe("Polish headline, max 7 words"),
           items: z.array(z.object({ value: z.string().describe("Short key figure or step, e.g. '6–12 mies.', '50%', 'Krok 1'"), label: z.string().describe("Polish, max 9 words") })).describe("2 to 4 rows"),
@@ -76,14 +80,18 @@ const SuggestionSchema = z.object({
 function system(style: string | null) {
   return `You are a video editor for short vertical (9:16) expert videos on TikTok, Reels and Shorts.
 An expert (often a lawyer, therapist or business coach) answers a viewer's question to camera in Polish.
-Pick the moments where a full-screen visual over the expert (their voice continues) makes the answer clearer: either an AI-generated video scene or an infographic.
+Pick the moments where a full-screen visual over the expert (their voice and the captions continue on top) makes the answer clearer.
 
-Choosing moments:
-- Propose 3 to 6 moments, each 4 to 10 seconds, inside the transcript's time range and aligned with sentence boundaries. Skip greetings, the first 2 seconds and the final call to action.
-- Never overlap; keep at least 4 seconds of the expert on camera between moments.
-- kind "infographic" when the expert gives numbers, deadlines, amounts, steps, lists, conditions or comparisons; kind "video" for situations, emotions, places and metaphors. Alternate the kinds where the content allows, and include at least one infographic when anything list-like or numeric is said.
-- duration: 5 for moments up to ~6 s, otherwise 10.
-- Fill BOTH the video fields and the infographic fields for every moment (the editor may switch the kind).
+Read the WHOLE answer first and find its 3 to 5 main thoughts. A thought is usually developed over several sentences (10-25 seconds of speech) — base every visual on the whole passage, never on a single sentence or a fragment of one. The visual appears while that thought is being said: 5 to 8 seconds, starting a second or two after the passage begins, aligned with sentence boundaries.
+
+Kinds:
+- "illustration" (the default): a full-screen illustration of the thought — a visual metaphor or situation that makes the idea instantly understandable (e.g. "the court decides only what you put in writing" → a judge's hand holding a magnifying glass over a document with empty, missing pages). Not a slide, no text.
+- "infographic": ONLY when the expert actually gives figures, deadlines, amounts, numbered steps or a comparison worth reading.
+- "video": a short AI video scene, for situations where motion matters.
+Rules:
+- Skip greetings, the first 2 seconds and the final call to action. Never overlap; keep at least 4 seconds of the expert on camera between moments.
+- duration (video only): 5 for moments up to ~6 s, otherwise 10.
+- Fill ALL fields for every moment (the editor may switch the kind).
 
 Infographic (Polish, crisp and factual, only what the expert actually said — never invent figures): a short headline and 2-4 rows of key value + label.
 
@@ -93,9 +101,9 @@ ${
 "SHOT 1 0.0-2.0s WIDE front angle: <what happens, motion from frame one>. HARD CUT. SHOT 2 2.0-4.0s CU side angle: <...>. HARD CUT. ..."
 Vary shot sizes (WIDE, MEDIUM, CU, ECU) and angles (front, side, low, high, top-down). Tell a small visual story of what the expert says through objects, rooms, hands and faceless silhouettes; recurring objects across shots. No readable text, no talking characters.
 The visual style used for this video: ${style}
-ILLUSTRATION = one still frame in the same style, a calm scene related to the moment, uncluttered in the centre.`
+ILLUSTRATION = one still frame in the same style (do not repeat the style): the visual metaphor of the passage's thought, one strong focal subject in the middle of the frame.`
     : `Video SCENE = a complete English text-to-video prompt (40-90 words): one continuous cinematic shot with subject, setting, action, camera movement, lighting and mood; vertical 9:16 with the subject in the centre third; colour grade in the brand palette described in words; no readable text, logos or people speaking to camera; prefer hands, silhouettes, objects and environments.
-ILLUSTRATION = a matching still image prompt, calm and uncluttered in the centre.`
+ILLUSTRATION = a still image prompt for the visual metaphor of the passage's thought, one strong focal subject in the middle of the frame, in the brand palette.`
 }
 
 Write "title", "reason" and the infographic in Polish. "quote" must be copied verbatim from the transcript.`;
@@ -118,11 +126,12 @@ export function sanitize(list: RawSuggestion[], duration: number): BrollSuggesti
     const prev = out[out.length - 1];
     if (prev && start < prev.end + 1) start = prev.end + 1;
     if (end - start > 10) end = start + 10;
-    if (end - start < 1.5 || (!s.prompt.trim() && !s.infographic.items.length)) continue;
+    if (end - start < 1.5 || (!s.prompt.trim() && !s.infographic.items.length && !s.imagePrompt.trim())) continue;
     const items = s.infographic.items.filter((i) => i.value.trim() || i.label.trim()).slice(0, 4);
     out.push({
       ...s,
-      kind: s.kind === "infographic" && items.length ? "infographic" : "video",
+      passage: s.passage ?? "",
+      kind: s.kind === "infographic" && items.length ? "infographic" : s.kind !== "video" && s.imagePrompt.trim() ? "illustration" : "video",
       duration: s.duration > 7 ? 10 : 5,
       infographic: { headline: s.infographic.headline.slice(0, 120), items, note: s.infographic.note?.trim() || null },
       id: `sug_${out.length}_${Math.round(start * 10)}`,
@@ -137,7 +146,7 @@ function compose(style: string | null, scene: string) {
   return style ? `${style} ${scene.trim()}` : scene.trim();
 }
 function composeImage(style: string | null, scene: string) {
-  return style ? `${style} Single still illustration frame, vertical 9:16, calm uncluttered centre. ${scene.trim()}` : `${scene.trim()} Vertical 9:16 still image, calm uncluttered centre, no text, no logos.`;
+  return style ? `${style} Single still illustration frame, vertical 9:16, one strong focal subject. ${scene.trim()}` : `${scene.trim()} Vertical 9:16 still image, one strong focal subject, no text, no logos.`;
 }
 
 async function suggestWithClaude(question: string, segments: SpokenSegment[], theme: ThemeTokens, duration: number, style: string | null): Promise<RawSuggestion[]> {
@@ -162,35 +171,65 @@ async function suggestWithClaude(question: string, segments: SpokenSegment[], th
   return response.parsed_output.suggestions.map(({ scene, illustration, ...s }) => ({ ...s, prompt: compose(style, scene), imagePrompt: composeImage(style, illustration) }));
 }
 
-/** Without an Anthropic key: longest sentences, spread out, alternating video / infographic, templated prompts. */
-function suggestHeuristic(segments: SpokenSegment[], theme: ThemeTokens, duration: number, style: string | null): RawSuggestion[] {
-  const inside = segments.filter((s) => s.t0 > 1 && s.t1 < duration - 0.5);
-  const wordy = inside.filter((s) => s.text.split(/\s+/).length >= 4);
-  const usable = wordy.length ? wordy : inside.length ? inside : segments;
-  const picked: SpokenSegment[] = [];
-  for (const s of [...usable].sort((a, b) => b.text.length - a.text.length)) {
-    if (picked.length >= 4) break;
-    if (picked.some((p) => Math.abs(p.t0 - s.t0) < 6)) continue;
-    picked.push(s);
+/** Consecutive sentences grouped into passages of ~10–20 s (one thought each, roughly). */
+export function passages(segments: SpokenSegment[], duration: number): SpokenSegment[] {
+  const inside = segments.filter((s) => s.t1 > 2 && s.t0 < duration - 1);
+  const out: SpokenSegment[] = [];
+  let cur: SpokenSegment | null = null;
+  for (const s of inside) {
+    if (cur && (s.t1 - cur.t0 > 20 || (cur.t1 - cur.t0 >= 10 && /[.!?…]$/.test(cur.text.trim())))) {
+      out.push(cur);
+      cur = null;
+    }
+    cur = cur ? { t0: cur.t0, t1: s.t1, text: `${cur.text} ${s.text}` } : { ...s };
   }
-  picked.sort((a, b) => a.t0 - b.t0);
-  return picked.map((s, i) => {
-    const words = s.text.split(/\s+/);
-    const parts = s.text.split(/[,;:]| i | oraz /).map((x) => x.trim()).filter((x) => x.length > 2).slice(0, 3);
+  if (cur) out.push(cur);
+  return out;
+}
+
+/** The answer around a moment (±8 s, whole sentences): what the visual should express. */
+export function passageFor(segments: SpokenSegment[], start: number, end: number): string {
+  return segments
+    .filter((s) => s.t1 > start - 8 && s.t0 < end + 8)
+    .map((s) => s.text)
+    .join(" ")
+    .slice(0, 1500);
+}
+
+/**
+ * Without an Anthropic key: the answer split into passages; the richest ones, spread over the
+ * video, become illustrations of what is said there (OpenAI reads the Polish passage itself).
+ */
+function suggestHeuristic(segments: SpokenSegment[], theme: ThemeTokens, duration: number, style: string | null, illustrate: boolean): RawSuggestion[] {
+  const all = passages(segments, duration);
+  const usable = all.filter((p) => p.text.split(/\s+/).length >= 8);
+  const pool = usable.length ? usable : all.length ? all : segments;
+  const picked: SpokenSegment[] = [];
+  for (const p of [...pool].sort((x, y) => y.text.length - x.text.length)) {
+    if (picked.length >= 4) break;
+    if (picked.some((q) => Math.abs(q.t0 - p.t0) < 8)) continue;
+    picked.push(p);
+  }
+  picked.sort((x, y) => x.t0 - y.t0);
+  return picked.map((p, i) => {
+    const words = p.text.split(/\s+/);
+    const parts = p.text.split(/[,;:.]| i | oraz /).map((x) => x.trim()).filter((x) => x.length > 2).slice(0, 3);
     const scene = style
-      ? `SHOT 1 0.0-2.0s WIDE front angle: a quiet room that illustrates "${s.text}", motion from frame one. HARD CUT. SHOT 2 2.0-4.0s CU side angle: hands and objects related to it. HARD CUT. SHOT 3 4.0-5.0s MEDIUM high angle: a faceless silhouette reacts.`
-      : `Cinematic vertical 9:16 B-roll shot, slow push-in, soft natural light, shallow depth of field, calm premium mood. Visual metaphor for: "${s.text}". Colour grade in ${colorName(theme.primary)} and ${colorName(theme.accent)} tones. No text, no logos, no faces looking at camera.`;
+      ? `SHOT 1 0.0-2.0s WIDE front angle: a quiet room that illustrates "${p.text.slice(0, 300)}", motion from frame one. HARD CUT. SHOT 2 2.0-4.0s CU side angle: hands and objects related to it. HARD CUT. SHOT 3 4.0-5.0s MEDIUM high angle: a faceless silhouette reacts.`
+      : `Cinematic vertical 9:16 B-roll shot, slow push-in, soft natural light, shallow depth of field, calm premium mood. Visual metaphor for: "${p.text.slice(0, 300)}". Colour grade in ${colorName(theme.primary)} and ${colorName(theme.accent)} tones. No text, no logos, no faces looking at camera.`;
+    const start = Math.min(p.t1 - 2, p.t0 + Math.min(1.5, (p.t1 - p.t0) / 4));
     return {
-      kind: i % 2 === 1 ? ("infographic" as const) : ("video" as const),
-      start: s.t0,
-      end: Math.min(s.t1, s.t0 + 6),
+      kind: illustrate ? ("illustration" as const) : i % 2 === 1 ? ("infographic" as const) : ("video" as const),
+      start,
+      end: Math.min(p.t1, start + 7),
       duration: 5,
-      quote: s.text,
+      quote: p.text.length > 220 ? `${p.text.slice(0, 217)}…` : p.text,
       title: words.slice(0, 5).join(" "),
-      reason: "Ilustracja tego, o czym ekspert mówi w tym zdaniu (tryb podstawowy — dodaj ANTHROPIC_API_KEY, aby AI dobierało sceny i treść infografik).",
+      reason: "Ilustracja myśli z tego fragmentu wypowiedzi (tryb podstawowy — dodaj ANTHROPIC_API_KEY, aby AI samo wybierało najważniejsze myśli i metafory).",
       prompt: compose(style, scene),
-      imagePrompt: composeImage(style, `A calm scene that illustrates: "${s.text}"`),
-      infographic: { headline: words.slice(0, 6).join(" "), items: (parts.length ? parts : [s.text]).map((p, k) => ({ value: `${k + 1}.`, label: p.split(/\s+/).slice(0, 9).join(" ") })), note: null },
+      imagePrompt: composeImage(style, "One clear visual metaphor of the main thought the expert expresses in the passage below — what it means for the viewer, shown, not written."),
+      infographic: { headline: words.slice(0, 6).join(" "), items: (parts.length ? parts : [p.text]).map((x, k) => ({ value: `${k + 1}.`, label: x.split(/\s+/).slice(0, 9).join(" ") })), note: null },
+      passage: p.text,
     };
   });
 }
@@ -209,16 +248,20 @@ export async function suggestBroll(compositionId: string, segments: SpokenSegmen
   if (!segments.length) throw new Error("Brak transkrypcji — najpierw wygeneruj napisy, żeby AI wiedziało, o czym mówi ekspert.");
   const question = comp.question?.text ?? doc.meta?.questionText ?? "";
   const style = await styleFor(comp, theme);
+  const illustrate = openaiConfigured() || higgsfieldConfigured();
+  // every visual carries the longer passage it expresses (verbatim from the transcript)
+  const withPassages = (list: BrollSuggestion[]) => list.map((x) => ({ ...x, passage: x.passage || passageFor(segments, x.start, x.end) }));
+  const basic = () => withPassages(sanitize(suggestHeuristic(segments, theme, duration, style, illustrate), duration));
   if (env.anthropicConfigured) {
     try {
-      return { suggestions: sanitize(await suggestWithClaude(question, segments, theme, duration, style), duration), engine: "claude", styled: !!style, warning: null as string | null };
+      return { suggestions: withPassages(sanitize(await suggestWithClaude(question, segments, theme, duration, style), duration)), engine: "claude", styled: !!style, warning: null as string | null };
     } catch (e) {
-      // automatic run: a Claude problem (key, quota) must not stop the infographics
+      // automatic run: a Claude problem (key, quota) must not stop the visuals
       if (!opts.fallback) throw e;
-      return { suggestions: sanitize(suggestHeuristic(segments, theme, duration, style), duration), engine: "basic", styled: !!style, warning: `Claude: ${(e as Error).message}` };
+      return { suggestions: basic(), engine: "basic", styled: !!style, warning: `Claude: ${(e as Error).message}` };
     }
   }
-  return { suggestions: sanitize(suggestHeuristic(segments, theme, duration, style), duration), engine: "basic", styled: !!style, warning: null as string | null };
+  return { suggestions: basic(), engine: "basic", styled: !!style, warning: null as string | null };
 }
 
 /**
@@ -269,6 +312,26 @@ export function openaiInfographicPrompt(info: InfographicData, theme: ThemeToken
     .join("\n");
 }
 
+/**
+ * Full-screen illustration of a thought (OpenAI): drawn from the whole passage the expert says,
+ * in the brand colours and the category style, no text (the captions are laid over it).
+ */
+export function illustrationPrompt(p: { imagePrompt: string; passage: string; question?: string | null }, theme: ThemeTokens, styled: boolean) {
+  const c = (hex: string) => `${colorName(hex)} (${hex})`;
+  return [
+    "Full-screen vertical 9:16 illustration for a short expert video (TikTok/Reels). It is shown over the whole frame while the expert says the passage below, with the captions laid over it — it must make the expert's THOUGHT instantly understandable, as an illustration of the idea, not a slide or a chart.",
+    p.question ? `Viewer's question (Polish): «${p.question}»` : "",
+    p.passage ? `What the expert says at this moment (Polish): «${p.passage}»` : "",
+    `Visual idea: ${p.imagePrompt}`,
+    "Composition: one clear focal visual metaphor, readable on a phone within a second; the key subject in the middle of the frame (between 25% and 65% of the height); the top 20% and the bottom 30% quieter (a title and captions are placed there), but the artwork fills the whole frame edge to edge — no cards, borders, panels or frames.",
+    `Colours: only the brand palette — dominant ${c(theme.background)} and ${c(theme.primary)}, accents ${c(theme.accent)} and ${c(theme.highlight)}, light details ${c(theme.text)}.`,
+    "Absolutely no text: no letters, words, numbers, captions, signs, logos or watermarks anywhere in the image. No realistic portraits of real people; faceless or stylised figures only.",
+    styled ? "" : "Style: premium modern editorial illustration, bold simple shapes, soft depth and light grain, high contrast.",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
 export async function generateInfographic(
   jobId: string,
   p: {
@@ -277,8 +340,11 @@ export async function generateInfographic(
     imagePrompt?: string | null;
     /** background illustration source (template engine) */
     illustration?: "none" | "higgsfield" | "openai";
-    /** "template" = text rendered by the app; "openai" = the whole image drawn by OpenAI */
-    engine?: "template" | "openai";
+    /** "template" = text rendered by the app; "openai" = the whole image drawn by OpenAI; "illustration" = full-screen illustration of the thought, no text */
+    engine?: "template" | "openai" | "illustration";
+    /** illustration: the passage of the answer it expresses + a short name for the layer */
+    passage?: string | null;
+    title?: string | null;
     requestId?: string;
     width?: number;
     height?: number;
@@ -294,16 +360,28 @@ export async function generateInfographic(
     let background: string | null = null;
     let warning: string | null = null;
     const out = path.join(dir, "infographic.png");
+    if (p.engine === "illustration") {
+      const style = await styleFor(comp, theme);
+      const question = comp.questionId ? (await prisma.question.findUnique({ where: { id: comp.questionId }, select: { text: true } }))?.text : null;
+      const raw = path.join(dir, "illustration-src.png");
+      const prompt = illustrationPrompt({ imagePrompt: p.imagePrompt ?? "", passage: p.passage ?? "", question }, theme, !!style);
+      if (openaiConfigured()) await generateOpenAIImage(prompt, { width: W, height: H, out: raw });
+      else if (higgsfieldConfigured()) {
+        let requestId = p.requestId;
+        if (!requestId) {
+          requestId = await submitImage(prompt.slice(0, 2900), W >= H ? (W === H ? "1:1" : "16:9") : "9:16");
+          await prisma.job.update({ where: { id: jobId }, data: { payload: { ...p, requestId } as unknown as Prisma.InputJsonValue } });
+        }
+        await downloadFile(await waitForImage(requestId), raw);
+      } else throw new Error("Ilustracje wymagają klucza OPENAI_API_KEY (albo HIGGSFIELD_CREDENTIALS) w Railway → Variables.");
+      await coverTo(raw, out, W, H);
+      return await storeInfographic(comp.projectId, out, W, H, p.title || p.infographic.headline, { engine: "illustration", imageSource: openaiConfigured() ? "openai" : "higgsfield" }, null, "Ilustracja");
+    }
     if (p.engine === "openai") {
       // whole infographic by OpenAI, fitted (cover) to the video frame
       const raw = path.join(dir, "openai.png");
       await generateOpenAIImage(openaiInfographicPrompt(p.infographic, theme, await styleFor(comp, theme)), { width: W, height: H, out: raw });
-      const img = await loadImage(await fsp.readFile(raw));
-      const cv = createCanvas(W, H);
-      const ctx = cv.getContext("2d");
-      const sc = Math.max(W / img.width, H / img.height);
-      ctx.drawImage(img, (W - img.width * sc) / 2, (H - img.height * sc) / 2, img.width * sc, img.height * sc);
-      await fsp.writeFile(out, await cv.encode("png"));
+      await coverTo(raw, out, W, H);
       return await storeInfographic(comp.projectId, out, W, H, p.infographic.headline, { engine: "openai" }, "Grafika z OpenAI — sprawdź pisownię tekstu przed eksportem.");
     }
     if (p.imagePrompt && illustration === "openai") {
@@ -339,11 +417,21 @@ export async function generateInfographic(
   }
 }
 
-async function storeInfographic(projectId: string, file: string, W: number, H: number, headline: string, meta: Record<string, string>, warning: string | null) {
+/** Fit (cover) a generated image to the video frame. */
+async function coverTo(src: string, out: string, W: number, H: number) {
+  const img = await loadImage(await fsp.readFile(src));
+  const cv = createCanvas(W, H);
+  const ctx = cv.getContext("2d");
+  const sc = Math.max(W / img.width, H / img.height);
+  ctx.drawImage(img, (W - img.width * sc) / 2, (H - img.height * sc) / 2, img.width * sc, img.height * sc);
+  await fsp.writeFile(out, await cv.encode("png"));
+}
+
+async function storeInfographic(projectId: string, file: string, W: number, H: number, headline: string, meta: Record<string, string>, warning: string | null, label = "Infografika") {
   const key = `projects/${projectId}/uploads/${randomToken(12)}.png`;
   const size = await putFile(key, file, "image/png");
   const asset = await prisma.mediaAsset.create({
-    data: { kind: "IMAGE", projectId, storageKey: key, mimeType: "image/png", sizeBytes: size, width: W, height: H, hasAudio: false, hasVideo: true, originalName: `Infografika: ${headline}`.slice(0, 120), meta: { source: "infographic", ...meta } },
+    data: { kind: "IMAGE", projectId, storageKey: key, mimeType: "image/png", sizeBytes: size, width: W, height: H, hasAudio: false, hasVideo: true, originalName: `${label}: ${headline}`.slice(0, 120), meta: { source: "infographic", ...meta } },
   });
   return { assetId: asset.id, warning };
 }

@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { BarChart3, Check, Clapperboard, Loader2, Plus, RefreshCw, Sparkles, Trash2, Wand2, X } from "lucide-react";
+import { BarChart3, Check, Clapperboard, ImageIcon, Loader2, Plus, RefreshCw, Sparkles, Trash2, Wand2, X } from "lucide-react";
 import type { AiBrollItem, AssetInfo, EditorDocument, VideoOverlay } from "@/lib/editor/types";
 import { docDuration, formatShort, timedSegments } from "@/lib/editor/timeline";
 import { uid } from "@/lib/editor/id";
@@ -76,6 +76,9 @@ function brollOverlay(item: AiBrollItem, asset: AssetInfo, total: number): Video
 }
 
 const isInfographic = (i: AiBrollItem) => i.kind === "infographic";
+const isIllustration = (i: AiBrollItem) => i.kind === "illustration";
+/** still image layers (infographic / illustration) vs. video scenes */
+const isImage = (i: AiBrollItem) => isInfographic(i) || isIllustration(i);
 
 /** Background of a template infographic: none, Higgsfield or OpenAI illustration (only providers that are set up). */
 function bgSource(item: AiBrollItem, ai: AiConfig): "none" | "higgsfield" | "openai" {
@@ -127,7 +130,7 @@ export function useBrollJobs() {
             st.apply((d) => {
               const item = items(d).find((i) => i.id === itemId);
               if (!item || item.status !== "generating") return d;
-              const ov = isInfographic(item) ? buildInfographicOverlay(item, asset.id, docDuration(d)) : brollOverlay(item, asset, docDuration(d));
+              const ov = isImage(item) ? buildInfographicOverlay(item, asset.id, docDuration(d)) : brollOverlay(item, asset, docDuration(d));
               return {
                 ...d,
                 // below the question and other layers; captions are always drawn on top
@@ -232,6 +235,17 @@ export function AiPanel({
   const generate = async (item: AiBrollItem) => {
     patchItem(item.id, { status: "generating", error: null, warning: null });
     try {
+      if (isIllustration(item)) {
+        const data = await readJson(
+          await fetch(`/api/admin/compositions/${compositionId}/broll/infographic`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ engine: "illustration", imagePrompt: item.imagePrompt || item.prompt, passage: item.passage || item.quote || null, title: item.title, start: item.start }),
+          }),
+        );
+        patchItem(item.id, { jobId: String(data.jobId) });
+        return;
+      }
       if (isInfographic(item)) {
         const info = item.infographic ?? defaultInfographic(item);
         const data = await readJson(
@@ -284,7 +298,7 @@ export function AiPanel({
     <div>
       <Section title="AI: sceny i infografiki">
         <p className="text-[12px] leading-snug text-studio-muted">
-          AI czyta, co mówi ekspert, i proponuje na przemian sceny wideo (Higgsfield) i infografiki — w stylu kategorii i kolorach motywu. Zaakceptowany element trafia na pełny ekran w tym fragmencie; głos eksperta, pytanie i napisy zostają.
+          AI czyta całą wypowiedź eksperta i proponuje do jej głównych myśli ilustracje (OpenAI), sceny wideo (Higgsfield) lub infografiki z liczbami — w stylu kategorii i kolorach motywu. Zaakceptowany element trafia na pełny ekran w tym fragmencie; głos eksperta, pytanie i napisy zostają na wierzchu.
         </p>
         {!ai.higgsfield ? (
           <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[12px] text-amber-200">
@@ -325,14 +339,15 @@ export function AiPanel({
         {err ? <p className="text-[12px] text-red-300">{err}</p> : null}
       </Section>
 
-      <Section title="Automatyczne infografiki">
+      <Section title="Automatyczne ilustracje">
         <p className="text-[12px] leading-snug text-studio-muted">
-          Po przetworzeniu nagrania AI samo wybiera momenty i osadza infografiki ({ai.openai ? "obraz z OpenAI" : "szablon motywu — dodaj OPENAI_API_KEY, aby rysowało OpenAI"}).
+          Po przetworzeniu nagrania AI czyta całą wypowiedź, wybiera jej główne myśli i osadza pod napisami pełnoekranowe ilustracje tych myśli (OpenAI, kolory motywu, styl kategorii) — a infografikę tylko tam, gdzie padają liczby lub kroki.
+          {!ai.openai ? " Dodaj OPENAI_API_KEY, aby ilustracje mogły powstawać." : ""}
         </p>
         <AutoStatus job={autoJob} />
         <SButton className="w-full" onClick={runAuto} disabled={autoBusy} data-testid="auto-visuals-run">
           {autoBusy ? <Loader2 className="animate-spin" /> : <BarChart3 />}
-          {autoBusy ? "AI tworzy infografiki…" : autoJob?.status === "SUCCEEDED" && (autoJob.result?.placed ?? 0) > 0 ? "Dodaj kolejne infografiki" : "Osadź infografiki teraz"}
+          {autoBusy ? "AI rysuje ilustracje…" : autoJob?.status === "SUCCEEDED" && (autoJob.result?.placed ?? 0) > 0 ? "Dodaj kolejne ilustracje" : "Osadź ilustracje teraz"}
         </SButton>
         {autoErr ? <p className="text-[12px] text-red-300">{autoErr}</p> : null}
       </Section>
@@ -369,18 +384,24 @@ function BrollCard({ item, ai, canGenerate, onSeek, onGenerate, onRemove }: { it
   const model = ai.models.find((m) => m.id === item.model) ?? ai.models[0];
   const editable = item.status === "suggested" || item.status === "failed";
   const info = isInfographic(item);
+  const illu = isIllustration(item);
+  const canIllustrate = !!ai.openai || ai.higgsfield;
   const content = item.infographic ?? defaultInfographic(item);
   const setInfo = (patch: Partial<typeof content>) => patchItem(item.id, (it) => ({ infographic: { ...(it.infographic ?? defaultInfographic(it)), ...patch } }));
   const area = "w-full resize-y rounded-lg border border-studio-line bg-studio-2 px-2 py-1.5 text-[11.5px] leading-snug text-studio-text outline-none focus:border-white/30 disabled:opacity-70";
-  const canAccept = info ? content.headline.trim().length > 0 && content.items.some((r) => r.value.trim() || r.label.trim()) : canGenerate && item.prompt.trim().length >= 5;
+  const canAccept = illu
+    ? canIllustrate && (item.imagePrompt ?? "").trim().length >= 5
+    : info
+      ? content.headline.trim().length > 0 && content.items.some((r) => r.value.trim() || r.label.trim())
+      : canGenerate && item.prompt.trim().length >= 5;
   return (
-    <div className={cn("space-y-2 rounded-xl border p-3", item.status === "done" ? "border-emerald-500/40 bg-emerald-500/5" : "border-studio-line bg-studio-3/40")} data-testid="ai-item" data-kind={info ? "infographic" : "video"}>
+    <div className={cn("space-y-2 rounded-xl border p-3", item.status === "done" ? "border-emerald-500/40 bg-emerald-500/5" : "border-studio-line bg-studio-3/40")} data-testid="ai-item" data-kind={illu ? "illustration" : info ? "infographic" : "video"}>
       <div className="flex items-start gap-2">
         <button type="button" onClick={onSeek} className="shrink-0 rounded-md bg-studio-3 px-1.5 py-0.5 font-mono text-[11px] text-studio-text hover:bg-studio-line" title="Przejdź do tego miejsca">
           {formatShort(item.start)}–{formatShort(item.end)}
         </button>
         <p className="min-w-0 flex-1 text-[12.5px] font-medium leading-snug">
-          {info ? <BarChart3 className="mr-1 inline h-3.5 w-3.5 text-studio-muted" /> : <Clapperboard className="mr-1 inline h-3.5 w-3.5 text-studio-muted" />}
+          {illu ? <ImageIcon className="mr-1 inline h-3.5 w-3.5 text-studio-muted" /> : info ? <BarChart3 className="mr-1 inline h-3.5 w-3.5 text-studio-muted" /> : <Clapperboard className="mr-1 inline h-3.5 w-3.5 text-studio-muted" />}
           {item.title}
         </p>
         <button type="button" onClick={onRemove} className="rounded p-0.5 text-studio-muted hover:text-studio-text" aria-label={item.status === "done" ? "Usuń z wideo" : "Odrzuć"} title={item.status === "done" ? "Usuń z wideo" : "Odrzuć"}>
@@ -390,17 +411,36 @@ function BrollCard({ item, ai, canGenerate, onSeek, onGenerate, onRemove }: { it
       {item.quote ? <p className="text-[11.5px] italic leading-snug text-studio-muted">„{item.quote}”</p> : null}
       {item.reason && item.reason !== "Własna scena" ? <p className="text-[11.5px] leading-snug text-studio-muted">{item.reason}</p> : null}
       {editable ? (
-        <Seg<"video" | "infographic">
-          value={info ? "infographic" : "video"}
-          onChange={(k) => patchItem(item.id, (it) => ({ kind: k, ...(k === "infographic" && !it.infographic ? { infographic: defaultInfographic(it) } : {}) }))}
+        <Seg<"illustration" | "video" | "infographic">
+          value={illu ? "illustration" : info ? "infographic" : "video"}
+          onChange={(k) =>
+            patchItem(item.id, (it) => ({
+              kind: k,
+              ...(k === "infographic" && !it.infographic ? { infographic: defaultInfographic(it) } : {}),
+              ...(k === "illustration" && !it.imagePrompt ? { imagePrompt: it.prompt } : {}),
+            }))
+          }
           options={[
+            ["illustration", "Ilustracja"],
             ["video", "Wideo AI"],
             ["infographic", "Infografika"],
           ]}
         />
       ) : null}
 
-      {info ? (
+      {illu ? (
+        <div className="space-y-1.5">
+          <p className="text-[11px] leading-snug text-studio-muted">Pełnoekranowa ilustracja myśli z tego fragmentu — w kolorach motywu i stylu kategorii, bez tekstu, pod napisami.</p>
+          <textarea value={item.imagePrompt ?? ""} disabled={!editable} onChange={(e) => patchItem(item.id, { imagePrompt: e.target.value })} rows={4} aria-label="Co przedstawia ilustracja" className={area} />
+          {item.passage ? (
+            <details className="text-[11px] text-studio-muted">
+              <summary className="cursor-pointer">Fragment wypowiedzi, który ilustruje</summary>
+              <p className="mt-1 leading-snug">„{item.passage}”</p>
+            </details>
+          ) : null}
+          {!canIllustrate ? <p className="text-[11.5px] text-amber-300">Ilustracje wymagają klucza OPENAI_API_KEY w Railway → Variables.</p> : null}
+        </div>
+      ) : info ? (
         <div className="space-y-1.5">
           <TextField value={content.headline} disabled={!editable} onChange={(e) => setInfo({ headline: e.target.value })} aria-label="Nagłówek infografiki" placeholder="Nagłówek" />
           {content.items.map((r, i) => (
@@ -465,7 +505,7 @@ function BrollCard({ item, ai, canGenerate, onSeek, onGenerate, onRemove }: { it
 
       {editable ? (
         <div className="flex items-center gap-2">
-          {!info ? (
+          {!info && !illu ? (
             <Select value={item.duration} onChange={(v) => patchItem(item.id, { duration: Number(v) })} className="w-[76px]">
               {model.durations.map((d) => (
                 <option key={d} value={d}>
@@ -480,25 +520,25 @@ function BrollCard({ item, ai, canGenerate, onSeek, onGenerate, onRemove }: { it
             onClick={onGenerate}
             disabled={!canAccept}
             data-testid="ai-accept"
-            title={!info && !canGenerate ? "Higgsfield nie jest podłączony (HIGGSFIELD_CREDENTIALS w Railway)" : undefined}
+            title={!info && !illu && !canGenerate ? "Higgsfield nie jest podłączony (HIGGSFIELD_CREDENTIALS w Railway)" : undefined}
           >
             {item.status === "failed" ? <RefreshCw /> : <Check />}
-            {item.status === "failed" ? "Spróbuj ponownie" : info ? "Akceptuj i utwórz infografikę" : "Akceptuj i generuj"}
+            {item.status === "failed" ? "Spróbuj ponownie" : illu ? "Akceptuj i narysuj ilustrację" : info ? "Akceptuj i utwórz infografikę" : "Akceptuj i generuj"}
           </SButton>
         </div>
       ) : null}
-      {editable && !info && !canGenerate ? (
-        <p className="text-[11.5px] text-amber-300">Generowanie wideo jest wyłączone: brak klucza Higgsfield. Możesz przełączyć tę propozycję na „Infografika”.</p>
+      {editable && !info && !illu && !canGenerate ? (
+        <p className="text-[11.5px] text-amber-300">Generowanie wideo jest wyłączone: brak klucza Higgsfield. Możesz przełączyć tę propozycję na „Ilustracja” lub „Infografika”.</p>
       ) : null}
       {item.status === "generating" ? (
         <p className="flex items-center gap-1.5 text-[11.5px] text-sky-300">
           <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          {info ? ((item.engine ?? (ai.openai ? "openai" : "template")) === "openai" && ai.openai ? "OpenAI rysuje infografikę… zwykle do minuty." : bgSource(item, ai) !== "none" ? "Tworzę infografikę z ilustracją AI… zwykle do minuty." : "Tworzę infografikę…") : "Higgsfield generuje scenę… zwykle 1–4 min. Możesz dalej edytować."}
+          {illu ? "Rysuję ilustrację… zwykle do minuty." : info ? ((item.engine ?? (ai.openai ? "openai" : "template")) === "openai" && ai.openai ? "OpenAI rysuje infografikę… zwykle do minuty." : bgSource(item, ai) !== "none" ? "Tworzę infografikę z ilustracją AI… zwykle do minuty." : "Tworzę infografikę…") : "Higgsfield generuje scenę… zwykle 1–4 min. Możesz dalej edytować."}
         </p>
       ) : null}
       {item.status === "done" ? (
         <p className="flex items-center gap-1.5 text-[11.5px] text-emerald-300" data-testid="ai-done">
-          {info ? <BarChart3 className="h-3.5 w-3.5" /> : <Clapperboard className="h-3.5 w-3.5" />} Wstawiono na osi czasu jako {info ? "infografika (warstwa obrazu)" : "warstwa wideo"}.
+          {illu ? <ImageIcon className="h-3.5 w-3.5" /> : info ? <BarChart3 className="h-3.5 w-3.5" /> : <Clapperboard className="h-3.5 w-3.5" />} Wstawiono na osi czasu jako {illu ? "ilustracja (warstwa obrazu pod napisami)" : info ? "infografika (warstwa obrazu)" : "warstwa wideo"}.
         </p>
       ) : null}
       {item.warning ? <p className="text-[11.5px] text-amber-300">{item.warning}</p> : null}
@@ -508,7 +548,7 @@ function BrollCard({ item, ai, canGenerate, onSeek, onGenerate, onRemove }: { it
 }
 
 function AutoStatus({ job }: { job: AutoVisualsJob | null }) {
-  if (!job) return <p className="text-[11.5px] text-studio-muted" data-testid="auto-visuals-status">To nagranie nie miało jeszcze automatycznych infografik.</p>;
+  if (!job) return <p className="text-[11.5px] text-studio-muted" data-testid="auto-visuals-status">To nagranie nie miało jeszcze automatycznych ilustracji.</p>;
   if (job.status === "QUEUED" || job.status === "RUNNING") return <p className="text-[11.5px] text-studio-muted" data-testid="auto-visuals-status">Trwa generowanie (do ok. minuty na grafikę)…</p>;
   if (job.status === "FAILED") return <p className="rounded-lg bg-red-500/10 px-3 py-2 text-[12px] text-red-300" data-testid="auto-visuals-status">Nie udało się: {job.error ?? "nieznany błąd"}</p>;
   const r = job.result ?? {};
@@ -519,8 +559,8 @@ function AutoStatus({ job }: { job: AutoVisualsJob | null }) {
       {skipped ? <p className="text-[12px] text-amber-200">{skipped}</p> : null}
       {!r.skipped ? (
         <p className="text-[11.5px] text-emerald-300">
-          Dodano {r.placed ?? 0} {(r.placed ?? 0) === 1 ? "infografikę" : "infografik(i)"}
-          {r.engine === "openai" ? " (OpenAI)" : r.engine === "template" ? " (szablon motywu)" : ""}.
+          Dodano {r.placed ?? 0} {(r.placed ?? 0) === 1 ? "grafikę" : "grafik(i)"}
+          {r.engine === "illustration" ? " — ilustracje myśli" : r.engine === "openai" ? " (OpenAI)" : r.engine === "template" ? " (szablon motywu)" : ""}.
         </p>
       ) : null}
       {(r.warnings ?? []).map((w) => (
