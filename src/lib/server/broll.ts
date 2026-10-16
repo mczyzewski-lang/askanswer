@@ -66,7 +66,9 @@ const SuggestionSchema = z.object({
         scene: z.string().describe("English: the video SHOT LIST (or, without a style, the full video prompt) for this moment"),
         illustration: z
           .string()
-          .describe("English, 40-90 words: a full-screen still illustration that shows the THOUGHT developed in the surrounding passage as one clear visual metaphor — subject, metaphor, composition, mood; no text in the image"),
+          .describe(
+            "English, 40-90 words: a full-screen still illustration that shows the THOUGHT developed in the surrounding passage as one clear visual metaphor — subject, metaphor, composition, mood. It may carry minimal Polish text: one short headline (max 5 words) and up to 3 arrows with 1-3-word labels pointing at elements; give every text exactly, in «» quotes",
+          ),
         infographic: z.object({
           headline: z.string().describe("Polish headline, max 7 words"),
           items: z.array(z.object({ value: z.string().describe("Short key figure or step, e.g. '6–12 mies.', '50%', 'Krok 1'"), label: z.string().describe("Polish, max 9 words") })).describe("2 to 4 rows"),
@@ -85,7 +87,7 @@ Pick the moments where a full-screen visual over the expert (their voice and the
 Read the WHOLE answer first and find its 3 to 5 main thoughts. A thought is usually developed over several sentences (10-25 seconds of speech) — base every visual on the whole passage, never on a single sentence or a fragment of one. The visual appears while that thought is being said: 5 to 8 seconds, starting a second or two after the passage begins, aligned with sentence boundaries.
 
 Kinds:
-- "illustration" (the default): a full-screen illustration of the thought — a visual metaphor or situation that makes the idea instantly understandable (e.g. "the court decides only what you put in writing" → a judge's hand holding a magnifying glass over a document with empty, missing pages). Not a slide, no text.
+- "illustration" (the default): a full-screen illustration of the thought — a visual metaphor or situation that makes the idea instantly understandable (e.g. "the court decides only what you put in writing" → a judge's hand holding a magnifying glass over a document with empty, missing pages, headline «Liczy się tylko to, co napiszesz», an arrow to the empty page labelled «brak dowodu»). An illustration, not a slide: text only as a short headline and a few arrow labels.
 - "infographic": ONLY when the expert actually gives figures, deadlines, amounts, numbered steps or a comparison worth reading.
 - "video": a short AI video scene, for situations where motion matters.
 Rules:
@@ -145,6 +147,17 @@ export function sanitize(list: RawSuggestion[], duration: number): BrollSuggesti
 function compose(style: string | null, scene: string) {
   return style ? `${style} ${scene.trim()}` : scene.trim();
 }
+/** Illustration of a thought: the scene + the theme colours spelled out + the minimal-text rule. */
+export function composeIllustration(style: string | null, scene: string, theme: ThemeTokens) {
+  const c = (hex: string) => `${colorName(hex)} (${hex})`;
+  return [
+    style ? `${style} Single still frame, vertical 9:16.` : "Vertical 9:16 still illustration.",
+    scene.trim(),
+    `Colours of the brand theme: background ${c(theme.background)}, main shapes ${c(theme.primary)} and ${c(theme.secondary)}, accents ${c(theme.accent)} and ${c(theme.highlight)}, text and light details ${c(theme.text)}.`,
+    "Minimal text allowed, in Polish: one short headline (max 5 words) that sums up the thought, and up to 3 thin arrows with 1-3-word labels pointing at the key elements — clean, sparse and legible. No other text, no logos.",
+  ].join(" ");
+}
+
 function composeImage(style: string | null, scene: string) {
   return style ? `${style} Single still illustration frame, vertical 9:16, one strong focal subject. ${scene.trim()}` : `${scene.trim()} Vertical 9:16 still image, one strong focal subject, no text, no logos.`;
 }
@@ -168,7 +181,7 @@ async function suggestWithClaude(question: string, segments: SpokenSegment[], th
   });
   if (response.stop_reason === "refusal") throw new Error("Model odmówił przygotowania propozycji dla tego nagrania.");
   if (!response.parsed_output) throw new Error("Nie udało się odczytać propozycji AI — spróbuj ponownie.");
-  return response.parsed_output.suggestions.map(({ scene, illustration, ...s }) => ({ ...s, prompt: compose(style, scene), imagePrompt: composeImage(style, illustration) }));
+  return response.parsed_output.suggestions.map(({ scene, illustration, ...s }) => ({ ...s, prompt: compose(style, scene), imagePrompt: s.kind === "illustration" ? composeIllustration(style, illustration, theme) : composeImage(style, illustration) }));
 }
 
 /** Consecutive sentences grouped into passages of ~10–20 s (one thought each, roughly). */
@@ -227,7 +240,9 @@ function suggestHeuristic(segments: SpokenSegment[], theme: ThemeTokens, duratio
       title: words.slice(0, 5).join(" "),
       reason: "Ilustracja myśli z tego fragmentu wypowiedzi (tryb podstawowy — dodaj ANTHROPIC_API_KEY, aby AI samo wybierało najważniejsze myśli i metafory).",
       prompt: compose(style, scene),
-      imagePrompt: composeImage(style, "One clear visual metaphor of the main thought the expert expresses in the passage below — what it means for the viewer, shown, not written."),
+      imagePrompt: illustrate
+        ? composeIllustration(style, "One clear visual metaphor of the main thought the expert expresses in this passage — what it means for the viewer, one strong focal subject.", theme)
+        : composeImage(style, `A calm scene that illustrates: "${p.text.slice(0, 200)}"`),
       infographic: { headline: words.slice(0, 6).join(" "), items: (parts.length ? parts : [p.text]).map((x, k) => ({ value: `${k + 1}.`, label: x.split(/\s+/).slice(0, 9).join(" ") })), note: null },
       passage: p.text,
     };
@@ -329,8 +344,9 @@ export function illustrationPrompt(p: { imagePrompt: string; passage: string; qu
     p.passage ? `What the expert says at this moment (Polish): «${p.passage}»` : "",
     `Visual idea: ${p.imagePrompt}`,
     "Composition: one clear focal visual metaphor, readable on a phone within a second; the key subject in the middle of the frame (between 25% and 65% of the height); the top 20% and the bottom 30% quieter (a title and captions are placed there), but the artwork fills the whole frame edge to edge — no cards, borders, panels or frames.",
-    `Colours: only the brand palette — dominant ${c(theme.background)} and ${c(theme.primary)}, accents ${c(theme.accent)} and ${c(theme.highlight)}, light details ${c(theme.text)}.`,
-    "Absolutely no text: no letters, words, numbers, captions, signs, logos or watermarks anywhere in the image. No realistic portraits of real people; faceless or stylised figures only.",
+    `Colours — use exactly this brand palette and nothing far from it: background ${c(theme.background)}, main shapes ${c(theme.primary)} and ${c(theme.secondary)}, accents and arrows ${c(theme.accent)} and ${c(theme.highlight)}, text and light details ${c(theme.text)}.`,
+    "Text: minimal, only in Polish with correct letters (ą ć ę ł ń ó ś ź ż), taken from what the expert says — at most one short headline (max 5 words) in the upper-middle area and up to 3 thin arrows or callout lines with 1-3-word labels pointing at elements; large and legible on a phone; no paragraphs, no other words, nothing in the bottom 30% (captions), no logos or watermarks.",
+    "No realistic portraits of real people; faceless or stylised figures only.",
     styled ? "" : "Style: premium modern editorial illustration, bold simple shapes, soft depth and light grain, high contrast.",
   ]
     .filter(Boolean)

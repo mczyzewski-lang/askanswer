@@ -70,14 +70,17 @@ describe("illustrations of the expert's thoughts", () => {
     expect(ctx).toContain("zbierz wszystkie dokumenty");
   });
 
-  it("asks OpenAI for a full-screen, text-free picture of the thought in the theme colours", async () => {
+  it("asks OpenAI for a full-screen picture of the thought in the theme colours, with only minimal Polish text", async () => {
     const { illustrationPrompt } = await import("../../src/lib/server/broll");
     const { DEFAULT_THEME } = await import("../../src/lib/themes");
     const p = illustrationPrompt({ imagePrompt: "A judge reading a document with missing pages", passage: "Jeśli czegoś nie wpiszesz, sąd sam tego nie doda.", question: "Co wpisać do pozwu?" }, DEFAULT_THEME, false);
     expect(p).toContain("9:16");
     expect(p).toContain("«Jeśli czegoś nie wpiszesz, sąd sam tego nie doda.»");
     expect(p).toContain("A judge reading a document");
-    expect(p).toMatch(/no text/i);
+    expect(p).toMatch(/one short headline \(max 5 words\)/);
+    expect(p).toMatch(/up to 3 thin arrows/);
+    expect(p).toMatch(/no paragraphs/);
+    for (const hex of [DEFAULT_THEME.background, DEFAULT_THEME.accent, DEFAULT_THEME.highlight, DEFAULT_THEME.text]) expect(p).toContain(hex);
     expect(p).toContain(DEFAULT_THEME.primary);
     expect(p).toMatch(/edge to edge/);
   });
@@ -91,5 +94,16 @@ describe("style colours", () => {
     const filled = fillStyle(INK_EDITORIAL_STYLE, { name: "t", primary: "#0B1F3A", accent: "#C9A227", secondary: "#1E3A5F", text: "#FFFFFF", highlight: "#F5C542", background: "#0A0F1C", questionFont: "Manrope", subtitleFont: "Inter", labelFont: "Inter" });
     expect(filled).not.toMatch(/\{\{/);
     expect(filled).toContain("deep navy blue");
+  });
+
+  it("the illustration idea shown in the Studio spells out the theme colours and the text rule", async () => {
+    const { composeIllustration } = await import("../../src/lib/server/broll");
+    const { DEFAULT_THEME } = await import("../../src/lib/themes");
+    const p = composeIllustration(null, "A judge reading a document with missing pages.", DEFAULT_THEME);
+    expect(p).toContain(`background`);
+    expect(p).toContain(DEFAULT_THEME.primary);
+    expect(p).toContain(DEFAULT_THEME.accent);
+    expect(p).toMatch(/short headline/);
+    expect(p).not.toMatch(/no text/i);
   });
 });

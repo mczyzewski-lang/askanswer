@@ -47,11 +47,12 @@ test("studio: pauses, cuts, subtitles, zoom, theme, persistence and real MP4 exp
   expect(placedAuto.length).toBeGreaterThan(0);
   expect(placedAuto.every((i) => i.kind === "illustration" && i.engine === "openai")).toBeTruthy();
   expect(auto!.document.overlays.filter((o) => o.kind === "image" && o.name.startsWith("Ilustracja")).length).toBe(placedAuto.length);
-  // drawn from whole passages of the answer, full screen, no text, in the theme colours
+  // drawn from whole passages of the answer, full screen, minimal Polish text, in the theme colours
   const autoStats = await (await request.get("http://127.0.0.1:4010/__stats", { headers: { "xi-api-key": "mock-key" } })).json();
   const illu = (autoStats.openai as Array<{ prompt: string; size: string }>).filter((c) => c.prompt.includes("Full-screen vertical 9:16 illustration"));
   expect(illu.length).toBeGreaterThanOrEqual(placedAuto.length);
-  expect(illu[0].prompt).toMatch(/Absolutely no text/);
+  expect(illu[0].prompt).toMatch(/one short headline \(max 5 words\)/);
+  expect(illu[0].prompt).toMatch(/background [a-z -]+ \(#[0-9A-Fa-f]{6}\)/);
   // the passage around the moment, verbatim from the transcript (its length depends on the fixture speech)
   const said = /What the expert says at this moment \(Polish\): «([^»]+)»/.exec(illu[0].prompt)?.[1] ?? "";
   const words = Number(info.transcriptWords ?? 0);
