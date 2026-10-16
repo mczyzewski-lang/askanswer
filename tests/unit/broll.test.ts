@@ -106,4 +106,14 @@ describe("style colours", () => {
     expect(p).toMatch(/short headline/);
     expect(p).not.toMatch(/no text/i);
   });
+
+  it("tells OpenAI the key sentence of the moment and what the other illustrations show, so they differ", async () => {
+    const { illustrationPrompt } = await import("../../src/lib/server/broll");
+    const { DEFAULT_THEME } = await import("../../src/lib/themes");
+    const p = illustrationPrompt({ imagePrompt: "x", passage: "Długi fragment. Wybieram jeden problem.", focus: "Wybieram jeden problem.", others: ["Szukam jednego problemu", "Mamy osiem obszarów"] }, DEFAULT_THEME, false);
+    expect(p).toContain("«Wybieram jeden problem.»");
+    expect(p).toContain("«Szukam jednego problemu»; «Mamy osiem obszarów»");
+    expect(p).toMatch(/clearly different/);
+  });
 });
+

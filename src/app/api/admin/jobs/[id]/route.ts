@@ -8,8 +8,8 @@ export const GET = route(async (_req: Request, ctx: { params: Promise<{ id: stri
   await requireAdmin();
   const { id } = await ctx.params;
   const job = await prisma.job.findUniqueOrThrow({ where: { id } });
-  const result = (job.result ?? null) as { map?: Record<string, string>; assetId?: string } | null;
-  const ids = job.status === "SUCCEEDED" && result ? [...Object.values(result.map ?? {}), ...(result.assetId ? [result.assetId] : [])] : [];
+  const result = (job.result ?? null) as { map?: Record<string, string>; assetId?: string; variantIds?: string[] } | null;
+  const ids = job.status === "SUCCEEDED" && result ? [...new Set([...Object.values(result.map ?? {}), ...(result.assetId ? [result.assetId] : []), ...(result.variantIds ?? [])])] : [];
   const assets = (await Promise.all(ids.map((a) => assetInfo(a)))).filter(Boolean);
   return json({ id: job.id, type: job.type, status: job.status, attempts: job.attempts, error: job.error, result, assets, warning: (job.result as { warning?: string } | null)?.warning ?? null });
 });

@@ -26,7 +26,9 @@ export function imageSize(model: string, width: number, height: number): string 
   return width === height ? "1024x1024" : width < height ? "1024x1536" : "1536x1024";
 }
 
-export async function generateOpenAIImage(prompt: string, opts: { width: number; height: number; out: string; quality?: "low" | "medium" | "high" }) {
+/** `out` = one file, or several: that many variants in one request (n), written in order; returns how many came back. */
+export async function generateOpenAIImage(prompt: string, opts: { width: number; height: number; out: string | string[]; quality?: "low" | "medium" | "high" }): Promise<number> {
+  const outs = Array.isArray(opts.out) ? opts.out : [opts.out];
   if (!openaiConfigured()) throw new OpenAIImageError("OpenAI nie jest skonfigurowany — dodaj OPENAI_API_KEY w Railway → Variables.", false);
   const model = env.openaiImageModel;
   let res: Response;
@@ -34,7 +36,7 @@ export async function generateOpenAIImage(prompt: string, opts: { width: number;
     res = await fetch(`${env.openaiBaseUrl}/images/generations`, {
       method: "POST",
       headers: { Authorization: `Bearer ${env.openaiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ model, prompt, size: imageSize(model, opts.width, opts.height), quality: opts.quality ?? "high", n: 1, output_format: "png" }),
+      body: JSON.stringify({ model, prompt, size: imageSize(model, opts.width, opts.height), quality: opts.quality ?? env.openaiImageQuality, n: outs.length, output_format: "png" }),
       signal: AbortSignal.timeout(240_000),
     });
   } catch (e) {
@@ -49,9 +51,10 @@ export async function generateOpenAIImage(prompt: string, opts: { width: number;
     if (res.status === 429 && /quota|billing/i.test(msg)) throw new OpenAIImageError(`Brak środków na koncie OpenAI: ${msg}`, false);
     throw new OpenAIImageError(`OpenAI: ${msg}`, res.status === 429 || res.status >= 500);
   }
-  const b64 = body.data?.[0]?.b64_json;
-  if (!b64) throw new OpenAIImageError("OpenAI nie zwrócił obrazu", true);
-  await fsp.writeFile(opts.out, Buffer.from(b64, "base64"));
+  const images = (body.data ?? []).map((d) => d.b64_json).filter((b): b is string => !!b);
+  if (!images.length) throw new OpenAIImageError("OpenAI nie zwrócił obrazu", true);
+  for (let i = 0; i < Math.min(images.length, outs.length); i++) await fsp.writeFile(outs[i], Buffer.from(images[i], "base64"));
+  return Math.min(images.length, outs.length);
 }
 
 /** Connection test without generating anything: list one model. */

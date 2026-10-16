@@ -268,6 +268,8 @@ export async function suggestBroll(compositionId: string, segments: SpokenSegmen
   const withPassages = (list: BrollSuggestion[]) =>
     list.map((x) => {
       // at least the neighbouring sentences: a short passage alone carries too little of the thought
+      // (a passage of its own is kept: overlapping context would make every moment the same picture)
+      if ((x.passage?.length ?? 0) >= 160) return x;
       const around = passageFor(segments, x.start, x.end);
       return { ...x, passage: (x.passage?.length ?? 0) >= around.length ? x.passage : around };
     });
@@ -336,13 +338,21 @@ export function openaiInfographicPrompt(info: InfographicData, theme: ThemeToken
  * Full-screen illustration of a thought (OpenAI): drawn from the whole passage the expert says,
  * in the brand colours and the category style, no text (the captions are laid over it).
  */
-export function illustrationPrompt(p: { imagePrompt: string; passage: string; question?: string | null }, theme: ThemeTokens, styled: boolean) {
+export function illustrationPrompt(
+  p: { imagePrompt: string; passage: string; question?: string | null; focus?: string | null; others?: string[] | null },
+  theme: ThemeTokens,
+  styled: boolean,
+) {
   const c = (hex: string) => `${colorName(hex)} (${hex})`;
   return [
     "Full-screen vertical 9:16 illustration for a short expert video (TikTok/Reels). It is shown over the whole frame while the expert says the passage below, with the captions laid over it — it must make the expert's THOUGHT instantly understandable, as an illustration of the idea, not a slide or a chart.",
     p.question ? `Viewer's question (Polish): «${p.question}»` : "",
     p.passage ? `What the expert says at this moment (Polish): «${p.passage}»` : "",
+    p.focus && p.focus !== p.passage ? `The key sentence of THIS moment — illustrate exactly this thought (Polish): «${p.focus}»` : "",
     `Visual idea: ${p.imagePrompt}`,
+    p.others?.length
+      ? `The same video shows other illustrations for these thoughts: ${p.others.map((o) => `«${o}»`).join("; ")}. Make this one clearly different from them — another metaphor, other objects, another scene and composition, another headline.`
+      : "",
     "Composition: one clear focal visual metaphor, readable on a phone within a second; the key subject in the middle of the frame (between 25% and 65% of the height); the top 20% and the bottom 30% quieter (a title and captions are placed there), but the artwork fills the whole frame edge to edge — no cards, borders, panels or frames.",
     `Colours — use exactly this brand palette and nothing far from it: background ${c(theme.background)}, main shapes ${c(theme.primary)} and ${c(theme.secondary)}, accents and arrows ${c(theme.accent)} and ${c(theme.highlight)}, text and light details ${c(theme.text)}.`,
     "Text: minimal, only in Polish with correct letters (ą ć ę ł ń ó ś ź ż), taken from what the expert says — at most one short headline (max 5 words) in the upper-middle area and up to 3 thin arrows or callout lines with 1-3-word labels pointing at elements; large and legible on a phone; no paragraphs, no other words, nothing in the bottom 30% (captions), no logos or watermarks.",
@@ -366,6 +376,11 @@ export async function generateInfographic(
     /** illustration: the passage of the answer it expresses + a short name for the layer */
     passage?: string | null;
     title?: string | null;
+    /** illustration: the key sentence of this moment, and the thoughts other illustrations in the video show */
+    focus?: string | null;
+    others?: string[] | null;
+    /** illustration: how many variants to draw for choosing (default ILLUSTRATION_VARIANTS) */
+    variants?: number;
     requestId?: string;
     width?: number;
     height?: number;
@@ -384,9 +399,12 @@ export async function generateInfographic(
     if (p.engine === "illustration") {
       const style = await styleFor(comp, theme);
       const question = comp.questionId ? (await prisma.question.findUnique({ where: { id: comp.questionId }, select: { text: true } }))?.text : null;
-      const raw = path.join(dir, "illustration-src.png");
-      const prompt = illustrationPrompt({ imagePrompt: p.imagePrompt ?? "", passage: p.passage ?? "", question }, theme, !!style);
-      if (openaiConfigured()) await generateOpenAIImage(prompt, { width: W, height: H, out: raw });
+      const n = Math.max(1, Math.min(4, p.variants ?? env.illustrationVariants));
+      const raws = Array.from({ length: n }, (_, i) => path.join(dir, `illustration-src-${i}.png`));
+      const prompt = illustrationPrompt({ imagePrompt: p.imagePrompt ?? "", passage: p.passage ?? "", question, focus: p.focus, others: p.others }, theme, !!style);
+      let got = 1;
+      const raw = raws[0];
+      if (openaiConfigured()) got = await generateOpenAIImage(prompt, { width: W, height: H, out: raws });
       else if (higgsfieldConfigured()) {
         let requestId = p.requestId;
         if (!requestId) {
@@ -395,8 +413,15 @@ export async function generateInfographic(
         }
         await downloadFile(await waitForImage(requestId), raw);
       } else throw new Error(`Ilustracje wymagają klucza OpenAI. ${openaiKeyDiagnostics()}`);
-      await coverTo(raw, out, W, H);
-      return await storeInfographic(comp.projectId, out, W, H, p.title || p.infographic.headline, { engine: "illustration", imageSource: openaiConfigured() ? "openai" : "higgsfield" }, null, "Ilustracja");
+      // every variant becomes its own image asset; the first one goes on the timeline, the others can be picked in the Studio
+      const variantIds: string[] = [];
+      for (let i = 0; i < got; i++) {
+        const file = path.join(dir, `illustration-${i}.png`);
+        await coverTo(raws[i], file, W, H);
+        const v = await storeInfographic(comp.projectId, file, W, H, p.title || p.infographic.headline, { engine: "illustration", imageSource: openaiConfigured() ? "openai" : "higgsfield", variant: String(i + 1) }, null, "Ilustracja");
+        variantIds.push(v.assetId);
+      }
+      return { assetId: variantIds[0], variantIds, warning: null as string | null };
     }
     if (p.engine === "openai") {
       // whole infographic by OpenAI, fitted (cover) to the video frame

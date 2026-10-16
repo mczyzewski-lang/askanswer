@@ -48,12 +48,14 @@ export async function autoVisuals(jobId: string, compositionId: string, force = 
 
   // in parallel (each OpenAI image takes up to a minute)
   const settled = await Promise.all(
-    picks.map(async (s): Promise<{ s: BrollSuggestion; assetId: string; warning: string | null; engine: "openai" | "template" } | { s: BrollSuggestion; failed: string }> => {
+    picks.map(async (s): Promise<{ s: BrollSuggestion; assetId: string; variantIds?: string[]; warning: string | null; engine: "openai" | "template" } | { s: BrollSuggestion; failed: string }> => {
       const base = { compositionId, width: doc0.width, height: doc0.height };
       try {
         if (s.kind === "illustration") {
-          const r = await generateInfographic(jobId, { ...base, engine: "illustration", infographic: { headline: s.title, items: [], note: null }, imagePrompt: s.imagePrompt, passage: s.passage, title: s.title });
-          return { s, assetId: r.assetId, warning: r.warning, engine: openaiConfigured() ? "openai" : "template" };
+          // each moment: its own key sentence, and what the other moments show — so the pictures differ
+          const others = picks.filter((o) => o.id !== s.id && o.kind === "illustration").map((o) => o.quote.slice(0, 160));
+          const r = await generateInfographic(jobId, { ...base, engine: "illustration", infographic: { headline: s.title, items: [], note: null }, imagePrompt: s.imagePrompt, passage: s.passage, focus: s.quote, others, title: s.title });
+          return { s, assetId: r.assetId, variantIds: "variantIds" in r ? r.variantIds : undefined, warning: r.warning, engine: openaiConfigured() ? "openai" : "template" };
         }
         const r = await generateInfographic(jobId, { ...base, infographic: s.infographic, engine: infoEngine, illustration: "none" });
         return { s, assetId: r.assetId, warning: r.warning, engine: infoEngine };
@@ -83,7 +85,7 @@ export async function autoVisuals(jobId: string, compositionId: string, force = 
     for (const p of placed) {
       const ov = infographicOverlay(p.s, p.assetId, total);
       overlays.push(ov);
-      items.push(toItem(p.s, model, { status: "done", overlayId: ov.id, engine: p.engine, illustration: p.s.kind === "illustration", illustrationSource: openaiConfigured() ? "openai" : "higgsfield", warning: p.warning }));
+      items.push(toItem(p.s, model, { status: "done", overlayId: ov.id, engine: p.engine, variants: p.variantIds, illustration: p.s.kind === "illustration", illustrationSource: openaiConfigured() ? "openai" : "higgsfield", warning: p.warning }));
     }
     // on a re-run only new infographics; the earlier video proposals stay as they are
     for (const s of force && before ? [] : proposals) items.push(toItem(s, model, { status: "suggested", illustration: true, illustrationSource: openaiConfigured() ? "openai" : "higgsfield" }));

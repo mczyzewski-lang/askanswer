@@ -19,7 +19,7 @@ import path from "node:path";
 const PORT = Number(process.env.MOCK_PORT ?? 4010);
 const ff = process.env.FFMPEG_PATH || "ffmpeg";
 let ttsCalls = 0;
-const oaiLog: Array<{ model: string; size: string; prompt: string }> = [];
+const oaiLog: Array<{ model: string; size: string; prompt: string; n: number }> = [];
 const ttsLog: Array<{ voiceId: string; model: string; text: string; settings: unknown }> = [];
 let sttCalls = 0;
 
@@ -142,10 +142,11 @@ const server = http.createServer(async (req, res) => {
         const body = JSON.parse((await readBody(req)).toString() || "{}");
         const m = /^(\d+)x(\d+)$/.exec(String(body.size));
         if (!body.model || !body.prompt || !m || +m[1] % 16 || +m[2] % 16) return json(400, { error: { message: "invalid model/prompt/size" } });
-        oaiLog.push({ model: body.model, size: body.size, prompt: body.prompt });
+        oaiLog.push({ model: body.model, size: body.size, prompt: body.prompt, n: body.n ?? 1 });
         const f = path.join(os.tmpdir(), `mock-oai-${process.pid}-${m[1]}x${m[2]}.png`);
         if (!fs.existsSync(f)) execFileSync(ff, ["-v", "error", "-y", "-f", "lavfi", "-i", `testsrc2=size=${m[1]}x${m[2]}`, "-frames:v", "1", f]);
-        return json(200, { created: Math.floor(Date.now() / 1000), data: [{ b64_json: fs.readFileSync(f).toString("base64") }] });
+        const n = Math.max(1, Math.min(10, Number(body.n ?? 1)));
+        return json(200, { created: Math.floor(Date.now() / 1000), data: Array.from({ length: n }, () => ({ b64_json: fs.readFileSync(f).toString("base64") })) });
       }
       return json(404, { error: { message: "unknown endpoint" } });
     }

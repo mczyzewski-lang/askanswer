@@ -17,6 +17,8 @@ export async function loadStudio(id: string) {
   // the project theme is the source of truth: theme edits propagate to every video
   if (comp.project.theme) doc.theme = themeFromRow(comp.project.theme);
   const ids = new Set(referencedAssetIds(doc));
+  // illustration variants to choose from in the AI tab
+  for (const it of doc.meta.aiBroll ?? []) for (const v of it.variants ?? []) ids.add(v);
   if (doc.theme.logoAssetId) ids.add(doc.theme.logoAssetId);
   const assets = (await Promise.all([...ids].map((a) => assetInfo(a, true)))).filter(Boolean);
   // other takes of the same question (for "Zamień ujęcie")

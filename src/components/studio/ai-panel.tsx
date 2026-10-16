@@ -121,13 +121,14 @@ export function useBrollJobs() {
           const [itemId, jobId] = pair.split(":");
           const res = await fetch(`/api/admin/jobs/${jobId}`, { cache: "no-store" }).catch(() => null);
           if (!res?.ok || stopped) continue;
-          const job = (await res.json().catch(() => null)) as { status: string; error?: string | null; warning?: string | null; assets?: AssetInfo[] } | null;
+          const job = (await res.json().catch(() => null)) as { status: string; error?: string | null; warning?: string | null; assets?: AssetInfo[]; result?: { variantIds?: string[] } | null } | null;
           if (!job) continue;
           if (job.status === "FAILED") patchItem(itemId, { status: "failed", error: (job.error ?? "Generowanie nie powiodło się").slice(0, 900) });
           if (job.status === "SUCCEEDED" && job.assets?.[0]) {
             const asset = job.assets[0];
+            const variants = job.result?.variantIds && job.result.variantIds.length > 1 ? job.result.variantIds : undefined;
             const st = useStudio.getState();
-            st.addAssets([asset]);
+            st.addAssets(job.assets);
             st.apply((d) => {
               const item = items(d).find((i) => i.id === itemId);
               if (!item || item.status !== "generating") return d;
@@ -136,7 +137,7 @@ export function useBrollJobs() {
                 ...d,
                 // below the question and other layers; captions are always drawn on top
                 overlays: [ov, ...d.overlays],
-                meta: { ...d.meta, aiBroll: items(d).map((i) => (i.id === itemId ? { ...i, status: "done" as const, overlayId: ov.id, error: null, warning: job.warning ?? null } : i)) },
+                meta: { ...d.meta, aiBroll: items(d).map((i) => (i.id === itemId ? { ...i, status: "done" as const, overlayId: ov.id, error: null, warning: job.warning ?? null, variants } : i)) },
               };
             });
           }
@@ -241,7 +242,19 @@ export function AiPanel({
           await fetch(`/api/admin/compositions/${compositionId}/broll/infographic`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ engine: "illustration", imagePrompt: item.imagePrompt || item.prompt, passage: item.passage || item.quote || null, title: item.title, start: item.start }),
+            body: JSON.stringify({
+              engine: "illustration",
+              imagePrompt: item.imagePrompt || item.prompt,
+              passage: item.passage || item.quote || null,
+              focus: item.quote || null,
+              // what the other illustrations of this video show, so this one looks different
+              others: items(doc)
+                .filter((o) => o.id !== item.id && isIllustration(o) && o.quote)
+                .map((o) => o.quote.slice(0, 190))
+                .slice(0, 8),
+              title: item.title,
+              start: item.start,
+            }),
           }),
         );
         patchItem(item.id, { jobId: String(data.jobId) });
@@ -546,6 +559,7 @@ function BrollCard({ item, ai, canGenerate, onSeek, onGenerate, onRemove }: { it
           {illu ? <ImageIcon className="h-3.5 w-3.5" /> : info ? <BarChart3 className="h-3.5 w-3.5" /> : <Clapperboard className="h-3.5 w-3.5" />} Wstawiono na osi czasu jako {illu ? "ilustracja (warstwa obrazu pod napisami)" : info ? "infografika (warstwa obrazu)" : "warstwa wideo"}.
         </p>
       ) : null}
+      {item.status === "done" && item.variants && item.variants.length > 1 ? <VariantPicker item={item} /> : null}
       {item.warning ? <p className="text-[11.5px] text-amber-300">{item.warning}</p> : null}
       {item.status === "failed" && item.error ? <p className="text-[11.5px] text-red-300">{item.error}</p> : null}
     </div>
@@ -573,6 +587,45 @@ function AutoStatus({ job }: { job: AutoVisualsJob | null }) {
           {w}
         </p>
       ))}
+    </div>
+  );
+}
+
+/** Illustration drawn in several variants: pick the one shown on the timeline. */
+function VariantPicker({ item }: { item: AiBrollItem }) {
+  const assets = useStudio((s) => s.assets);
+  const current = useStudio((s) => {
+    const o = s.doc?.overlays.find((x) => x.id === item.overlayId);
+    return o && o.kind === "image" ? (o.assetId ?? null) : null;
+  });
+  const choose = (assetId: string) =>
+    useStudio.getState().apply((d) => ({ ...d, overlays: d.overlays.map((o) => (o.id === item.overlayId && o.kind === "image" ? { ...o, assetId } : o)) }), `variant:${item.id}`);
+  return (
+    <div className="space-y-1" data-testid="ai-variants">
+      <p className="text-[11px] text-studio-muted">Wybierz wariant ({item.variants!.length}):</p>
+      <div className="grid grid-cols-3 gap-1.5">
+        {item.variants!.map((id, i) => {
+          const a = assets[id];
+          return (
+            <button
+              key={id}
+              type="button"
+              onClick={() => choose(id)}
+              aria-label={`Wariant ${i + 1}`}
+              aria-pressed={current === id}
+              data-testid="ai-variant"
+              className={cn("overflow-hidden rounded-md border-2 bg-studio-3", current === id ? "border-emerald-400" : "border-transparent hover:border-white/30")}
+            >
+              {a ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={a.url} alt="" className="aspect-[9/16] w-full object-cover" loading="lazy" />
+              ) : (
+                <div className="aspect-[9/16] w-full" />
+              )}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }

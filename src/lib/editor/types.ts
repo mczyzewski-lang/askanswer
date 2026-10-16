@@ -254,6 +254,8 @@ export interface AiBrollItem {
   kind?: "video" | "infographic" | "illustration";
   /** the longer piece of the answer the visual is based on (several sentences) */
   passage?: string;
+  /** illustration: image assets of the drawn variants (the layer shows one of them) */
+  variants?: string[];
   start: number; // timeline seconds
   end: number;
   quote: string;

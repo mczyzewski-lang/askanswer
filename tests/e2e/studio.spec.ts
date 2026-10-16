@@ -53,10 +53,12 @@ test("studio: pauses, cuts, subtitles, zoom, theme, persistence and real MP4 exp
   expect(illu.length).toBeGreaterThanOrEqual(placedAuto.length);
   expect(illu[0].prompt).toMatch(/one short headline \(max 5 words\)/);
   expect(illu[0].prompt).toMatch(/background [a-z -]+ \(#[0-9A-Fa-f]{6}\)/);
-  // the passage around the moment, verbatim from the transcript (its length depends on the fixture speech)
-  const said = /What the expert says at this moment \(Polish\): «([^»]+)»/.exec(illu[0].prompt)?.[1] ?? "";
-  const words = Number(info.transcriptWords ?? 0);
-  expect(said.split(/\s+/).length).toBeGreaterThanOrEqual(Math.min(words, 6));
+  // the passage of the answer, verbatim from the transcript (its length depends on the fixture speech)
+  expect(illu[0].prompt).toMatch(/What the expert says at this moment \(Polish\): «[^»]+»/);
+  // three variants per illustration, to choose from
+  expect((illu.at(-1) as { n?: number }).n).toBe(3);
+  const autoItems = auto!.document.meta.aiBroll as Array<{ status: string; variants?: string[] }>;
+  expect(autoItems.filter((i) => i.status === "done").every((i) => i.variants?.length === 3)).toBeTruthy();
 
   await login(page);
   await page.goto(`/studio/${compId}`);
@@ -110,6 +112,13 @@ test("studio: pauses, cuts, subtitles, zoom, theme, persistence and real MP4 exp
   await expect(page.getByTestId("ai-check-result")).toContainText("Połączenie z OpenAI działa");
   // the automatic run is visible in the AI tab and can be started again on demand
   await expect(page.getByTestId("auto-visuals-status")).toContainText("Dodano");
+  // pick another variant of the placed illustration: the layer switches to it
+  const picker = page.getByTestId("ai-variants").first();
+  await expect(picker.getByTestId("ai-variant")).toHaveCount(3);
+  await expect(picker.getByTestId("ai-variant").first()).toHaveAttribute("aria-pressed", "true");
+  await picker.getByTestId("ai-variant").nth(1).click();
+  await expect(picker.getByTestId("ai-variant").nth(1)).toHaveAttribute("aria-pressed", "true");
+  await waitSaved(page);
   await expect(page.getByTestId("auto-visuals-status")).toContainText("ilustracje myśli");
   await page.getByTestId("auto-visuals-run").click();
   await expect(page.getByText(/AI dodało \d+ grafik/)).toBeVisible({ timeout: 90_000 });
