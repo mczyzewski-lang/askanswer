@@ -96,7 +96,7 @@ async function higgsfield(req: http.IncomingMessage, res: http.ServerResponse, p
     res.writeHead(200, { "content-type": "video/mp4" });
     return res.end(hfClip);
   }
-  if (!/^Key [^:\s]+:\S+$/.test(String(req.headers.authorization ?? ""))) return json(401, { detail: "Invalid credentials" });
+  if (!/^Key \S{8,}$/.test(String(req.headers.authorization ?? ""))) return json(401, { detail: "Invalid credentials" });
   const m = p.match(/^\/requests\/([\w-]+)\/status$/);
   if (req.method === "GET" && m) {
     const r = hfRequests.get(m[1]);

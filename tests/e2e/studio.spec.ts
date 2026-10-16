@@ -81,6 +81,8 @@ test("studio: pauses, cuts, subtitles, zoom, theme, persistence and real MP4 exp
 
   // AI B-roll: proposals from the transcript → accept → Higgsfield (mock) clip lands on the timeline
   await page.getByTestId("tab-ai").click();
+  await page.getByTestId("ai-check").click();
+  await expect(page.getByTestId("ai-check-result")).toContainText("Połączenie z Higgsfield działa");
   await page.getByTestId("ai-suggest").click();
   await expect(page.getByTestId("ai-item").first()).toBeVisible({ timeout: 30_000 });
   await page.getByTestId("ai-accept").first().click();

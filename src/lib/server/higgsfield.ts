@@ -64,7 +64,7 @@ interface StatusResponse {
 }
 
 async function call(path: string, init: RequestInit = {}): Promise<StatusResponse> {
-  if (!higgsfieldConfigured()) throw new HiggsfieldError("Higgsfield nie jest skonfigurowany — ustaw HIGGSFIELD_CREDENTIALS (KEY_ID:KEY_SECRET).", false);
+  if (!higgsfieldConfigured()) throw new HiggsfieldError("Higgsfield nie jest skonfigurowany — ustaw HIGGSFIELD_CREDENTIALS (KEY_ID:KEY_SECRET z panelu API Higgsfield).", false);
   let res: Response;
   try {
     res = await fetch(`${env.higgsfieldBaseUrl}${path}`, {
@@ -153,4 +153,19 @@ export async function downloadFile(url: string, dest: string) {
   const res = await fetch(url, { signal: AbortSignal.timeout(5 * 60_000) });
   if (!res.ok || !res.body) throw new HiggsfieldError(`Nie udało się pobrać pliku z Higgsfield (HTTP ${res.status})`, true);
   await pipeline(Readable.fromWeb(res.body as import("node:stream/web").ReadableStream), fs.createWriteStream(dest));
+}
+
+/**
+ * Connection test without spending credits: ask for the status of a request that does not exist.
+ * 404 = the key was accepted; 401/403 = the key is wrong.
+ */
+export async function checkConnection(): Promise<{ ok: boolean; message: string }> {
+  try {
+    await call("/requests/00000000-0000-0000-0000-000000000000/status");
+    return { ok: true, message: "Połączenie z Higgsfield działa." };
+  } catch (e) {
+    const msg = (e as Error).message;
+    if (/HTTP 404|not found/i.test(msg)) return { ok: true, message: "Połączenie z Higgsfield działa — klucz API jest poprawny." };
+    return { ok: false, message: msg };
+  }
 }

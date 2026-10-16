@@ -39,12 +39,14 @@ export const env = {
     return str("ELEVENLABS_STT_MODEL", "scribe_v2");
   },
   /** Higgsfield API credentials in the form KEY_ID:KEY_SECRET. */
+  /** "KEY_ID:KEY_SECRET", or a single API key; pasted prefixes/quotes/spaces are tolerated. */
   get higgsfieldCredentials() {
-    const both = str("HIGGSFIELD_CREDENTIALS") || str("HF_CREDENTIALS");
+    const clean = (v: string) => v.trim().replace(/^["']|["']$/g, "").replace(/^(Key|Bearer)\s+/i, "").replace(/\s+/g, "");
+    const both = clean(str("HIGGSFIELD_CREDENTIALS") || str("HF_CREDENTIALS") || str("HF_KEY"));
     if (both) return both;
-    const id = str("HIGGSFIELD_API_KEY") || str("HF_API_KEY");
-    const secret = str("HIGGSFIELD_API_SECRET") || str("HF_API_SECRET");
-    return id && secret ? `${id}:${secret}` : "";
+    const id = clean(str("HIGGSFIELD_API_KEY") || str("HF_API_KEY"));
+    const secret = clean(str("HIGGSFIELD_API_SECRET") || str("HF_API_SECRET"));
+    return id && secret ? `${id}:${secret}` : id;
   },
   get higgsfieldBaseUrl() {
     return str("HIGGSFIELD_BASE_URL", "https://api.higgsfield.ai").replace(/\/$/, "");
@@ -103,5 +105,5 @@ export function elevenLabsConfigured(): boolean {
 }
 
 export function higgsfieldConfigured(): boolean {
-  return env.higgsfieldCredentials.includes(":");
+  return env.higgsfieldCredentials.length >= 8;
 }

@@ -162,6 +162,15 @@ export function AiPanel({ engine, compositionId, ai }: { engine: PlaybackEngine 
   const [engineUsed, setEngineUsed] = useState<string | null>(null);
   const [styled, setStyled] = useState<boolean | null>(null);
   const [custom, setCustom] = useState("");
+  const [check, setCheck] = useState<{ ok: boolean; message: string } | "busy" | null>(null);
+  const runCheck = async () => {
+    setCheck("busy");
+    try {
+      setCheck((await readJson(await fetch("/api/admin/ai/check", { method: "POST" }))) as { ok: boolean; message: string });
+    } catch (e) {
+      setCheck({ ok: false, message: (e as Error).message });
+    }
+  };
   const list = items(doc);
   const modelInfo = ai.models.find((m) => m.id === model) ?? ai.models[0];
   const total = docDuration(doc);
@@ -256,7 +265,17 @@ export function AiPanel({ engine, compositionId, ai }: { engine: PlaybackEngine 
         </p>
         {!ai.higgsfield ? (
           <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[12px] text-amber-200">
-            Higgsfield nie jest podłączony. Dodaj zmienną <code>HIGGSFIELD_CREDENTIALS</code> = <code>KEY_ID:KEY_SECRET</code> w Railway → Variables.
+            Higgsfield nie jest podłączony, więc generowanie wideo jest wyłączone. Dodaj zmienną <code>HIGGSFIELD_CREDENTIALS</code> = <code>KEY_ID:KEY_SECRET</code> w Railway → Variables. Infografiki działają bez niego.
+          </p>
+        ) : null}
+        <div className="flex items-center gap-2">
+          <SButton variant="ghost" className="h-7 px-2 text-[11.5px]" onClick={runCheck} disabled={check === "busy"} data-testid="ai-check">
+            {check === "busy" ? <Loader2 className="animate-spin" /> : null} Sprawdź połączenie z Higgsfield
+          </SButton>
+        </div>
+        {check && check !== "busy" ? (
+          <p className={cn("rounded-lg px-3 py-2 text-[12px]", check.ok ? "bg-emerald-500/10 text-emerald-300" : "bg-red-500/10 text-red-300")} data-testid="ai-check-result">
+            {check.message}
           </p>
         ) : null}
         <div>
@@ -394,11 +413,21 @@ function BrollCard({ item, ai, canGenerate, onSeek, onGenerate, onRemove }: { it
               ))}
             </Select>
           ) : null}
-          <SButton variant="primary" className="flex-1" onClick={onGenerate} disabled={!canAccept} data-testid="ai-accept">
+          <SButton
+            variant="primary"
+            className="flex-1"
+            onClick={onGenerate}
+            disabled={!canAccept}
+            data-testid="ai-accept"
+            title={!info && !canGenerate ? "Higgsfield nie jest podłączony (HIGGSFIELD_CREDENTIALS w Railway)" : undefined}
+          >
             {item.status === "failed" ? <RefreshCw /> : <Check />}
             {item.status === "failed" ? "Spróbuj ponownie" : info ? "Akceptuj i utwórz infografikę" : "Akceptuj i generuj"}
           </SButton>
         </div>
+      ) : null}
+      {editable && !info && !canGenerate ? (
+        <p className="text-[11.5px] text-amber-300">Generowanie wideo jest wyłączone: brak klucza Higgsfield. Możesz przełączyć tę propozycję na „Infografika”.</p>
       ) : null}
       {item.status === "generating" ? (
         <p className="flex items-center gap-1.5 text-[11.5px] text-sky-300">
