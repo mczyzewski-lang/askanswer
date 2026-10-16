@@ -105,17 +105,26 @@ test("expert records answers on a phone via the invitation link", async ({ page,
   expect(first.durationSec).toBeGreaterThan(5);
   expect(first.durationSec).toBeLessThan(first.markers.narrationEnd + 2 + 2.5 + 3);
 
-  // films in editing / approved: the expert can watch them from the list
+  // films in editing / approved: a "Twoje filmy" button top right, each film is the CURRENT edit
   const pr = await request.patch(`/api/admin/questions/${q1.id}`, { data: { status: "IN_PROGRESS" } });
   expect(pr.ok()).toBeTruthy();
   await page.reload();
-  const vids = page.getByTestId("expert-videos");
-  await expect(vids).toBeVisible({ timeout: 20_000 });
-  await expect(vids.getByTestId("expert-video").first()).toContainText("W trakcie montażu");
-  await vids.getByTestId("expert-video").first().click();
+  await page.getByTestId("videos-button").click();
+  const sheet = page.getByTestId("videos-sheet");
+  await expect(sheet.getByTestId("expert-video").first()).toContainText("W trakcie montażu");
+  await sheet.getByTestId("expert-video").first().click();
   const player = page.getByTestId("expert-video-player");
   await expect(player.locator("video")).toHaveAttribute("src", /.+/);
+  // never exported: a preview of the current edit is rendered meanwhile, then it replaces the recording
+  await expect(player.getByTestId("video-rendering")).toBeVisible();
+  await expect(player.getByTestId("video-rendering")).toBeHidden({ timeout: 150_000 });
   await player.getByRole("button", { name: "Zamknij film" }).click();
-  await expect(player).toBeHidden();
-});
+  await sheet.getByRole("button", { name: "Wróć" }).click();
+  await expect(sheet).toBeHidden();
 
+  // the list: what is left to record first, the recorded ones separately
+  await page.getByRole("button", { name: "Rozpocznij nagrywanie" }).click();
+  await page.getByRole("button", { name: /Gotowe/ }).click();
+  await expect(page.getByTestId("list-recorded")).toContainText(q1.text);
+  await expect(page.getByTestId("list-todo")).not.toContainText(q1.text);
+});

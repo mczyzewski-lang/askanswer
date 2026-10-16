@@ -30,7 +30,8 @@ export async function loadStudio(id: string) {
         select: { id: true, takeNumber: true, durationSec: true, createdAt: true },
       })
     : [];
-  const renders = await prisma.renderJob.findMany({ where: { compositionId: id }, orderBy: { createdAt: "desc" }, take: 5 });
+  // expert previews (kind "preview") are not exports: not listed in the export dialog
+  const renders = await prisma.renderJob.findMany({ where: { compositionId: id, kind: { not: "preview" } }, orderBy: { createdAt: "desc" }, take: 5 });
   const renderInfos = await Promise.all(
     renders.map(async (r) => {
       const out = r.outputAssetId ? await prisma.mediaAsset.findUnique({ where: { id: r.outputAssetId } }) : null;

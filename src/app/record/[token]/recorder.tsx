@@ -41,8 +41,6 @@ interface ExpertVideo {
   text: string;
   category: string;
   status: string;
-  kind: "export" | "recording";
-  url: string;
 }
 
 type Screen = "loading" | "error" | "welcome" | "setup" | "list" | "record" | "done";
@@ -59,7 +57,7 @@ const DEFAULT_ANSWER_SEC = 90;
 
 export function Recorder({ token }: { token: string }) {
   const [screen, setScreen] = useState<Screen>("loading");
-  const [watching, setWatching] = useState<ExpertVideo | null>(null);
+  const [videosOpen, setVideosOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [support, setSupport] = useState<RecorderSupport | null>(null);
@@ -240,9 +238,13 @@ export function Recorder({ token }: { token: string }) {
     const est = questions.reduce((n, q) => n + (q.maxDurationSec ?? DEFAULT_ANSWER_SEC) + 20, 0);
     return (
       <Shell>
+        {videosOpen ? <VideosSheet token={token} videos={session.videos ?? []} onClose={() => setVideosOpen(false)} /> : null}
         <div className="mx-auto flex min-h-dvh max-w-md flex-col px-6 safe-top safe-bottom">
           <div className="pt-10">
-            <p className="text-sm font-medium uppercase tracking-[0.18em] text-white/50">{session.project.name}</p>
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm font-medium uppercase tracking-[0.18em] text-white/50">{session.project.name}</p>
+              <VideosButton count={session.videos?.length ?? 0} onClick={() => setVideosOpen(true)} />
+            </div>
             <h1 className="mt-6 font-display text-[34px] font-semibold leading-[1.1]">
               Dzień dobry{session.expert.name ? `, ${session.expert.name.split(" ")[0]}` : ""}!
               <br />
@@ -261,7 +263,6 @@ export function Recorder({ token }: { token: string }) {
               <Stat label="Pytania" value={String(questions.length)} sub={remaining < questions.length ? `${remaining} pozostało` : "wszystkie do nagrania"} />
               <Stat label="Szacowany czas" value={`~${Math.max(1, Math.round(est / 60))} min`} sub="w dowolnym tempie" />
             </div>
-            <ExpertVideos videos={session.videos} watching={watching} onWatch={setWatching} />
             <ol className="mt-8 space-y-3 text-[15px] text-white/75">
               <li className="flex gap-3"><Num n={1} /> Wybierz pytanie z listy.</li>
               <li className="flex gap-3"><Num n={2} /> Wysłuchaj pytania czytanego przez lektora.</li>
@@ -353,18 +354,22 @@ export function Recorder({ token }: { token: string }) {
   }
 
   if (screen === "list") {
-    const groups = new Map<string, Question[]>();
-    // daily plan: one mixed list in the planned order (the category is shown on each card)
-    for (const q of questions) {
-      const key = session.dailyPlan ? "Na dziś" : q.category;
-      groups.set(key, [...(groups.get(key) ?? []), q]);
-    }
+    // what is still to record first, what is done below (the category is shown on each card)
+    const groups = new Map<string, Question[]>([
+      ["Do nagrania", questions.filter((q) => !isRecorded(q))],
+      ["Nagrane", questions.filter((q) => isRecorded(q))],
+    ]);
+    for (const [k, v] of groups) if (!v.length) groups.delete(k);
     const done = questions.filter(isRecorded).length;
     return (
       <Shell>
+        {videosOpen ? <VideosSheet token={token} videos={session.videos ?? []} onClose={() => setVideosOpen(false)} /> : null}
         <div className="mx-auto min-h-dvh max-w-md px-5 pb-32 safe-top">
           <div className="sticky top-0 z-10 -mx-5 bg-[#0c0d10]/90 px-5 pb-3 pt-4 backdrop-blur">
-            <p className="text-xs font-medium uppercase tracking-[0.18em] text-white/45">{session.project.name}</p>
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-xs font-medium uppercase tracking-[0.18em] text-white/45">{session.project.name}</p>
+              <VideosButton count={session.videos?.length ?? 0} onClick={() => setVideosOpen(true)} />
+            </div>
             <div className="mt-1 flex items-end justify-between">
               <h1 className="font-display text-2xl font-semibold">{T.prompter ? "Twoje skrypty" : "Twoje pytania"}</h1>
               <span className="tabular text-sm text-white/60">
@@ -376,10 +381,12 @@ export function Recorder({ token }: { token: string }) {
             </div>
           </div>
           <UploadBanner uploads={uploads} online={online} onRetry={retryFailed} />
-          <ExpertVideos videos={session.videos} watching={watching} onWatch={setWatching} />
           {[...groups.entries()].map(([cat, qs]) => (
-            <section key={cat} className="mt-6">
-              <h2 className="mb-3 text-xs font-semibold uppercase tracking-[0.16em] text-white/45">{cat}</h2>
+            <section key={cat} className="mt-6" data-testid={cat === "Nagrane" ? "list-recorded" : "list-todo"}>
+              <h2 className={cn("mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em]", cat === "Nagrane" ? "text-emerald-300/80" : "text-white/60")}>
+                {cat === "Nagrane" ? <Check className="h-3.5 w-3.5" /> : null}
+                {cat} <span className="tabular font-normal text-white/40">{qs.length}</span>
+              </h2>
               <div className="space-y-3">
                 {qs.map((q) => {
                   const n = questions.indexOf(q) + 1;
@@ -402,11 +409,7 @@ export function Recorder({ token }: { token: string }) {
                         {recorded ? <Check className="h-4 w-4" /> : n}
                       </span>
                       <span className="flex-1">
-                        {session.dailyPlan || q.subcategory ? (
-                          <span className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.12em] text-white/45">
-                            {session.dailyPlan ? [q.category, q.subcategory].filter(Boolean).join(" · ") : q.subcategory}
-                          </span>
-                        ) : null}
+                        <span className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.12em] text-white/45">{[q.category, q.subcategory].filter(Boolean).join(" · ")}</span>
                         <span className="block text-[16px] font-medium leading-snug">{q.text}</span>
                         <span className="mt-1.5 block text-[12.5px] text-white/50">
                           {uploadingNow
@@ -1192,42 +1195,99 @@ function UploadBanner({ uploads, online, onRetry }: { uploads: Record<string, Up
   return null;
 }
 
-/** Films being edited / approved: the expert can watch them (no camera needed). */
-function ExpertVideos({ videos, watching, onWatch }: { videos?: ExpertVideo[]; watching: ExpertVideo | null; onWatch: (v: ExpertVideo | null) => void }) {
+/** Top-right: the expert's films in editing / approved (shown only when there are some). */
+function VideosButton({ count, onClick }: { count: number; onClick: () => void }) {
+  if (!count) return null;
   return (
-    <>
-          {videos?.length ? (
-            <section className="mt-6" data-testid="expert-videos">
-              <h2 className="mb-3 text-xs font-semibold uppercase tracking-[0.16em] text-white/45">Twoje filmy</h2>
-              <div className="space-y-2">
-                {videos.map((v) => (
-                  <button key={v.questionId} onClick={() => onWatch(v)} className="flex w-full items-center gap-3 rounded-2xl bg-white/[.07] p-3 text-left active:scale-[.99]" data-testid="expert-video">
-                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white text-black">
-                      <Play className="ml-0.5 h-4 w-4" />
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className={cn("mb-1 inline-block rounded-full px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-[0.08em]", v.status === "APPROVED" ? "bg-emerald-400/20 text-emerald-300" : "bg-sky-400/20 text-sky-300")}>
-                        {v.status === "APPROVED" ? "Zatwierdzone" : "W trakcie montażu"}
-                      </span>
-                      <span className="block truncate text-[15px] font-medium">{v.text}</span>
-                      <span className="block text-[12px] text-white/45">{v.kind === "export" ? "Gotowy film" : "Twoje nagranie"} · {v.category}</span>
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </section>
+    <button onClick={onClick} className="flex shrink-0 items-center gap-1.5 rounded-full bg-white/10 px-3 py-1.5 text-[13px] font-medium text-white active:scale-[.97]" data-testid="videos-button">
+      <Play className="h-3.5 w-3.5" /> Twoje filmy <span className="tabular rounded-full bg-white/15 px-1.5 text-[11px]">{count}</span>
+    </button>
+  );
+}
+
+interface VideoSource {
+  url: string;
+  kind: "export" | "older-export" | "recording";
+  rendering: boolean;
+  progress: number;
+}
+
+/** Full-screen list of the expert's films; each opens the CURRENT edit (rendered on demand). */
+function VideosSheet({ token, videos, onClose }: { token: string; videos: ExpertVideo[]; onClose: () => void }) {
+  const [watching, setWatching] = useState<ExpertVideo | null>(null);
+  const [src, setSrc] = useState<VideoSource | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  useEffect(() => {
+    if (!watching) return;
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const load = async () => {
+      try {
+        const res = await fetch(`/api/record/${token}/videos/${watching.questionId}`, { cache: "no-store" });
+        const data = await res.json().catch(() => ({}));
+        if (stopped) return;
+        if (!res.ok) throw new Error(data.error ?? `Błąd HTTP ${res.status}`);
+        // keep playing the interim version until the current edit is ready, then switch
+        setSrc((prev) => (prev && data.rendering && prev.url ? { ...prev, progress: data.progress } : data));
+        if (data.rendering) timer = setTimeout(load, 4000);
+      } catch (e) {
+        if (!stopped) setErr((e as Error).message);
+      }
+    };
+    setSrc(null);
+    setErr(null);
+    void load();
+    return () => {
+      stopped = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [watching, token]);
+
+  return (
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-[#0c0d10] safe-top safe-bottom" data-testid="videos-sheet">
+      {watching ? (
+        <div className="flex h-dvh flex-col bg-black" data-testid="expert-video-player">
+          <div className="flex items-center gap-3 px-4 py-3">
+            <button onClick={() => setWatching(null)} className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10" aria-label="Zamknij film">
+              <ChevronLeft className="h-5 w-5" />
+            </button>
+            <p className="min-w-0 flex-1 truncate text-[14px] font-medium">{watching.text}</p>
+          </div>
+          {src?.rendering ? (
+            <p className="mx-4 mb-2 flex items-center gap-2 rounded-xl bg-sky-400/15 px-3 py-2 text-[12.5px] text-sky-200" data-testid="video-rendering">
+              <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+              Przygotowuję aktualną wersję montażu{src.progress > 0 ? ` (${Math.round(src.progress * 100)}%)` : ""}… Na razie {src.kind === "older-export" ? "poprzednia wersja" : "Twoje nagranie"}.
+            </p>
           ) : null}
-          {watching ? (
-            <div className="fixed inset-0 z-50 flex flex-col bg-black safe-top safe-bottom" data-testid="expert-video-player">
-              <div className="flex items-center gap-3 px-4 py-3">
-                <button onClick={() => onWatch(null)} className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10" aria-label="Zamknij film">
-                  <ChevronLeft className="h-5 w-5" />
-                </button>
-                <p className="min-w-0 flex-1 truncate text-[14px] font-medium">{watching.text}</p>
-              </div>
-              <video key={watching.url} src={watching.url} controls autoPlay playsInline className="min-h-0 w-full flex-1 bg-black object-contain" />
-            </div>
-          ) : null}
-    </>
+          {err ? <p className="mx-4 text-[13px] text-red-300">{err}</p> : null}
+          {src?.url ? <video key={src.url} src={src.url} controls autoPlay playsInline className="min-h-0 w-full flex-1 bg-black object-contain" /> : !err ? <Loader2 className="m-auto h-6 w-6 animate-spin text-white/60" /> : null}
+        </div>
+      ) : (
+        <div className="mx-auto max-w-md px-5 pb-10 pt-4">
+          <div className="mb-5 flex items-center gap-3">
+            <button onClick={onClose} className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10" aria-label="Wróć">
+              <ChevronLeft className="h-5 w-5" />
+            </button>
+            <h1 className="font-display text-2xl font-semibold">Twoje filmy</h1>
+          </div>
+          <div className="space-y-2" data-testid="expert-videos">
+            {videos.map((v) => (
+              <button key={v.questionId} onClick={() => setWatching(v)} className="flex w-full items-center gap-3 rounded-2xl bg-white/[.07] p-3 text-left active:scale-[.99]" data-testid="expert-video">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white text-black">
+                  <Play className="ml-0.5 h-4 w-4" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className={cn("mb-1 inline-block rounded-full px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-[0.08em]", v.status === "APPROVED" ? "bg-emerald-400/20 text-emerald-300" : "bg-sky-400/20 text-sky-300")}>
+                    {v.status === "APPROVED" ? "Zatwierdzone" : "W trakcie montażu"}
+                  </span>
+                  <span className="block truncate text-[15px] font-medium">{v.text}</span>
+                  <span className="block text-[12px] text-white/45">{v.category}</span>
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

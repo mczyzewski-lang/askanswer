@@ -50,7 +50,7 @@ export async function projectData(id: string) {
           compositions: { orderBy: { updatedAt: "desc" }, select: { id: true, name: true, status: true, takeId: true, updatedAt: true } },
         },
       },
-      renderJobs: { orderBy: { createdAt: "desc" }, take: 50 },
+      renderJobs: { where: { kind: { not: "preview" } }, orderBy: { createdAt: "desc" }, take: 50 },
     },
   });
   const experts = await prisma.expert.findMany({ orderBy: { name: "asc" } });
