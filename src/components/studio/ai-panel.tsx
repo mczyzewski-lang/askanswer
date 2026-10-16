@@ -95,6 +95,77 @@ function defaultInfographic(item: AiBrollItem) {
   return { headline: item.title, items: [{ value: "1.", label: text.split(/\s+/).slice(0, 9).join(" ") }], note: null };
 }
 
+/** Queue the drawing of an illustration item (OpenAI, theme prompt added on the server); returns the job id. */
+async function requestIllustration(compositionId: string, item: AiBrollItem, doc: EditorDocument): Promise<string> {
+  const data = await readJson(
+    await fetch(`/api/admin/compositions/${compositionId}/broll/infographic`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        engine: "illustration",
+        imagePrompt: item.imagePrompt || item.prompt,
+        passage: item.passage || item.quote || null,
+        focus: item.quote || null,
+        // what the other illustrations of this video show, so this one looks different
+        others: items(doc)
+          .filter((o) => o.id !== item.id && isIllustration(o) && o.quote)
+          .map((o) => o.quote.slice(0, 190))
+          .slice(0, 8),
+        title: item.title,
+        start: item.start,
+      }),
+    }),
+  );
+  return String(data.jobId);
+}
+
+/** What the expert says around a moment (±8 s), and the sentence at that moment. */
+export function spokenContext(doc: EditorDocument, t: number, around = 8) {
+  const segs = timedSegments(doc);
+  const text = (s: (typeof segs)[number]) => s.words.map((w) => w.text).join(" ");
+  const near = segs.filter((s) => s.t1 > t - around && s.t0 < t + around);
+  const at = segs.find((s) => s.t0 <= t && t <= s.t1) ?? near.reduce<(typeof segs)[number] | null>((b, s) => (!b || Math.abs(s.t0 - t) < Math.abs(b.t0 - t) ? s : b), null);
+  return { passage: near.map(text).join(" "), focus: at ? text(at) : "", from: near[0]?.t0 ?? t, to: near.at(-1)?.t1 ?? t };
+}
+
+/**
+ * Own illustration from the timeline: the user's idea + what is said around the moment; the
+ * theme colours, category style and text rules are added on the server. Lands on the timeline
+ * (with variants to pick in the AI tab) when drawn.
+ */
+export async function createIllustrationAt(t: number, idea: string): Promise<string | null> {
+  const st = useStudio.getState();
+  const doc = st.doc;
+  if (!doc) return "Brak dokumentu";
+  const total = docDuration(doc);
+  const start = Math.max(0, Math.min(t, total - 1));
+  const ctx = spokenContext(doc, start);
+  const item: AiBrollItem = {
+    id: uid("ai"),
+    kind: "illustration",
+    start,
+    end: Math.min(total, start + 6),
+    quote: ctx.focus,
+    passage: ctx.passage,
+    title: idea.split(/\s+/).slice(0, 6).join(" "),
+    reason: "Własna ilustracja z osi czasu",
+    prompt: idea,
+    imagePrompt: idea,
+    illustration: true,
+    duration: 5,
+    model: "",
+    status: "generating",
+  };
+  st.apply((d) => ({ ...d, meta: { ...d.meta, aiBroll: [...items(d), item] } }));
+  try {
+    patchItem(item.id, { jobId: await requestIllustration(st.compositionId, item, doc) });
+    return null;
+  } catch (e) {
+    patchItem(item.id, { status: "failed", error: (e as Error).message });
+    return (e as Error).message;
+  }
+}
+
 /**
  * Keeps polling Higgsfield jobs while the Studio is open (also when the AI tab is closed, and after a
  * reload): when a clip is ready it is placed on the timeline at the accepted moment.
@@ -238,26 +309,7 @@ export function AiPanel({
     patchItem(item.id, { status: "generating", error: null, warning: null });
     try {
       if (isIllustration(item)) {
-        const data = await readJson(
-          await fetch(`/api/admin/compositions/${compositionId}/broll/infographic`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              engine: "illustration",
-              imagePrompt: item.imagePrompt || item.prompt,
-              passage: item.passage || item.quote || null,
-              focus: item.quote || null,
-              // what the other illustrations of this video show, so this one looks different
-              others: items(doc)
-                .filter((o) => o.id !== item.id && isIllustration(o) && o.quote)
-                .map((o) => o.quote.slice(0, 190))
-                .slice(0, 8),
-              title: item.title,
-              start: item.start,
-            }),
-          }),
-        );
-        patchItem(item.id, { jobId: String(data.jobId) });
+        patchItem(item.id, { jobId: await requestIllustration(compositionId, item, doc) });
         return;
       }
       if (isInfographic(item)) {

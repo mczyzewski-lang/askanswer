@@ -156,6 +156,25 @@ test("studio: pauses, cuts, subtitles, zoom, theme, persistence and real MP4 exp
   expect(call.model).toBe("gpt-image-2");
   expect(call.size).toBe("1024x1824");
   expect(call.prompt).toContain("«Ile trwa rozwód?»");
+  // own illustration from the timeline: click on the graphics layer, the passage around it is shown and sent with the idea
+  const lane = page.getByTestId("overlay-lane");
+  const laneBox = (await lane.boundingBox())!;
+  await lane.click({ position: { x: 140, y: laneBox.height - 3 } });
+  const pop = page.getByTestId("new-illustration");
+  await expect(pop).toBeVisible();
+  await expect(pop.getByTestId("new-illustration-context")).toContainText("„");
+  const ctxText = ((await pop.getByTestId("new-illustration-context").textContent()) ?? "").replace(/^„|”$/g, "").trim();
+  await pop.getByLabel("Pomysł na ilustrację").fill("Labirynt z jednym podświetlonym wyjściem i strzałką");
+  await pop.getByTestId("new-illustration-submit").click();
+  await expect(pop).toBeHidden();
+  const own = page.getByTestId("ai-item").filter({ hasText: "Labirynt z jednym podświetlonym" });
+  await expect(own.getByTestId("ai-done")).toBeVisible({ timeout: 90_000 });
+  await expect(own.getByTestId("ai-variant")).toHaveCount(3);
+  const ownStats = await (await request.get("http://127.0.0.1:4010/__stats", { headers: { "xi-api-key": "mock-key" } })).json();
+  const ownCall = (ownStats.openai as Array<{ prompt: string }>).find((c) => c.prompt.includes("Labirynt z jednym podświetlonym wyjściem"))!;
+  expect(ownCall.prompt).toContain(`«${ctxText}»`);
+  expect(ownCall.prompt).toMatch(/background [a-z -]+ \(#[0-9A-Fa-f]{6}\)/);
+
   await waitSaved(page);
   const saved = await (await request.get(`/api/admin/compositions/${compId}`)).json();
   const doc = saved.document ?? saved.composition?.document;

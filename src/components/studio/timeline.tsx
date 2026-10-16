@@ -1,11 +1,12 @@
 "use client";
-import { memo, useEffect, useLayoutEffect, useMemo, useRef } from "react";
-import { AudioLines, Captions, Film, Mic2, Music, Type, ZoomIn } from "lucide-react";
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { AudioLines, Captions, Film, ImagePlus, Loader2, Mic2, Music, Type, X, ZoomIn } from "lucide-react";
 import type { AVClip, AudioClip, EditorDocument, Overlay, Waveform, ZoomEffect } from "@/lib/editor/types";
 import { clipEnd, docDuration, formatTimecode, moveClip, overlayEnd, retimeSegment, shiftSegment, snapToFrame, sourceRangeToTimeline, trimClip, timedSegments } from "@/lib/editor/timeline";
 import { cn } from "@/lib/utils";
 import { useStudio } from "./store";
 import type { PlaybackEngine } from "./playback";
+import { createIllustrationAt, spokenContext } from "./ai-panel";
 
 const LABEL_W = 128;
 const RULER_H = 26;
@@ -48,6 +49,9 @@ export function Timeline({ engine }: { engine: PlaybackEngine | null }) {
   const playing = useStudio((s) => s.playing);
   const scrollRef = useRef<HTMLDivElement>(null);
   const drag = useRef<DragState | null>(null);
+  // click on an empty spot of the graphics layer → own illustration at that moment
+  const [newAt, setNewAt] = useState<{ t: number; x: number; y: number } | null>(null);
+  const drawing = useMemo(() => (doc.meta.aiBroll ?? []).filter((i) => i.status === "generating" && (i.kind === "illustration" || i.kind === "infographic")), [doc.meta.aiBroll]);
 
   const duration = docDuration(doc);
   const contentW = Math.max((duration + 4) * pps, 400);
@@ -229,6 +233,7 @@ export function Timeline({ engine }: { engine: PlaybackEngine | null }) {
 
   return (
     <div className="scroll-thin flex min-h-0 flex-1 select-none overflow-y-auto overflow-x-hidden" data-testid="timeline">
+      {newAt ? <NewIllustration at={newAt} onClose={() => setNewAt(null)} /> : null}
       <div className="sticky left-0 shrink-0 border-r border-studio-line bg-studio-2" style={{ width: LABEL_W, height: totalH + 12 }}>
         <div style={{ height: RULER_H }} className="border-b border-studio-line" />
         {rows.map((r) => (
@@ -249,9 +254,24 @@ export function Timeline({ engine }: { engine: PlaybackEngine | null }) {
             ))}
           </div>
           {/* row backgrounds */}
-          {rows.map((r) => (
-            <div key={r.key} className="absolute left-0 border-b border-studio-line/60" style={{ top: rowTop[r.key], height: r.h, width: contentW }} />
-          ))}
+          {rows.map((r) =>
+            r.key === "overlays" ? (
+              <div
+                key={r.key}
+                className="group absolute left-0 cursor-copy border-b border-studio-line/60 hover:bg-teal-500/5"
+                style={{ top: rowTop[r.key], height: r.h, width: contentW }}
+                title="Kliknij, aby dodać tu własną ilustrację AI"
+                data-testid="overlay-lane"
+                onClick={(e) => {
+                  if (drag.current?.moved) return;
+                  const t = Math.min(timeFromEvent(e), Math.max(0, duration - 1));
+                  setNewAt({ t, x: e.clientX, y: e.clientY });
+                }}
+              />
+            ) : (
+              <div key={r.key} className="absolute left-0 border-b border-studio-line/60" style={{ top: rowTop[r.key], height: r.h, width: contentW }} />
+            ),
+          )}
           {/* range selection */}
           {range ? <div className="pointer-events-none absolute z-[5] bg-sky-400/15 ring-1 ring-sky-400/60" style={{ left: x(range.a), width: Math.max(1, x(range.b - range.a)), top: RULER_H, height: totalH - RULER_H }} /> : null}
 
@@ -268,6 +288,17 @@ export function Timeline({ engine }: { engine: PlaybackEngine | null }) {
               label={overlayLabel(o)}
               onDown={(e, part) => begin(e, { kind: "overlay", id: o.id, part }, { start: o.start, end: o.end })}
             />
+          ))}
+          {/* illustrations being drawn */}
+          {drawing.map((i) => (
+            <div
+              key={i.id}
+              className="pointer-events-none absolute z-[2] flex items-center gap-1 overflow-hidden rounded-md border border-dashed border-teal-400/80 bg-teal-500/15 px-1.5 text-[10.5px] text-teal-100"
+              style={{ left: x(i.start), width: Math.max(24, x(i.end - i.start)), top: rowTop.overlays + 5 + overlayLanes * 24 - 24, height: 20 }}
+              data-testid="illustration-drawing"
+            >
+              <Loader2 className="h-3 w-3 shrink-0 animate-spin" /> <span className="truncate">Rysuję: {i.title}</span>
+            </div>
           ))}
           {/* subtitles */}
           {segs.map((s) => (
@@ -472,3 +503,70 @@ const WaveClip = memo(function WaveClip({ clip, left, width, top, height, wavefo
 
 export { formatTimecode };
 export type { EditorDocument };
+
+/**
+ * Own illustration at a clicked moment: the user writes the idea; the passage said ±8 s around it is
+ * shown and sent along, the theme colours / category style / text rules are added on the server.
+ */
+function NewIllustration({ at, onClose }: { at: { t: number; x: number; y: number }; onClose: () => void }) {
+  const doc = useStudio((s) => s.doc)!;
+  const ctx = useMemo(() => spokenContext(doc, at.t), [doc, at.t]);
+  const [idea, setIdea] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const W = 340;
+  const left = Math.max(8, Math.min(at.x - W / 2, (typeof window !== "undefined" ? window.innerWidth : 1200) - W - 8));
+  const top = Math.max(8, at.y - 330);
+  const submit = async () => {
+    setBusy(true);
+    setErr(null);
+    const e = await createIllustrationAt(at.t, idea.trim());
+    setBusy(false);
+    if (e) setErr(e);
+    else onClose();
+  };
+  const mm = (t: number) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, "0")}`;
+  return (
+    <div className="fixed z-50 space-y-2 rounded-xl border border-studio-line bg-studio-2 p-3 text-studio-text shadow-2xl" style={{ left, top, width: W }} data-testid="new-illustration" onPointerDown={(e) => e.stopPropagation()}>
+      <div className="flex items-center gap-2">
+        <ImagePlus className="h-4 w-4 text-teal-300" />
+        <p className="flex-1 text-[12.5px] font-medium">Własna ilustracja w {mm(at.t)}</p>
+        <button type="button" onClick={onClose} aria-label="Zamknij" className="rounded p-0.5 text-studio-muted hover:text-studio-text">
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </div>
+      <div className="rounded-lg bg-studio-3/60 px-2 py-1.5">
+        <p className="mb-0.5 text-[10.5px] uppercase tracking-wide text-studio-muted">
+          Ekspert mówi ({mm(ctx.from)}–{mm(ctx.to)})
+        </p>
+        <p className="max-h-28 overflow-y-auto text-[11.5px] leading-snug text-studio-muted" data-testid="new-illustration-context">
+          {ctx.passage ? `„${ctx.passage}”` : "Brak napisów w tym miejscu — wygeneruj transkrypcję, żeby AI znało kontekst."}
+        </p>
+      </div>
+      <textarea
+        autoFocus
+        value={idea}
+        onChange={(e) => setIdea(e.target.value)}
+        rows={3}
+        placeholder="Twój pomysł, np. labirynt z jednym podświetlonym wyjściem, strzałka „wąskie gardło”"
+        aria-label="Pomysł na ilustrację"
+        className="w-full resize-y rounded-lg border border-studio-line bg-studio-3 px-2 py-1.5 text-[12px] text-studio-text outline-none focus:border-white/30"
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && idea.trim().length >= 5) void submit();
+          if (e.key === "Escape") onClose();
+        }}
+      />
+      <p className="text-[10.5px] leading-snug text-studio-muted">Kolory motywu, styl kategorii i zasady tekstu (krótki nagłówek, strzałki z podpisami) dodam sam. Powstaną warianty do wyboru w zakładce AI.</p>
+      {err ? <p className="text-[11.5px] text-red-300">{err}</p> : null}
+      <button
+        type="button"
+        disabled={busy || idea.trim().length < 5}
+        onClick={() => void submit()}
+        className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-teal-500 px-3 py-1.5 text-[12.5px] font-medium text-black hover:bg-teal-400 disabled:opacity-50"
+        data-testid="new-illustration-submit"
+      >
+        {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ImagePlus className="h-3.5 w-3.5" />} Narysuj ilustrację
+      </button>
+    </div>
+  );
+}
