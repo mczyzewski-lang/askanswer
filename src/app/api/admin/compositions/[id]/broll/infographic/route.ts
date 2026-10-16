@@ -5,7 +5,7 @@ import { requireAdmin } from "@/lib/server/auth";
 import { json, route } from "@/lib/server/http";
 import { rateLimit } from "@/lib/server/ratelimit";
 import { enqueue } from "@/lib/server/jobs";
-import { higgsfieldConfigured, openaiConfigured } from "@/lib/server/env";
+import { higgsfieldConfigured, openaiConfigured, openaiKeyDiagnostics } from "@/lib/server/env";
 import type { EditorDocument } from "@/lib/editor/types";
 
 const Info = z.object({
@@ -37,7 +37,7 @@ export const POST = route(async (req: Request, ctx: { params: Promise<{ id: stri
   if (!rateLimit(`infographic:${user.id}`, { capacity: 10, perMinute: 6 })) return json({ error: "Zbyt wiele żądań — spróbuj za chwilę." }, 429);
   if (b.engine === "openai" && !openaiConfigured()) return json({ error: "Grafika z OpenAI wymaga klucza OPENAI_API_KEY w Railway → Variables." }, 503);
   if (b.engine === "illustration") {
-    if (!openaiConfigured() && !higgsfieldConfigured()) return json({ error: "Ilustracje wymagają klucza OPENAI_API_KEY w Railway → Variables." }, 503);
+    if (!openaiConfigured() && !higgsfieldConfigured()) return json({ error: `Ilustracje wymagają klucza OpenAI. ${openaiKeyDiagnostics()}` }, 503);
     if (!b.imagePrompt && !b.passage) return json({ error: "Opisz, co ma przedstawiać ilustracja." }, 400);
     const title = b.title || "Ilustracja";
     const payload = { compositionId: id, engine: "illustration", infographic: { headline: title, items: [], note: null }, imagePrompt: b.imagePrompt ?? "", passage: b.passage ?? "", title, width: doc.width, height: doc.height };

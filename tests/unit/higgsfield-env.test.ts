@@ -38,3 +38,27 @@ describe("API keys pasted into Railway", () => {
     expect(cleanSecret('""', "OPENAI_API_KEY")).toBe("");
   });
 });
+
+describe("OpenAI key diagnostics", () => {
+  const saved = { ...process.env };
+  afterEach(() => {
+    for (const k of Object.keys(process.env)) if (/open[\s_-]*ai/i.test(k)) delete process.env[k];
+    Object.assign(process.env, Object.fromEntries(Object.entries(saved).filter(([k]) => /open[\s_-]*ai/i.test(k))));
+  });
+  it("finds the key under a slightly different name and never reveals it", async () => {
+    const { env: e, openaiConfigured: ok, openaiKeyDiagnostics } = await import("../../src/lib/server/env");
+    for (const k of Object.keys(process.env)) if (/open[\s_-]*ai/i.test(k)) delete process.env[k];
+    expect(ok()).toBe(false);
+    expect(openaiKeyDiagnostics()).toMatch(/nie widzi zmiennej OPENAI_API_KEY/);
+    process.env["OPENAI_API_KEY"] = "";
+    expect(openaiKeyDiagnostics()).toMatch(/PUSTA/);
+    process.env["OPENAI_KEY "] = '"sk-proj-abcdefghijklmnopqrstuvwxyz0123456789"';
+    expect(ok()).toBe(true);
+    expect(e.openaiKey).toBe("sk-proj-abcdefghijklmnopqrstuvwxyz0123456789");
+    process.env["OPENAI_KEY "] = "sk-short";
+    const d = openaiKeyDiagnostics();
+    expect(d).toContain('"OPENAI_KEY "');
+    expect(d).toContain("8 znaków");
+    expect(d).not.toContain("sk-short");
+  });
+});

@@ -15,7 +15,7 @@ import { renderInfographic, type InfographicData } from "./infographic";
 import { colorName, fillStyle } from "../broll-style";
 import { putFile } from "./storage";
 import { randomToken } from "./crypto";
-import { higgsfieldConfigured, openaiConfigured } from "./env";
+import { higgsfieldConfigured, openaiConfigured, openaiKeyDiagnostics } from "./env";
 import type { ThemeTokens } from "../editor/types";
 import { themeFromRow } from "../themes";
 
@@ -378,7 +378,7 @@ export async function generateInfographic(
           await prisma.job.update({ where: { id: jobId }, data: { payload: { ...p, requestId } as unknown as Prisma.InputJsonValue } });
         }
         await downloadFile(await waitForImage(requestId), raw);
-      } else throw new Error("Ilustracje wymagają klucza OPENAI_API_KEY (albo HIGGSFIELD_CREDENTIALS) w Railway → Variables.");
+      } else throw new Error(`Ilustracje wymagają klucza OpenAI. ${openaiKeyDiagnostics()}`);
       await coverTo(raw, out, W, H);
       return await storeInfographic(comp.projectId, out, W, H, p.title || p.infographic.headline, { engine: "illustration", imageSource: openaiConfigured() ? "openai" : "higgsfield" }, null, "Ilustracja");
     }

@@ -67,7 +67,11 @@ export const env = {
     return str("HIGGSFIELD_MODEL", "kling-video/v3.0/pro/text-to-video");
   },
   get openaiKey() {
-    return cleanSecret(str("OPENAI_API_KEY"), "OPENAI_API_KEY");
+    const direct = cleanSecret(str("OPENAI_API_KEY"), "OPENAI_API_KEY");
+    if (direct) return direct;
+    // the same key under a slightly different name (OPENAI_KEY, OPEN_AI_API_KEY, a name with a stray space…)
+    const alt = openaiEnvNames().find((n) => n !== "OPENAI_API_KEY");
+    return alt ? cleanSecret(process.env[alt] ?? "", alt.trim()) : "";
   },
   get openaiBaseUrl() {
     return str("OPENAI_BASE_URL", "https://api.openai.com/v1").replace(/\/$/, "");
@@ -134,4 +138,23 @@ export function higgsfieldConfigured(): boolean {
 
 export function openaiConfigured(): boolean {
   return env.openaiKey.length >= 20;
+}
+
+/** Names of environment variables that look like an OpenAI key (names only — never the values). */
+export function openaiEnvNames(): string[] {
+  return Object.keys(process.env).filter((n) => /open[\s_-]*ai/i.test(n) && /(key|token|secret)/i.test(n) && (process.env[n] ?? "").trim() !== "");
+}
+
+/** What the server sees, for "Sprawdź połączenia" — safe to show: variable names and the key's length only. */
+export function openaiKeyDiagnostics(): string {
+  const names = openaiEnvNames();
+  const key = env.openaiKey;
+  if (!names.length) {
+    const exists = "OPENAI_API_KEY" in process.env;
+    return exists
+      ? "Serwer widzi zmienną OPENAI_API_KEY, ale jest PUSTA — wklej w Railway samą wartość klucza (sk-…)."
+      : "Serwer w ogóle nie widzi zmiennej OPENAI_API_KEY. Sprawdź w Railway, czy jest dodana w Variables TEJ usługi (nie tylko jako Shared Variable projektu i nie w innym środowisku) i czy po dodaniu nastąpiło ponowne wdrożenie (Deploy).";
+  }
+  const prefix = key.startsWith("sk-") ? "zaczyna się od „sk-”" : "NIE zaczyna się od „sk-”";
+  return `Serwer widzi: ${names.map((n) => JSON.stringify(n)).join(", ")}; klucz po oczyszczeniu ma ${key.length} znaków i ${prefix}.${key.length < 20 ? " To za krótko — klucze OpenAI mają zwykle ponad 50 znaków." : ""}`;
 }

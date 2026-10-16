@@ -1,5 +1,5 @@
 import fsp from "node:fs/promises";
-import { env, openaiConfigured } from "./env";
+import { env, openaiConfigured, openaiKeyDiagnostics } from "./env";
 
 /**
  * OpenAI image generation (POST /v1/images/generations). GPT image models always return base64.
@@ -56,10 +56,7 @@ export async function generateOpenAIImage(prompt: string, opts: { width: number;
 
 /** Connection test without generating anything: list one model. */
 export async function checkOpenAI(): Promise<{ ok: boolean; message: string }> {
-  if (!openaiConfigured()) {
-    const len = env.openaiKey.length;
-    return { ok: false, message: len ? `Klucz OPENAI_API_KEY jest za krótki (${len} znaków) — wklej cały klucz zaczynający się od „sk-”, bez cudzysłowów.` : "Brak klucza OpenAI — w Railway → Variables dodaj OPENAI_API_KEY z wartością sk-… (bez cudzysłowów) i poczekaj na ponowne wdrożenie." };
-  }
+  if (!openaiConfigured()) return { ok: false, message: `OpenAI: brak działającego klucza. ${openaiKeyDiagnostics()}` };
   const hint = env.openaiKey.startsWith("sk-") ? "" : " Uwaga: klucze OpenAI zaczynają się od „sk-” — sprawdź, czy wkleiłeś właściwą wartość.";
   try {
     const res = await fetch(`${env.openaiBaseUrl}/models/${encodeURIComponent(env.openaiImageModel)}`, { headers: { Authorization: `Bearer ${env.openaiKey}` }, signal: AbortSignal.timeout(20_000) });

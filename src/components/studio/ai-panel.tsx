@@ -14,6 +14,7 @@ export interface AiConfig {
   higgsfield: boolean;
   claude: boolean;
   openai?: boolean;
+  openaiHint?: string | null;
   models: Array<{ id: string; label: string; description: string; durations: number[] }>;
   defaultModel: string;
 }
@@ -342,8 +343,12 @@ export function AiPanel({
       <Section title="Automatyczne ilustracje">
         <p className="text-[12px] leading-snug text-studio-muted">
           Po przetworzeniu nagrania AI czyta całą wypowiedź, wybiera jej główne myśli i osadza pod napisami pełnoekranowe ilustracje tych myśli (OpenAI, kolory motywu, styl kategorii) — a infografikę tylko tam, gdzie padają liczby lub kroki.
-          {!ai.openai ? " Dodaj OPENAI_API_KEY, aby ilustracje mogły powstawać." : ""}
         </p>
+        {!ai.openai ? (
+          <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[12px] text-amber-200" data-testid="openai-hint">
+            Ilustracje są wyłączone: {ai.openaiHint ?? "brak klucza OPENAI_API_KEY."}
+          </p>
+        ) : null}
         <AutoStatus job={autoJob} />
         <SButton className="w-full" onClick={runAuto} disabled={autoBusy} data-testid="auto-visuals-run">
           {autoBusy ? <Loader2 className="animate-spin" /> : <BarChart3 />}
@@ -438,7 +443,7 @@ function BrollCard({ item, ai, canGenerate, onSeek, onGenerate, onRemove }: { it
               <p className="mt-1 leading-snug">„{item.passage}”</p>
             </details>
           ) : null}
-          {!canIllustrate ? <p className="text-[11.5px] text-amber-300">Ilustracje wymagają klucza OPENAI_API_KEY w Railway → Variables.</p> : null}
+          {!canIllustrate ? <p className="text-[11.5px] text-amber-300">Ilustracje wymagają klucza OpenAI. {ai.openaiHint ?? ""}</p> : null}
         </div>
       ) : info ? (
         <div className="space-y-1.5">
