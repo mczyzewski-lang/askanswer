@@ -104,4 +104,18 @@ test("expert records answers on a phone via the invitation link", async ({ page,
   // Test 5: recorded duration covers the time before and after the pause (pause excluded)
   expect(first.durationSec).toBeGreaterThan(5);
   expect(first.durationSec).toBeLessThan(first.markers.narrationEnd + 2 + 2.5 + 3);
+
+  // films in editing / approved: the expert can watch them from the list
+  const pr = await request.patch(`/api/admin/questions/${q1.id}`, { data: { status: "IN_PROGRESS" } });
+  expect(pr.ok()).toBeTruthy();
+  await page.reload();
+  const vids = page.getByTestId("expert-videos");
+  await expect(vids).toBeVisible({ timeout: 20_000 });
+  await expect(vids.getByTestId("expert-video").first()).toContainText("W trakcie montażu");
+  await vids.getByTestId("expert-video").first().click();
+  const player = page.getByTestId("expert-video-player");
+  await expect(player.locator("video")).toHaveAttribute("src", /.+/);
+  await player.getByRole("button", { name: "Zamknij film" }).click();
+  await expect(player).toBeHidden();
 });
+

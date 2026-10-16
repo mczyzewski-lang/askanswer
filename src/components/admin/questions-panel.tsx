@@ -63,6 +63,27 @@ export const STATUS: Record<string, { label: string; tone: "gray" | "blue" | "am
   APPROVED: { label: "Zatwierdzone", tone: "green" },
 };
 
+/** Each status reads at a glance: coloured side bar + coloured status field (and a group header when sorted by status). */
+const STATUS_LOOK: Record<string, { bar: string; field: string; dot: string }> = {
+  TO_RECORD: { bar: "border-l-zinc-300", field: "border-zinc-200 bg-zinc-50 text-zinc-700", dot: "bg-zinc-400" },
+  IN_PROGRESS: { bar: "border-l-sky-500", field: "border-sky-200 bg-sky-50 text-sky-800", dot: "bg-sky-500" },
+  RECORDED: { bar: "border-l-violet-500", field: "border-violet-200 bg-violet-50 text-violet-800", dot: "bg-violet-500" },
+  NEEDS_FIX: { bar: "border-l-amber-500", field: "border-amber-200 bg-amber-50 text-amber-900", dot: "bg-amber-500" },
+  APPROVED: { bar: "border-l-emerald-500", field: "border-emerald-200 bg-emerald-50 text-emerald-800", dot: "bg-emerald-500" },
+};
+const STATUS_ORDER = ["NEEDS_FIX", "RECORDED", "IN_PROGRESS", "APPROVED", "TO_RECORD"];
+
+type SortKey = "manual" | "status" | "newest" | "takes" | "category" | "alpha";
+const SORTS: Array<[SortKey, string]> = [
+  ["manual", "Kolejność (przeciąganie)"],
+  ["status", "Status"],
+  ["newest", "Najnowsze nagrania"],
+  ["takes", "Najwięcej nagrań"],
+  ["category", "Kategoria"],
+  ["alpha", "Alfabetycznie"],
+];
+const lastTakeAt = (q: Q) => q.takes.reduce((m, t) => (t.createdAt > m ? t.createdAt : m), "");
+
 export function QuestionsPanel({ data, refresh, toast }: PanelProps) {
   const [items, setItems] = useState(data.questions);
   const [prevData, setPrevData] = useState(data.questions);
@@ -71,6 +92,8 @@ export function QuestionsPanel({ data, refresh, toast }: PanelProps) {
     setItems(data.questions);
   }
   const [filter, setFilter] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [sort, setSort] = useState<SortKey>("manual");
   const [editing, setEditing] = useState<Q | "new" | null>(null);
   const [bulk, setBulk] = useState(false);
   const [preview, setPreview] = useState<Q | null>(null);
@@ -80,13 +103,26 @@ export function QuestionsPanel({ data, refresh, toast }: PanelProps) {
   const theme = data.project.theme ? themeFromRow(data.project.theme) : DEFAULT_THEME;
   const T = terms(data.project.format);
 
-  const visible = useMemo(
-    () =>
-      filter === "all"
-        ? items
-        : items.filter((q) => (filter === "none" ? !q.categoryId : filter.startsWith("sub:") ? q.subcategoryId === filter.slice(4) : q.categoryId === filter)),
-    [items, filter],
-  );
+  const visible = useMemo(() => {
+    let list = filter === "all" ? items : items.filter((q) => (filter === "none" ? !q.categoryId : filter.startsWith("sub:") ? q.subcategoryId === filter.slice(4) : q.categoryId === filter));
+    if (statusFilter !== "all") list = list.filter((q) => q.status === statusFilter);
+    const by = (f: (a: Q, b: Q) => number) => [...list].sort((a, b) => f(a, b) || items.indexOf(a) - items.indexOf(b));
+    switch (sort) {
+      case "status":
+        return by((a, b) => STATUS_ORDER.indexOf(a.status) - STATUS_ORDER.indexOf(b.status));
+      case "newest":
+        return by((a, b) => lastTakeAt(b).localeCompare(lastTakeAt(a)));
+      case "takes":
+        return by((a, b) => b.takes.length - a.takes.length);
+      case "category":
+        return by((a, b) => (a.categoryName ?? "~").localeCompare(b.categoryName ?? "~", "pl") || (a.subcategoryName ?? "").localeCompare(b.subcategoryName ?? "", "pl"));
+      case "alpha":
+        return by((a, b) => a.text.localeCompare(b.text, "pl"));
+      default:
+        return list;
+    }
+  }, [items, filter, statusFilter, sort]);
+  const counts = useMemo(() => Object.fromEntries(Object.keys(STATUS).map((k) => [k, items.filter((q) => q.status === k).length])), [items]);
   const [catsOpen, setCatsOpen] = useState(false);
 
   const onDragEnd = async (e: DragEndEvent) => {
@@ -160,7 +196,14 @@ export function QuestionsPanel({ data, refresh, toast }: PanelProps) {
             e.target.value = "";
           }}
         />
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          <NativeSelect className="h-9 w-48" value={sort} onChange={(e) => setSort(e.target.value as SortKey)} aria-label="Sortowanie">
+            {SORTS.map(([k, label]) => (
+              <option key={k} value={k}>
+                Sortuj: {label}
+              </option>
+            ))}
+          </NativeSelect>
           <NativeSelect className="h-9 w-48" value={filter} onChange={(e) => setFilter(e.target.value)} aria-label="Filtr kategorii">
             <option value="all">Wszystkie kategorie</option>
             {data.categories.map((c) => [
@@ -201,6 +244,25 @@ export function QuestionsPanel({ data, refresh, toast }: PanelProps) {
         </div>
       </div>
 
+      <div className="mt-4 flex flex-wrap gap-1.5" data-testid="status-filter">
+        {[["all", "Wszystkie", items.length] as const, ...Object.entries(STATUS).map(([k, v]) => [k, v.label, counts[k] ?? 0] as const)].map(([k, label, n]) => (
+          <button
+            key={k}
+            type="button"
+            aria-pressed={statusFilter === k}
+            onClick={() => setStatusFilter(k)}
+            className={cn(
+              "flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs transition",
+              statusFilter === k ? (k === "all" ? "border-ink bg-ink text-white" : STATUS_LOOK[k].field + " ring-1 ring-current") : "border-line bg-white text-muted hover:border-black/20",
+            )}
+          >
+            {k !== "all" ? <span className={cn("h-2 w-2 rounded-full", STATUS_LOOK[k].dot)} /> : null}
+            {label}
+            <span className="tabular opacity-60">{n}</span>
+          </button>
+        ))}
+      </div>
+
       <UnassignedBanner data={data} refresh={refresh} toast={toast} />
       <FailedBanner data={data} refresh={refresh} toast={toast} />
 
@@ -211,8 +273,16 @@ export function QuestionsPanel({ data, refresh, toast }: PanelProps) {
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
             <SortableContext items={visible.map((q) => q.id)} strategy={verticalListSortingStrategy}>
               <div className="space-y-2">
-                {visible.map((q) => (
-                  <QuestionRow key={q.id} q={q} index={items.indexOf(q)} data={data} refresh={refresh} toast={toast} onEdit={() => setEditing(q)} onPreview={() => setPreview(q)} />
+                {visible.map((q, i) => (
+                  <div key={q.id}>
+                    {sort === "status" && (i === 0 || visible[i - 1].status !== q.status) ? (
+                      <p className={cn("mb-2 mt-4 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-muted", i === 0 && "mt-0")} data-testid="status-group">
+                        <span className={cn("h-2.5 w-2.5 rounded-full", STATUS_LOOK[q.status]?.dot)} />
+                        {STATUS[q.status]?.label} <span className="tabular font-normal">{counts[q.status]}</span>
+                      </p>
+                    ) : null}
+                    <QuestionRow q={q} index={items.indexOf(q)} draggable={sort === "manual" && statusFilter === "all"} data={data} refresh={refresh} toast={toast} onEdit={() => setEditing(q)} onPreview={() => setPreview(q)} />
+                  </div>
                 ))}
               </div>
             </SortableContext>
@@ -312,9 +382,9 @@ function UnassignedBanner({ data, refresh, toast }: PanelProps) {
   );
 }
 
-function QuestionRow({ q, index, data, refresh, toast, onEdit, onPreview }: { q: Q; index: number; onEdit: () => void; onPreview: () => void } & PanelProps) {
+function QuestionRow({ q, index, draggable = true, data, refresh, toast, onEdit, onPreview }: { q: Q; index: number; draggable?: boolean; onEdit: () => void; onPreview: () => void } & PanelProps) {
   const router = useRouter();
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: q.id });
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: q.id, disabled: !draggable });
   const [open, setOpen] = useState(false);
   const [narrating, setNarrating] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -346,9 +416,16 @@ function QuestionRow({ q, index, data, refresh, toast, onEdit, onPreview }: { q:
 
   return (
     <div ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition }} className={cn(isDragging && "relative z-10 opacity-80")}>
-      <Card className={cn("overflow-hidden", isDragging && "shadow-xl")}>
+      <Card className={cn("overflow-hidden border-l-4", STATUS_LOOK[q.status]?.bar, isDragging && "shadow-xl")} data-status={q.status}>
         <div className="flex items-start gap-2 p-3 sm:p-4">
-          <button {...attributes} {...listeners} className="mt-0.5 cursor-grab touch-none rounded-md p-1 text-muted hover:bg-black/5 active:cursor-grabbing" aria-label="Przeciągnij, aby zmienić kolejność">
+          <button
+            {...attributes}
+            {...listeners}
+            disabled={!draggable}
+            title={draggable ? undefined : "Kolejność zmienisz przy sortowaniu „Kolejność” bez filtra statusu"}
+            className="mt-0.5 cursor-grab touch-none rounded-md p-1 text-muted hover:bg-black/5 active:cursor-grabbing disabled:cursor-default disabled:opacity-30"
+            aria-label="Przeciągnij, aby zmienić kolejność"
+          >
             <GripVertical className="h-4 w-4" />
           </button>
           <span className="tabular mt-0.5 w-6 shrink-0 text-sm text-muted">{index + 1}.</span>
@@ -370,7 +447,7 @@ function QuestionRow({ q, index, data, refresh, toast, onEdit, onPreview }: { q:
           <div className="flex shrink-0 items-center gap-1.5">
             <NativeSelect
               aria-label="Status"
-              className="h-8 w-[136px] rounded-lg text-xs"
+              className={cn("h-8 w-[136px] rounded-lg text-xs font-medium", STATUS_LOOK[q.status]?.field)}
               value={q.status}
               onChange={(e) => patch({ status: e.target.value }, "Zmieniono status")}
             >

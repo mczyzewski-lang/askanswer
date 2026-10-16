@@ -56,7 +56,35 @@ export async function recordSession(token: string) {
       status: q.status,
       takes: q.recording?.takes ?? [],
     })),
+    // videos being edited / approved: the expert can watch them (all of them, not only today's list)
+    videos: await expertVideos(questions.filter((q) => q.status === "IN_PROGRESS" || q.status === "APPROVED")),
   };
+}
+
+/**
+ * The film of a question for the expert to watch: the latest exported MP4 when there is one,
+ * otherwise the recording itself (the chosen take, else the newest ready one).
+ */
+async function expertVideos(qs: Array<{ id: string; text: string; status: string; category: { name: string } | null; recording: { selectedTakeId: string | null; takes: Array<{ id: string; status: string; takeNumber: number }> } | null }>) {
+  const out = [];
+  for (const q of qs) {
+    const comps = await prisma.videoComposition.findMany({ where: { questionId: q.id }, select: { id: true } });
+    const render = comps.length
+      ? await prisma.renderJob.findFirst({ where: { compositionId: { in: comps.map((c) => c.id) }, status: "SUCCEEDED", outputAssetId: { not: null } }, orderBy: { updatedAt: "desc" } })
+      : null;
+    let asset = render?.outputAssetId ? await prisma.mediaAsset.findUnique({ where: { id: render.outputAssetId } }) : null;
+    let kind: "export" | "recording" = "export";
+    if (!asset) {
+      const takes = (q.recording?.takes ?? []).filter((t) => t.status === "READY");
+      const take = takes.find((t) => t.id === q.recording?.selectedTakeId) ?? takes.sort((a, b) => b.takeNumber - a.takeNumber)[0];
+      const full = take ? await prisma.recordingTake.findUnique({ where: { id: take.id }, select: { normalizedAssetId: true } }) : null;
+      asset = full?.normalizedAssetId ? await prisma.mediaAsset.findUnique({ where: { id: full.normalizedAssetId } }) : null;
+      kind = "recording";
+    }
+    if (!asset) continue;
+    out.push({ questionId: q.id, text: q.text, category: q.category?.name ?? "Ogólne", status: q.status, kind, url: await signedUrl(asset.storageKey, { ttlSec: 6 * 3600 }) });
+  }
+  return out;
 }
 
 export async function narrationUrl(assetId: string) {

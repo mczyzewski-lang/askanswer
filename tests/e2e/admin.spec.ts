@@ -158,3 +158,25 @@ test("Prompter CSV import: Kategoria;Podkategoria;Hook;Treść (Excel Windows-12
     await request.delete(`/api/admin/projects/${project.id}`);
   }
 });
+
+test("recordings list: statuses stand apart, sorting and status filter", async ({ page, request }) => {
+  await adminRequest(request);
+  const data = await demoProject(request);
+  const [a, b] = data.questions;
+  await request.patch(`/api/admin/questions/${a.id}`, { data: { status: "APPROVED" } });
+  await request.patch(`/api/admin/questions/${b.id}`, { data: { status: "IN_PROGRESS" } });
+  await login(page);
+  await page.getByText("Pravna — Znaki Towarowe").click();
+  // coloured per status
+  await expect(page.locator('[data-status="APPROVED"]').first()).toBeVisible();
+  await expect(page.locator('[data-status="IN_PROGRESS"]').first()).toBeVisible();
+  // sorted by status: group headers, "W trakcie" before "Zatwierdzone"
+  await page.getByLabel("Sortowanie").selectOption("status");
+  const groups = page.getByTestId("status-group");
+  const labels = await groups.allTextContents();
+  expect(labels.findIndex((l) => l.includes("W trakcie"))).toBeLessThan(labels.findIndex((l) => l.includes("Zatwierdzone")));
+  // filter: only approved
+  await page.getByTestId("status-filter").getByRole("button", { name: /Zatwierdzone/ }).click();
+  await expect(page.locator("[data-status]").first()).toHaveAttribute("data-status", "APPROVED");
+  expect(await page.locator('[data-status]:not([data-status="APPROVED"])').count()).toBe(0);
+});

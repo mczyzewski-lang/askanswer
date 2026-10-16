@@ -32,6 +32,17 @@ interface Session {
   /** many questions: today's list, mixed evenly across categories */
   dailyPlan: { limit: number; pendingTotal: number; totalQuestions: number } | null;
   questions: Question[];
+  /** films being edited / approved, to watch */
+  videos?: ExpertVideo[];
+}
+
+interface ExpertVideo {
+  questionId: string;
+  text: string;
+  category: string;
+  status: string;
+  kind: "export" | "recording";
+  url: string;
 }
 
 type Screen = "loading" | "error" | "welcome" | "setup" | "list" | "record" | "done";
@@ -48,6 +59,7 @@ const DEFAULT_ANSWER_SEC = 90;
 
 export function Recorder({ token }: { token: string }) {
   const [screen, setScreen] = useState<Screen>("loading");
+  const [watching, setWatching] = useState<ExpertVideo | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [support, setSupport] = useState<RecorderSupport | null>(null);
@@ -249,6 +261,7 @@ export function Recorder({ token }: { token: string }) {
               <Stat label="Pytania" value={String(questions.length)} sub={remaining < questions.length ? `${remaining} pozostało` : "wszystkie do nagrania"} />
               <Stat label="Szacowany czas" value={`~${Math.max(1, Math.round(est / 60))} min`} sub="w dowolnym tempie" />
             </div>
+            <ExpertVideos videos={session.videos} watching={watching} onWatch={setWatching} />
             <ol className="mt-8 space-y-3 text-[15px] text-white/75">
               <li className="flex gap-3"><Num n={1} /> Wybierz pytanie z listy.</li>
               <li className="flex gap-3"><Num n={2} /> Wysłuchaj pytania czytanego przez lektora.</li>
@@ -363,6 +376,7 @@ export function Recorder({ token }: { token: string }) {
             </div>
           </div>
           <UploadBanner uploads={uploads} online={online} onRetry={retryFailed} />
+          <ExpertVideos videos={session.videos} watching={watching} onWatch={setWatching} />
           {[...groups.entries()].map(([cat, qs]) => (
             <section key={cat} className="mt-6">
               <h2 className="mb-3 text-xs font-semibold uppercase tracking-[0.16em] text-white/45">{cat}</h2>
@@ -398,7 +412,7 @@ export function Recorder({ token }: { token: string }) {
                           {uploadingNow
                             ? "Wysyłanie…"
                             : recorded
-                              ? `Nagrane${q.takes.length > 1 ? ` · ${q.takes.length} ujęcia` : ""} · dotknij, aby nagrać ponownie`
+                              ? `${q.status === "APPROVED" ? "Film zatwierdzony" : q.status === "IN_PROGRESS" ? "Film w trakcie montażu" : "Nagrane"}${q.takes.length > 1 ? ` · ${q.takes.length} ujęcia` : ""} · dotknij, aby nagrać ponownie`
                               : q.status === "NEEDS_FIX"
                                 ? "Do poprawy"
                                 : locked
@@ -1169,4 +1183,44 @@ function UploadBanner({ uploads, online, onRetry }: { uploads: Record<string, Up
     );
   }
   return null;
+}
+
+/** Films being edited / approved: the expert can watch them (no camera needed). */
+function ExpertVideos({ videos, watching, onWatch }: { videos?: ExpertVideo[]; watching: ExpertVideo | null; onWatch: (v: ExpertVideo | null) => void }) {
+  return (
+    <>
+          {videos?.length ? (
+            <section className="mt-6" data-testid="expert-videos">
+              <h2 className="mb-3 text-xs font-semibold uppercase tracking-[0.16em] text-white/45">Twoje filmy</h2>
+              <div className="space-y-2">
+                {videos.map((v) => (
+                  <button key={v.questionId} onClick={() => onWatch(v)} className="flex w-full items-center gap-3 rounded-2xl bg-white/[.07] p-3 text-left active:scale-[.99]" data-testid="expert-video">
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white text-black">
+                      <Play className="ml-0.5 h-4 w-4" />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className={cn("mb-1 inline-block rounded-full px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-[0.08em]", v.status === "APPROVED" ? "bg-emerald-400/20 text-emerald-300" : "bg-sky-400/20 text-sky-300")}>
+                        {v.status === "APPROVED" ? "Zatwierdzone" : "W trakcie montażu"}
+                      </span>
+                      <span className="block truncate text-[15px] font-medium">{v.text}</span>
+                      <span className="block text-[12px] text-white/45">{v.kind === "export" ? "Gotowy film" : "Twoje nagranie"} · {v.category}</span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </section>
+          ) : null}
+          {watching ? (
+            <div className="fixed inset-0 z-50 flex flex-col bg-black safe-top safe-bottom" data-testid="expert-video-player">
+              <div className="flex items-center gap-3 px-4 py-3">
+                <button onClick={() => onWatch(null)} className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10" aria-label="Zamknij film">
+                  <ChevronLeft className="h-5 w-5" />
+                </button>
+                <p className="min-w-0 flex-1 truncate text-[14px] font-medium">{watching.text}</p>
+              </div>
+              <video key={watching.url} src={watching.url} controls autoPlay playsInline className="min-h-0 w-full flex-1 bg-black object-contain" />
+            </div>
+          ) : null}
+    </>
+  );
 }
