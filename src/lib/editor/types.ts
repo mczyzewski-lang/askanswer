@@ -293,6 +293,8 @@ export interface AssetInfo {
   voiceId?: string | null;
   /** Recordings: person mask (AMSK file) for background blur, once computed. */
   maskUrl?: string | null;
+  /** quality generation of the mask (older ones are recomputed when blur is used) */
+  maskVersion?: number | null;
 }
 
 export interface Waveform {

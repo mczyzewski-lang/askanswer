@@ -25,6 +25,7 @@ export async function assetInfo(id: string, withWaveform = false): Promise<Asset
     strength: (a.meta as { strength?: string } | null)?.strength ?? null,
     voiceId: (a.meta as { voiceId?: string } | null)?.voiceId ?? null,
     maskUrl: mask ? await signedUrl(mask.storageKey, { ttlSec: 12 * 3600 }) : null,
+    maskVersion: mask ? ((a.meta as { maskVersion?: number } | null)?.maskVersion ?? 1) : null,
   };
 }
 

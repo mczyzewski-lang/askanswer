@@ -44,7 +44,7 @@ import { Timeline } from "./timeline";
 import { Properties } from "./properties";
 import { AudioPanel, GraphicsPanel, PausesPanel, QuestionPanel, SubtitlesPanel, TakesPanel, TemplatesPanel, TextPanel, ZoomPanel, type StudioMeta } from "./panels";
 import { Row, Section, Select, SButton } from "./controls";
-import { AiPanel, useBrollJobs, type AiConfig } from "./ai-panel";
+import { AiPanel, useBrollJobs, type AiConfig, type AutoVisualsJob } from "./ai-panel";
 import { mergeAutoVisuals } from "@/lib/editor/ai-overlays";
 
 interface StudioPayload {
@@ -59,6 +59,7 @@ interface StudioPayload {
   ai: AiConfig;
   /** the worker is still generating the automatic infographics */
   autoVisualsPending?: boolean;
+  autoVisualsJob?: AutoVisualsJob | null;
 }
 
 const TABS = [
@@ -78,6 +79,9 @@ type TabKey = (typeof TABS)[number]["key"];
 
 export function Studio({ id }: { id: string }) {
   const [payload, setPayload] = useState<StudioPayload | null>(null);
+  // bumped when the AI tab starts the automatic infographics again
+  const [autoRun, setAutoRun] = useState(0);
+  const [autoJob, setAutoJob] = useState<AutoVisualsJob | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [engine, setEngine] = useState<PlaybackEngine | null>(null);
   // AI clips keep generating in the background and land on the timeline when ready
@@ -149,27 +153,39 @@ export function Studio({ id }: { id: string }) {
 
   // automatic infographics still being made: pick them up as soon as the worker is done
   useEffect(() => {
-    if (!payload?.autoVisualsPending) return;
+    if (payload) setAutoJob(payload.autoVisualsJob ?? null);
+  }, [payload]);
+  useEffect(() => {
+    if (!payload?.autoVisualsPending && !autoRun) return;
     let stopped = false;
     const t = setInterval(async () => {
       const latest = await (await fetch(`/api/admin/compositions/${id}`, { cache: "no-store" })).json().catch(() => null);
       if (stopped || !latest?.composition) return;
-      const serverDoc = latest.composition.document as EditorDocument;
-      if (!serverDoc.meta.autoVisuals && latest.autoVisualsPending) return;
+      setAutoJob(latest.autoVisualsJob ?? null);
+      if (latest.autoVisualsPending) return;
       clearInterval(t);
+      const job = latest.autoVisualsJob as AutoVisualsJob | null;
+      if (job?.status === "FAILED") return toast(`Infografiki AI: ${job.error ?? "błąd"}`, "err");
+      const serverDoc = latest.composition.document as EditorDocument;
       const st = useStudio.getState();
-      if (!st.doc || st.doc.meta.autoVisuals || !serverDoc.meta.autoVisuals) return;
+      if (!st.doc || !serverDoc.meta.autoVisuals || st.doc.meta.autoVisuals === serverDoc.meta.autoVisuals) {
+        const why = skippedText(job);
+        if (why) toast(`Infografiki AI: ${why}`, "err");
+        return;
+      }
       st.addAssets(latest.assets ?? []);
-      const n = (serverDoc.meta.aiBroll ?? []).filter((i) => i.status === "done").length;
+      const known = new Set((st.doc.meta.aiBroll ?? []).map((i) => i.id));
+      const n = (serverDoc.meta.aiBroll ?? []).filter((i) => i.status === "done" && i.kind === "infographic" && !known.has(i.id)).length;
       if (st.dirty || st.saving === "saving") useStudio.setState({ doc: mergeAutoVisuals(st.doc, serverDoc), version: latest.composition.version, dirty: true });
       else useStudio.setState({ doc: mergeAutoVisuals(st.doc, serverDoc), version: latest.composition.version, dirty: false });
       if (n) toast(`AI dodało ${n} ${n === 1 ? "infografikę" : n < 5 ? "infografiki" : "infografik"} — zobacz zakładkę AI`);
-    }, 4000);
+      else toast("Infografiki AI: nie znaleziono fragmentów do zilustrowania", "err");
+    }, 3000);
     return () => {
       stopped = true;
       clearInterval(t);
     };
-  }, [payload?.autoVisualsPending, id, toast]);
+  }, [payload?.autoVisualsPending, autoRun, id, toast]);
 
   // ---- autosave (debounced + periodic) and unload protection ----
   const save = useCallback(async () => {
@@ -188,7 +204,7 @@ export function Studio({ id }: { id: string }) {
         // the AI placed infographics meanwhile: take them over and save again instead of failing
         const latest = await (await fetch(`/api/admin/compositions/${st.compositionId}`, { cache: "no-store" })).json().catch(() => null);
         const serverDoc = latest?.composition?.document as EditorDocument | undefined;
-        if (serverDoc?.meta?.autoVisuals && !docToSave.meta.autoVisuals) {
+        if (serverDoc?.meta?.autoVisuals && serverDoc.meta.autoVisuals !== docToSave.meta.autoVisuals) {
           useStudio.getState().addAssets(latest.assets ?? []);
           useStudio.setState({ doc: mergeAutoVisuals(useStudio.getState().doc ?? docToSave, serverDoc), version: latest.composition.version, dirty: true, saving: "idle" });
           toast("AI dodało infografiki — połączono z Twoimi zmianami");
@@ -431,7 +447,7 @@ export function Studio({ id }: { id: string }) {
         </nav>
         <aside className="scroll-thin w-[300px] shrink-0 overflow-y-auto border-r border-studio-line bg-studio-2">
           {tab === "question" ? <QuestionPanel meta={meta} /> : null}
-          {tab === "ai" ? <AiPanel engine={engine} compositionId={id} ai={payload.ai} /> : null}
+          {tab === "ai" ? <AiPanel engine={engine} compositionId={id} ai={payload.ai} autoJob={autoJob} onAutoStarted={(j) => (setAutoJob(j), setAutoRun((n) => n + 1))} /> : null}
           {tab === "takes" ? <TakesPanel meta={meta} onReplaceTake={replaceTake} /> : null}
           {tab === "subs" ? <SubtitlesPanel engine={engine} meta={meta} onRetranscribe={retranscribe} /> : null}
           {tab === "pauses" ? <PausesPanel engine={engine} /> : null}
@@ -762,3 +778,10 @@ function ExportDialog({
 }
 
 export { clipEnd };
+
+function skippedText(job: AutoVisualsJob | null): string | null {
+  const why = job?.result?.skipped;
+  if (why === "no transcript") return "brak napisów — najpierw wygeneruj transkrypcję.";
+  if (why === "disabled") return "wyłączone w ustawieniach projektu.";
+  return null;
+}

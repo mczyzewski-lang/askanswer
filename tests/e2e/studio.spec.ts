@@ -21,6 +21,8 @@ async function waitSaved(page: Page) {
  * (TEST FIXTURE media: colour bars + tone bursts with a known 2 s pause at 2.6–4.6 s).
  */
 test("studio: pauses, cuts, subtitles, zoom, theme, persistence and real MP4 export", async ({ page, request }) => {
+  // the whole editing flow incl. AI generation, person segmentation and a real export
+  test.setTimeout(480_000);
   await adminRequest(request);
   const data = await demoProject(request);
   const anna = data.experts.find((e) => e.name === "Anna Kowalska")!;
@@ -96,6 +98,12 @@ test("studio: pauses, cuts, subtitles, zoom, theme, persistence and real MP4 exp
   await page.getByTestId("ai-check").click();
   await expect(page.getByTestId("ai-check-result")).toContainText("Połączenie z Higgsfield działa");
   await expect(page.getByTestId("ai-check-result")).toContainText("Połączenie z OpenAI działa");
+  // the automatic run is visible in the AI tab and can be started again on demand
+  await expect(page.getByTestId("auto-visuals-status")).toContainText("Dodano");
+  await expect(page.getByTestId("auto-visuals-status")).toContainText("(OpenAI)");
+  await page.getByTestId("auto-visuals-run").click();
+  await expect(page.getByText(/AI dodało \d+ infografik/)).toBeVisible({ timeout: 90_000 });
+  await waitSaved(page);
   await page.getByTestId("ai-suggest").click();
   await expect(page.getByTestId("ai-item").first()).toBeVisible({ timeout: 30_000 });
   const videoItem = page.locator('[data-testid="ai-item"][data-kind="video"]').filter({ has: page.getByTestId("ai-accept") }).first();
@@ -133,6 +141,7 @@ test("studio: pauses, cuts, subtitles, zoom, theme, persistence and real MP4 exp
 
   // Test 12 — theme accent/highlight change propagates (stored on the project theme)
   await page.getByTestId("tab-theme").click();
+  const themeSaved = page.waitForResponse((r) => r.url().includes("/api/admin/themes/") && r.request().method() === "PATCH", { timeout: 30_000 });
   await page.getByTestId("theme-highlight").evaluate((el: HTMLInputElement) => {
     const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
     setter.call(el, "#ff0066");
@@ -140,7 +149,7 @@ test("studio: pauses, cuts, subtitles, zoom, theme, persistence and real MP4 exp
     el.dispatchEvent(new Event("change", { bubbles: true }));
   });
   await waitSaved(page);
-  await page.waitForTimeout(1200);
+  expect((await themeSaved).ok()).toBeTruthy();
 
   // Test 14 — refresh restores the editing state
   await page.reload();

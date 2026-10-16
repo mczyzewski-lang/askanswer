@@ -18,6 +18,14 @@ export interface AiConfig {
   defaultModel: string;
 }
 
+export interface AutoVisualsJob {
+  id: string;
+  status: "QUEUED" | "RUNNING" | "SUCCEEDED" | "FAILED" | string;
+  error: string | null;
+  result: { placed?: number; proposed?: number; skipped?: string; engine?: string; warnings?: string[] } | null;
+  updatedAt: string;
+}
+
 async function readJson(res: Response) {
   const text = await res.text();
   let data: Record<string, unknown> = {};
@@ -142,7 +150,19 @@ export function useBrollJobs() {
   }, [pending]);
 }
 
-export function AiPanel({ engine, compositionId, ai }: { engine: PlaybackEngine | null; compositionId: string; ai: AiConfig }) {
+export function AiPanel({
+  engine,
+  compositionId,
+  ai,
+  autoJob = null,
+  onAutoStarted,
+}: {
+  engine: PlaybackEngine | null;
+  compositionId: string;
+  ai: AiConfig;
+  autoJob?: AutoVisualsJob | null;
+  onAutoStarted?: (job: AutoVisualsJob | null) => void;
+}) {
   const doc = useStudio((s) => s.doc)!;
   const time = useStudio((s) => s.time);
   const apply = useStudio((s) => s.apply);
@@ -161,6 +181,17 @@ export function AiPanel({ engine, compositionId, ai }: { engine: PlaybackEngine 
       setCheck({ ok: false, message: (e as Error).message });
     }
   };
+  const [autoErr, setAutoErr] = useState<string | null>(null);
+  const runAuto = async () => {
+    setAutoErr(null);
+    try {
+      const data = await readJson(await fetch(`/api/admin/compositions/${compositionId}/auto-visuals`, { method: "POST" }));
+      onAutoStarted?.((data.autoVisualsJob as AutoVisualsJob | null) ?? null);
+    } catch (e) {
+      setAutoErr((e as Error).message);
+    }
+  };
+  const autoBusy = autoJob?.status === "QUEUED" || autoJob?.status === "RUNNING";
   const list = items(doc);
   const modelInfo = ai.models.find((m) => m.id === model) ?? ai.models[0];
   const total = docDuration(doc);
@@ -292,6 +323,18 @@ export function AiPanel({ engine, compositionId, ai }: { engine: PlaybackEngine 
         {styled === true ? <p className="text-[11.5px] text-studio-muted">Styl scen: z ustawień kategorii / motywu (Motywy → Styl scen AI).</p> : null}
         {styled === false ? <p className="text-[11.5px] text-studio-muted">Brak stylu w kategorii i motywie — sceny w filmowym realizmie. Styl ustawisz w Motywy → Styl scen AI.</p> : null}
         {err ? <p className="text-[12px] text-red-300">{err}</p> : null}
+      </Section>
+
+      <Section title="Automatyczne infografiki">
+        <p className="text-[12px] leading-snug text-studio-muted">
+          Po przetworzeniu nagrania AI samo wybiera momenty i osadza infografiki ({ai.openai ? "obraz z OpenAI" : "szablon motywu — dodaj OPENAI_API_KEY, aby rysowało OpenAI"}).
+        </p>
+        <AutoStatus job={autoJob} />
+        <SButton className="w-full" onClick={runAuto} disabled={autoBusy} data-testid="auto-visuals-run">
+          {autoBusy ? <Loader2 className="animate-spin" /> : <BarChart3 />}
+          {autoBusy ? "AI tworzy infografiki…" : autoJob?.status === "SUCCEEDED" && (autoJob.result?.placed ?? 0) > 0 ? "Dodaj kolejne infografiki" : "Osadź infografiki teraz"}
+        </SButton>
+        {autoErr ? <p className="text-[12px] text-red-300">{autoErr}</p> : null}
       </Section>
 
       {list.length ? (
@@ -460,6 +503,31 @@ function BrollCard({ item, ai, canGenerate, onSeek, onGenerate, onRemove }: { it
       ) : null}
       {item.warning ? <p className="text-[11.5px] text-amber-300">{item.warning}</p> : null}
       {item.status === "failed" && item.error ? <p className="text-[11.5px] text-red-300">{item.error}</p> : null}
+    </div>
+  );
+}
+
+function AutoStatus({ job }: { job: AutoVisualsJob | null }) {
+  if (!job) return <p className="text-[11.5px] text-studio-muted" data-testid="auto-visuals-status">To nagranie nie miało jeszcze automatycznych infografik.</p>;
+  if (job.status === "QUEUED" || job.status === "RUNNING") return <p className="text-[11.5px] text-studio-muted" data-testid="auto-visuals-status">Trwa generowanie (do ok. minuty na grafikę)…</p>;
+  if (job.status === "FAILED") return <p className="rounded-lg bg-red-500/10 px-3 py-2 text-[12px] text-red-300" data-testid="auto-visuals-status">Nie udało się: {job.error ?? "nieznany błąd"}</p>;
+  const r = job.result ?? {};
+  const skipped =
+    r.skipped === "no transcript" ? "Brak napisów — najpierw wygeneruj transkrypcję w zakładce „Napisy”." : r.skipped === "disabled" ? "Wyłączone w ustawieniach projektu (Automatyczne infografiki)." : r.skipped ? null : null;
+  return (
+    <div className="space-y-1" data-testid="auto-visuals-status">
+      {skipped ? <p className="text-[12px] text-amber-200">{skipped}</p> : null}
+      {!r.skipped ? (
+        <p className="text-[11.5px] text-emerald-300">
+          Dodano {r.placed ?? 0} {(r.placed ?? 0) === 1 ? "infografikę" : "infografik(i)"}
+          {r.engine === "openai" ? " (OpenAI)" : r.engine === "template" ? " (szablon motywu)" : ""}.
+        </p>
+      ) : null}
+      {(r.warnings ?? []).map((w) => (
+        <p key={w} className="rounded-lg bg-amber-500/10 px-3 py-1.5 text-[11.5px] text-amber-200">
+          {w}
+        </p>
+      ))}
     </div>
   );
 }

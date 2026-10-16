@@ -27,7 +27,7 @@ export function infographicOverlay(item: Pick<AiBrollItem, "start" | "end" | "ti
  * over, everything else stays as edited locally.
  */
 export function mergeAutoVisuals(local: EditorDocument, server: EditorDocument): EditorDocument {
-  if (local.meta.autoVisuals || !server.meta.autoVisuals) return local;
+  if (!server.meta.autoVisuals || local.meta.autoVisuals === server.meta.autoVisuals) return local;
   const known = new Set((local.meta.aiBroll ?? []).map((i) => i.id));
   const added = (server.meta.aiBroll ?? []).filter((i) => !known.has(i.id));
   const layerIds = new Set(added.map((i) => i.overlayId).filter(Boolean));

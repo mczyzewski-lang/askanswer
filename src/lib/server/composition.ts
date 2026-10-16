@@ -61,7 +61,7 @@ export async function loadStudio(id: string) {
     assets,
     renders: renderInfos,
     elevenLabs: elevenLabsConfigured(),
-    autoVisualsPending: !!(await prisma.job.findFirst({ where: { idempotencyKey: `auto-visuals:${id}`, status: { in: ["QUEUED", "RUNNING"] } }, select: { id: true } })),
+    ...(await autoVisualsState(id)),
     ai: {
       higgsfield: higgsfieldConfigured(),
       claude: env.anthropicConfigured,
@@ -69,5 +69,14 @@ export async function loadStudio(id: string) {
       models: VIDEO_MODELS.map((m) => ({ id: m.id, label: m.label, description: m.description, durations: m.durations })),
       defaultModel: videoModel(null).id,
     },
+  };
+}
+
+/** The automatic infographics job of a composition: pending flag + last outcome (shown in the Studio AI tab). */
+export async function autoVisualsState(compositionId: string) {
+  const job = await prisma.job.findUnique({ where: { idempotencyKey: `auto-visuals:${compositionId}` }, select: { id: true, status: true, error: true, result: true, updatedAt: true } });
+  return {
+    autoVisualsPending: !!job && (job.status === "QUEUED" || job.status === "RUNNING"),
+    autoVisualsJob: job ? { id: job.id, status: job.status, error: job.error, result: job.result as Record<string, unknown> | null, updatedAt: job.updatedAt.toISOString() } : null,
   };
 }

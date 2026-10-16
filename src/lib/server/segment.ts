@@ -5,17 +5,24 @@ import zlib from "node:zlib";
 import { prisma } from "./db";
 import { env } from "./env";
 import { probe } from "./ffmpeg";
-import { makeTempDir, putFile, toLocalFile } from "./storage";
-import { encodeMaskFile } from "../render/mask-format";
+import { deleteObject, makeTempDir, putFile, toLocalFile } from "./storage";
+import { encodeMaskFile, MASK_VERSION } from "../render/mask-format";
 
 /**
  * Person segmentation for background blur. MediaPipe Selfie Segmenter (Apache 2.0) converted to ONNX
  * (models/selfie_segmenter.onnx, see models/README.md), run with onnxruntime-node on the CPU.
- * The frame is letterboxed into the model's 256×256 input, so the mask keeps the true aspect ratio.
+ *
+ * The model only sees 256×256, so its raw mask is blocky at 1080p. Like video-call apps, the mask
+ * is refined against the real picture: upsampled to ~640 px and passed through a guided filter
+ * (He et al.) with the frame's luminance as the guide, so the edge follows hair and shoulders
+ * instead of the model's pixel grid. 30 masks/s with motion-aware smoothing: steady edges don't
+ * flicker, moving ones don't lag behind the person.
  */
 const MODEL = path.resolve(process.cwd(), "models/selfie_segmenter.onnx");
 const SIZE = 256;
-export const MASK_FPS = 15;
+export const MASK_FPS = 30;
+/** long side of the stored (refined) mask */
+const MASK_LONG = 640;
 
 type Ort = typeof import("onnxruntime-node");
 let session: Promise<{ ort: Ort; s: import("onnxruntime-node").InferenceSession }> | null = null;
@@ -35,10 +42,102 @@ export function contentBox(w: number, h: number) {
   return { cw, ch, x: (SIZE - cw) >> 1, y: (SIZE - ch) >> 1 };
 }
 
-/** Soft threshold that keeps hair/edges smooth but removes the low-confidence haze around the person. */
+/** Size of the refined mask (and of the guide frame): long side MASK_LONG, even, never upscaled. */
+export function maskSize(w: number, h: number) {
+  const k = Math.min(1, MASK_LONG / Math.max(w, h));
+  return { gw: Math.max(16, Math.round((w * k) / 2) * 2), gh: Math.max(16, Math.round((h * k) / 2) * 2) };
+}
+
+/** Soft threshold: removes the low-confidence haze, keeps a narrow anti-aliased edge. */
 function shape(p: number) {
-  const t = Math.min(1, Math.max(0, (p - 0.35) / 0.45));
+  const t = Math.min(1, Math.max(0, (p - 0.3) / 0.45));
   return t * t * (3 - 2 * t);
+}
+
+/** Separable box mean with radius r (edges clamped), in place via tmp. */
+function boxMean(src: Float32Array, w: number, h: number, r: number, out: Float32Array, tmp: Float32Array) {
+  const n = 2 * r + 1;
+  for (let y = 0; y < h; y++) {
+    const row = y * w;
+    let s = 0;
+    for (let k = -r; k <= r; k++) s += src[row + Math.min(w - 1, Math.max(0, k))];
+    for (let x = 0; x < w; x++) {
+      tmp[row + x] = s / n;
+      s += src[row + Math.min(w - 1, x + r + 1)] - src[row + Math.max(0, x - r)];
+    }
+  }
+  for (let x = 0; x < w; x++) {
+    let s = 0;
+    for (let k = -r; k <= r; k++) s += tmp[Math.min(h - 1, Math.max(0, k)) * w + x];
+    for (let y = 0; y < h; y++) {
+      out[y * w + x] = s / n;
+      s += tmp[Math.min(h - 1, y + r + 1) * w + x] - tmp[Math.max(0, y - r) * w + x];
+    }
+  }
+}
+
+/** Guided filter: refines `p` (coarse mask) so its edges follow the edges of guide `I`. */
+export function guidedFilter(I: Float32Array, p: Float32Array, w: number, h: number, r: number, eps: number): Float32Array {
+  const N = w * h;
+  const tmp = new Float32Array(N);
+  const mI = new Float32Array(N);
+  const mP = new Float32Array(N);
+  const mIP = new Float32Array(N);
+  const mII = new Float32Array(N);
+  const prod = new Float32Array(N);
+  boxMean(I, w, h, r, mI, tmp);
+  boxMean(p, w, h, r, mP, tmp);
+  for (let i = 0; i < N; i++) prod[i] = I[i] * p[i];
+  boxMean(prod, w, h, r, mIP, tmp);
+  for (let i = 0; i < N; i++) prod[i] = I[i] * I[i];
+  boxMean(prod, w, h, r, mII, tmp);
+  // a, b per window (reuse buffers: mIP → a, mII → b)
+  for (let i = 0; i < N; i++) {
+    const varI = mII[i] - mI[i] * mI[i];
+    const a = (mIP[i] - mI[i] * mP[i]) / (varI + eps);
+    mIP[i] = a;
+    mII[i] = mP[i] - a * mI[i];
+  }
+  boxMean(mIP, w, h, r, mI, tmp);
+  boxMean(mII, w, h, r, mP, tmp);
+  const q = new Float32Array(N);
+  for (let i = 0; i < N; i++) q[i] = mI[i] * I[i] + mP[i];
+  return q;
+}
+
+/** Bilinear resample of a w×h float image to W×H (pixel centres aligned). */
+export function resize(src: Float32Array, w: number, h: number, W: number, H: number): Float32Array {
+  const out = new Float32Array(W * H);
+  const sx = w / W;
+  const sy = h / H;
+  for (let y = 0; y < H; y++) {
+    const fy = Math.min(h - 1, Math.max(0, (y + 0.5) * sy - 0.5));
+    const y0 = Math.floor(fy);
+    const y1 = Math.min(h - 1, y0 + 1);
+    const ty = fy - y0;
+    for (let x = 0; x < W; x++) {
+      const fx = Math.min(w - 1, Math.max(0, (x + 0.5) * sx - 0.5));
+      const x0 = Math.floor(fx);
+      const x1 = Math.min(w - 1, x0 + 1);
+      const tx = fx - x0;
+      const a = src[y0 * w + x0] * (1 - tx) + src[y0 * w + x1] * tx;
+      const b = src[y1 * w + x0] * (1 - tx) + src[y1 * w + x1] * tx;
+      out[y * W + x] = a * (1 - ty) + b * ty;
+    }
+  }
+  return out;
+}
+
+/** One frame: coarse model mask (cw×ch, 0..1) + guide luminance (gw×gh, 0..1) → refined 8-bit mask. */
+export function refineMask(coarse: Float32Array, cw: number, ch: number, luma: Float32Array, gw: number, gh: number): Uint8Array {
+  const up = resize(coarse, cw, ch, gw, gh);
+  const r = Math.max(2, Math.round(Math.max(gw, gh) / 64));
+  const q = guidedFilter(luma, up, gw, gh, r, 0.004);
+  const out = new Uint8Array(gw * gh);
+  // away from the edge the filter returns the mask unchanged (flat input), so it applies everywhere
+  // 64 levels: invisible on a soft edge, but the masks compress much better
+  for (let i = 0; i < out.length; i++) out[i] = Math.round(Math.round(shape(q[i]) * 63) * 4.0477);
+  return out;
 }
 
 export async function segmentVideoFile(file: string, onProgress?: (done: number, total: number) => void): Promise<Uint8Array> {
@@ -46,32 +145,61 @@ export async function segmentVideoFile(file: string, onProgress?: (done: number,
   if (!info.hasVideo || !info.width || !info.height) throw new Error("Nagranie nie ma obrazu");
   const { ort, s } = await model();
   const box = contentBox(info.width, info.height);
-  const frameBytes = SIZE * SIZE * 3;
+  const { gw, gh } = maskSize(info.width, info.height);
+  const frameBytes = gw * gh * 3;
   const total = Math.max(1, Math.ceil(info.duration * MASK_FPS));
   const ff = spawn(env.ffmpeg, [
     "-hide_banner", "-loglevel", "error", "-i", file, "-an",
-    "-vf", `fps=${MASK_FPS},scale=${box.cw}:${box.ch}:flags=area,pad=${SIZE}:${SIZE}:${box.x}:${box.y}:color=0x808080,format=rgb24`,
+    "-vf", `fps=${MASK_FPS},scale=${gw}:${gh}:flags=area,format=rgb24`,
     "-f", "rawvideo", "-pix_fmt", "rgb24", "-",
   ]);
   let err = "";
   ff.stderr.on("data", (d: Buffer) => (err += d.toString()));
-  const input = new Float32Array(frameBytes);
+  const input = new Float32Array(SIZE * SIZE * 3).fill(0.5);
+  const luma = new Float32Array(gw * gh);
   const frames: Uint8Array[] = [];
-  let ema: Float32Array | null = null;
+  let prev: Float32Array | null = null;
   let pending: Buffer = Buffer.alloc(0);
   const handle = async (raw: Buffer) => {
-    for (let i = 0; i < frameBytes; i++) input[i] = raw[i] / 255;
+    for (let i = 0, j = 0; i < luma.length; i++, j += 3) luma[i] = (raw[j] * 0.299 + raw[j + 1] * 0.587 + raw[j + 2] * 0.114) / 255;
+    // model input: the frame area-sampled into the letterbox (grey padding)
+    const fx = gw / box.cw;
+    const fy = gh / box.ch;
+    for (let y = 0; y < box.ch; y++) {
+      const ya = Math.floor(y * fy);
+      const yb = Math.max(ya + 1, Math.min(gh, Math.floor((y + 1) * fy)));
+      for (let x = 0; x < box.cw; x++) {
+        const xa = Math.floor(x * fx);
+        const xb = Math.max(xa + 1, Math.min(gw, Math.floor((x + 1) * fx)));
+        let r = 0, g = 0, b = 0, n = 0;
+        for (let yy = ya; yy < yb; yy++)
+          for (let xx = xa; xx < xb; xx++) {
+            const k = (yy * gw + xx) * 3;
+            r += raw[k];
+            g += raw[k + 1];
+            b += raw[k + 2];
+            n++;
+          }
+        const o = ((y + box.y) * SIZE + x + box.x) * 3;
+        input[o] = r / n / 255;
+        input[o + 1] = g / n / 255;
+        input[o + 2] = b / n / 255;
+      }
+    }
     const out = await s.run({ input: new ort.Tensor("float32", input, [1, SIZE, SIZE, 3]) });
     const m = out.mask.data as Float32Array;
-    // crop the letterbox and smooth over time (less flicker at the edges)
     const cur = new Float32Array(box.cw * box.ch);
     for (let y = 0; y < box.ch; y++) for (let x = 0; x < box.cw; x++) cur[y * box.cw + x] = m[(y + box.y) * SIZE + x + box.x];
-    if (ema) for (let i = 0; i < cur.length; i++) ema[i] = ema[i] * 0.35 + cur[i] * 0.65;
-    else ema = cur;
-    const gray = new Uint8Array(cur.length);
-    // 32 levels are plenty for a soft edge and compress ~2× better
-    for (let i = 0; i < cur.length; i++) gray[i] = Math.min(255, Math.round(shape(ema[i]) * 31) * 8.226) | 0;
-    frames.push(zlib.deflateRawSync(gray, { level: 6 }));
+    // motion-aware smoothing: blend with the previous mask only where little changed
+    if (prev) {
+      for (let i = 0; i < cur.length; i++) {
+        const d = Math.abs(cur[i] - prev[i]);
+        const keep = 0.45 * Math.max(0, 1 - d / 0.25);
+        cur[i] = prev[i] * keep + cur[i] * (1 - keep);
+      }
+    }
+    prev = cur;
+    frames.push(zlib.deflateRawSync(refineMask(cur, box.cw, box.ch, luma, gw, gh), { level: 6 }));
     onProgress?.(frames.length, total);
   };
   for await (const chunk of ff.stdout as AsyncIterable<Buffer>) {
@@ -85,26 +213,35 @@ export async function segmentVideoFile(file: string, onProgress?: (done: number,
   const code: number = await new Promise((r) => (ff.exitCode !== null ? r(ff.exitCode) : ff.on("close", r)));
   if (code !== 0) throw new Error(`Segmentacja: FFmpeg ${code}: ${err.slice(-500)}`);
   if (!frames.length) throw new Error("Segmentacja: brak klatek");
-  return encodeMaskFile(box.cw, box.ch, MASK_FPS, frames);
+  return encodeMaskFile(gw, gh, MASK_FPS, frames);
 }
 
 /** Worker job: mask for one recording asset, stored once (asset meta.maskAssetId). */
 export async function segmentAsset(assetId: string): Promise<{ maskAssetId: string }> {
   const asset = await prisma.mediaAsset.findUniqueOrThrow({ where: { id: assetId } });
   const meta = (asset.meta ?? {}) as Record<string, unknown>;
-  if (typeof meta.maskAssetId === "string" && (await prisma.mediaAsset.findUnique({ where: { id: meta.maskAssetId } }))) return { maskAssetId: meta.maskAssetId };
+  const old = typeof meta.maskAssetId === "string" ? meta.maskAssetId : null;
+  if (old && meta.maskVersion === MASK_VERSION && (await prisma.mediaAsset.findUnique({ where: { id: old } }))) return { maskAssetId: old };
   const src = await toLocalFile(asset.storageKey);
   const dir = await makeTempDir("mask");
   try {
     const data = await segmentVideoFile(src.path);
     const out = path.join(dir, "mask.amsk");
     await fsp.writeFile(out, data);
-    const key = asset.storageKey.replace(/\.[a-z0-9]+$/i, "") + ".mask.amsk";
+    const key = asset.storageKey.replace(/\.[a-z0-9]+$/i, "") + `.mask${MASK_VERSION}.amsk`;
     const size = await putFile(key, out, "application/octet-stream");
     const mask = await prisma.mediaAsset.create({
-      data: { kind: "SEGMENTATION_MASK", projectId: asset.projectId, storageKey: key, mimeType: "application/octet-stream", sizeBytes: size, durationSec: asset.durationSec, hasAudio: false, hasVideo: false, meta: { sourceAssetId: asset.id, fps: MASK_FPS } },
+      data: { kind: "SEGMENTATION_MASK", projectId: asset.projectId, storageKey: key, mimeType: "application/octet-stream", sizeBytes: size, durationSec: asset.durationSec, hasAudio: false, hasVideo: false, meta: { sourceAssetId: asset.id, fps: MASK_FPS, version: MASK_VERSION } },
     });
-    await prisma.mediaAsset.update({ where: { id: asset.id }, data: { meta: { ...meta, maskAssetId: mask.id } } });
+    await prisma.mediaAsset.update({ where: { id: asset.id }, data: { meta: { ...meta, maskAssetId: mask.id, maskVersion: MASK_VERSION } } });
+    // the previous, coarser mask is no longer needed
+    if (old && old !== mask.id) {
+      const prevMask = await prisma.mediaAsset.findUnique({ where: { id: old } });
+      if (prevMask) {
+        await deleteObject(prevMask.storageKey).catch(() => {});
+        await prisma.mediaAsset.delete({ where: { id: old } }).catch(() => {});
+      }
+    }
     return { maskAssetId: mask.id };
   } finally {
     await src.cleanup();

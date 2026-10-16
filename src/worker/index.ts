@@ -32,7 +32,7 @@ async function handle(job: { id: string; type: string; payload: unknown }) {
       return generateBroll(job.id, job.payload as Parameters<typeof generateBroll>[1]);
     case "auto-visuals": {
       const { autoVisuals } = await import("../lib/server/auto-visuals");
-      return autoVisuals(job.id, p.compositionId);
+      return autoVisuals(job.id, p.compositionId, Boolean((job.payload as { force?: boolean }).force));
     }
     case "segment-asset": {
       const { segmentAsset } = await import("../lib/server/segment");

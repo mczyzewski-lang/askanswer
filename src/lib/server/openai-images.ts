@@ -56,12 +56,16 @@ export async function generateOpenAIImage(prompt: string, opts: { width: number;
 
 /** Connection test without generating anything: list one model. */
 export async function checkOpenAI(): Promise<{ ok: boolean; message: string }> {
-  if (!openaiConfigured()) return { ok: false, message: "Brak klucza OpenAI (OPENAI_API_KEY)." };
+  if (!openaiConfigured()) {
+    const len = env.openaiKey.length;
+    return { ok: false, message: len ? `Klucz OPENAI_API_KEY jest za krótki (${len} znaków) — wklej cały klucz zaczynający się od „sk-”, bez cudzysłowów.` : "Brak klucza OpenAI — w Railway → Variables dodaj OPENAI_API_KEY z wartością sk-… (bez cudzysłowów) i poczekaj na ponowne wdrożenie." };
+  }
+  const hint = env.openaiKey.startsWith("sk-") ? "" : " Uwaga: klucze OpenAI zaczynają się od „sk-” — sprawdź, czy wkleiłeś właściwą wartość.";
   try {
     const res = await fetch(`${env.openaiBaseUrl}/models/${encodeURIComponent(env.openaiImageModel)}`, { headers: { Authorization: `Bearer ${env.openaiKey}` }, signal: AbortSignal.timeout(20_000) });
     if (res.ok) return { ok: true, message: `Połączenie z OpenAI działa (model ${env.openaiImageModel}).` };
     const b = (await res.json().catch(() => ({}))) as { error?: { message?: string } };
-    if (res.status === 401) return { ok: false, message: "OpenAI odrzucił klucz API — sprawdź OPENAI_API_KEY." };
+    if (res.status === 401) return { ok: false, message: `OpenAI odrzucił klucz API — sprawdź OPENAI_API_KEY.${hint}` };
     if (res.status === 404) return { ok: false, message: `Klucz działa, ale model ${env.openaiImageModel} nie jest dostępny na tym koncie. Ustaw OPENAI_IMAGE_MODEL (np. gpt-image-1.5).` };
     return { ok: false, message: `OpenAI: ${b.error?.message ?? `HTTP ${res.status}`}` };
   } catch (e) {

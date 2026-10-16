@@ -22,6 +22,7 @@ import { SUBTITLE_PRESETS } from "@/lib/editor/subtitles";
 import { questionOverlay } from "@/lib/editor/factory";
 import { uid } from "@/lib/editor/id";
 import { cn } from "@/lib/utils";
+import { MASK_VERSION } from "@/lib/render/mask-format";
 import { useStudio } from "./store";
 import { Row, Section, Seg, Select, SButton, Slider, TextField } from "./controls";
 import type { PlaybackEngine } from "./playback";
@@ -108,6 +109,9 @@ function BackgroundBlurSection({ meta }: { meta: StudioMeta }) {
   const blur = doc.clips.find((c) => (c.background?.blur ?? 0) > 0)?.background?.blur ?? 0;
   const [strength, setStrength] = useState(blur || 45);
   const masksReady = doc.clips.every((c) => !!assets[c.assetId]?.maskUrl);
+  // masks from before the edge refinement: recompute them once in the background (old one stays until then)
+  const outdated = blur > 0 && doc.clips.some((c) => assets[c.assetId]?.maskUrl && (assets[c.assetId]?.maskVersion ?? 1) < MASK_VERSION);
+  const upgrading = useRef(false);
   const setBlur = (v: number) => apply((d) => ({ ...d, clips: d.clips.map((c) => ({ ...c, background: v > 0 ? { blur: v } : undefined })) }));
 
   const enable = async () => {
@@ -139,6 +143,13 @@ function BackgroundBlurSection({ meta }: { meta: StudioMeta }) {
     }
   };
 
+  useEffect(() => {
+    if (!outdated || upgrading.current) return;
+    upgrading.current = true;
+    void enable();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [outdated]);
+
   return (
     <Section title="Tło za ekspertem">
       <Seg<"off" | "blur">
@@ -151,7 +162,7 @@ function BackgroundBlurSection({ meta }: { meta: StudioMeta }) {
       />
       {busy ? (
         <p className="flex items-center gap-1.5 text-[11.5px] text-sky-300" data-testid="blur-busy">
-          <Loader2 className="h-3.5 w-3.5 animate-spin" /> Wykrywam sylwetkę eksperta… zwykle kilkanaście sekund na minutę nagrania.
+          <Loader2 className="h-3.5 w-3.5 animate-spin" /> {outdated ? "Poprawiam krawędzie maski (nowa, dokładniejsza wersja)…" : "Wykrywam sylwetkę eksperta…"} zwykle 1–2 minuty na minutę nagrania.
         </p>
       ) : null}
       {blur > 0 ? (

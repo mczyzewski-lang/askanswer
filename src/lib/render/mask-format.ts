@@ -11,6 +11,9 @@
  *  18  offsets[count+1]  u32 — byte offsets of each compressed frame, relative to the data start
  *  ..  data
  */
+/** Bumped when the masks get better: older ones are recomputed when blur is used. */
+export const MASK_VERSION = 2;
+
 export interface MaskHeader {
   width: number;
   height: number;

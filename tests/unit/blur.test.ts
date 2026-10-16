@@ -81,3 +81,41 @@ describe("background blur", () => {
     expect(maskFrameIndex(h, 99)).toBe(1);
   });
 });
+
+describe("mask refinement and background fill", () => {
+  it("guided filter moves a blocky edge onto the real edge of the picture", async () => {
+    const { refineMask } = await import("../../src/lib/server/segment");
+    // guide (real mask size): bright person left of x=300, dark room right; the model's coarse mask
+    // (256 px wide, as from the 256×256 input) puts the edge ~5 px too far right
+    const gw = 640;
+    const gh = 40;
+    const luma = new Float32Array(gw * gh);
+    for (let y = 0; y < gh; y++) for (let x = 0; x < gw; x++) luma[y * gw + x] = x < 300 ? 0.85 : 0.15;
+    const cw = 256;
+    const ch = 16;
+    const coarse = new Float32Array(cw * ch);
+    for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) coarse[y * cw + x] = x < 122 ? 1 : 0; // edge at 305 px
+    const out = refineMask(coarse, cw, ch, luma, gw, gh);
+    const row = 20 * gw;
+    expect(out[row + 296]).toBeGreaterThan(230);
+    expect(out[row + 303]).toBeLessThan(80); // inside the coarse mask, but outside the person in the picture
+  });
+
+  it("fills the person's area in the background with the surrounding colours", async () => {
+    const { fillBehindPerson } = await import("../../src/lib/render/compositor");
+    const w = 40;
+    const h = 40;
+    const px = new Uint8ClampedArray(w * h * 4);
+    const mask = new Uint8ClampedArray(w * h * 4);
+    for (let i = 0; i < w * h; i++) {
+      const x = i % w;
+      const person = x >= 15 && x < 25;
+      px.set(person ? [0, 0, 0, 255] : [200, 50, 50, 255], i * 4);
+      mask[i * 4 + 3] = person ? 255 : 0;
+    }
+    fillBehindPerson(px, mask, w, h);
+    const at = (x: number, y: number) => px[(y * w + x) * 4];
+    expect(at(20, 20)).toBeGreaterThan(150); // the dark person no longer bleeds into the blurred room
+    expect(at(5, 20)).toBe(200); // the room itself is untouched
+  });
+});

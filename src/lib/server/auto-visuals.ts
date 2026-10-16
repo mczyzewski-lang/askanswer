@@ -16,17 +16,27 @@ import type { AiBrollItem, EditorDocument } from "../editor/types";
  */
 const MAX_AUTO = 3;
 
-export async function autoVisuals(jobId: string, compositionId: string): Promise<{ placed: number; proposed: number; skipped?: string }> {
+export interface AutoVisualsResult {
+  placed: number;
+  proposed: number;
+  skipped?: string;
+  engine?: string;
+  warnings?: string[];
+}
+
+/** `force`: run again on demand ("Osadź infografiki" in the Studio) even if it already ran. */
+export async function autoVisuals(jobId: string, compositionId: string, force = false): Promise<AutoVisualsResult> {
   const comp = await prisma.videoComposition.findUnique({ where: { id: compositionId }, include: { project: true } });
   if (!comp) return { placed: 0, proposed: 0, skipped: "no composition" };
-  if (!comp.project.autoInfographics) return { placed: 0, proposed: 0, skipped: "disabled" };
+  if (!comp.project.autoInfographics && !force) return { placed: 0, proposed: 0, skipped: "disabled" };
   const doc0 = comp.document as unknown as EditorDocument;
-  if ((doc0.meta as { autoVisuals?: string }).autoVisuals) return { placed: 0, proposed: 0, skipped: "already done" };
+  const before = doc0.meta.autoVisuals;
+  if (before && !force) return { placed: 0, proposed: 0, skipped: "already done" };
   const segments = timedSegments(doc0).map((s) => ({ t0: s.t0, t1: s.t1, text: s.words.map((w) => w.text).join(" ") }));
   if (!segments.length) return { placed: 0, proposed: 0, skipped: "no transcript" };
   const duration = docDuration(doc0);
 
-  const { suggestions } = await suggestBroll(compositionId, segments, duration);
+  const { suggestions, warning: suggestWarning } = await suggestBroll(compositionId, segments, duration, { fallback: true });
   // infographics: the AI's picks first; with none, the strongest proposal becomes one
   let infos = suggestions.filter((s) => s.kind === "infographic" && s.infographic.items.length);
   if (!infos.length && suggestions[0]?.infographic.items.length) infos = [{ ...suggestions[0], kind: "infographic" }];
@@ -54,7 +64,7 @@ export async function autoVisuals(jobId: string, compositionId: string): Promise
   for (let attempt = 0; attempt < 5; attempt++) {
     const cur = await prisma.videoComposition.findUniqueOrThrow({ where: { id: compositionId } });
     const doc = cur.document as unknown as EditorDocument;
-    if ((doc.meta as { autoVisuals?: string }).autoVisuals) return { placed: 0, proposed: 0, skipped: "already done" };
+    if (doc.meta.autoVisuals !== before) return { placed: 0, proposed: 0, skipped: "already done" };
     const total = docDuration(doc);
     const items: AiBrollItem[] = [];
     const overlays = [];
@@ -63,15 +73,18 @@ export async function autoVisuals(jobId: string, compositionId: string): Promise
       overlays.push(ov);
       items.push(toItem(p.s, model, { kind: "infographic", status: "done", overlayId: ov.id, engine, warning: p.warning }));
     }
-    for (const s of proposals) items.push(toItem(s, model, { status: "suggested", illustration: true, illustrationSource: openaiConfigured() ? "openai" : "higgsfield" }));
+    // on a re-run only new infographics; the earlier video proposals stay as they are
+    for (const s of force && before ? [] : proposals) items.push(toItem(s, model, { status: "suggested", illustration: true, illustrationSource: openaiConfigured() ? "openai" : "higgsfield" }));
     const next: EditorDocument = {
       ...doc,
       // under the question and the other layers; captions are always drawn on top
       overlays: [...overlays, ...doc.overlays],
-      meta: { ...doc.meta, aiBroll: [...(doc.meta.aiBroll ?? []), ...items], autoVisuals: "done" } as EditorDocument["meta"],
+      // a new stamp per run: an open Studio sees that something new arrived and merges it
+      meta: { ...doc.meta, aiBroll: [...(doc.meta.aiBroll ?? []), ...items], autoVisuals: before ? `r${Date.now().toString(36)}` : "done" } as EditorDocument["meta"],
     };
     const r = await prisma.videoComposition.updateMany({ where: { id: compositionId, version: cur.version }, data: { document: next as unknown as Prisma.InputJsonValue, version: { increment: 1 } } });
-    if (r.count === 1) return { placed: placed.length, proposed: proposals.length };
+    const warnings = [suggestWarning, ...placed.map((p) => p.warning)].filter((w): w is string => !!w);
+    if (r.count === 1) return { placed: placed.length, proposed: force && before ? 0 : proposals.length, engine, warnings: [...new Set(warnings)] };
     await new Promise((res) => setTimeout(res, 500));
   }
   throw new Error("Nie udało się zapisać infografik — kompozycja była w tym czasie edytowana. Spróbuj ponownie.");

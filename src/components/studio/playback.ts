@@ -7,6 +7,18 @@
  */
 import type { AssetInfo, AudioClip, EditorDocument } from "@/lib/editor/types";
 import { maskFrameIndex, maskToRgba, parseMaskHeader, type MaskHeader } from "@/lib/render/mask-format";
+
+interface MaskEntry {
+  url: string;
+  state: "loading" | "ready" | "error";
+  h?: MaskHeader;
+  buf?: Uint8Array;
+  canvas?: HTMLCanvasElement;
+  index: number;
+  decoded: Map<number, Uint8Array>;
+  inflight: Set<number>;
+  fallback?: MaskEntry;
+}
 import { clipAt, clipEnd, docDuration, overlayEnd, sortedClips } from "@/lib/editor/timeline";
 import { drawFrame, overlayVideoTime, type FrameSource } from "@/lib/render/compositor";
 import type { VideoOverlay } from "@/lib/editor/types";
@@ -26,7 +38,7 @@ export class PlaybackEngine {
   private assignment = new Map<HTMLVideoElement, string>(); // element -> clip id
   private audios = new Map<string, HTMLAudioElement>(); // per audio clip id
   private images = new Map<string, HTMLImageElement>();
-  private masks = new Map<string, { url: string; state: "loading" | "ready" | "error"; h?: MaskHeader; frames?: Uint8Array; canvas?: HTMLCanvasElement; index: number }>();
+  private masks = new Map<string, MaskEntry>();
   private scratchCanvases = new Map<string, HTMLCanvasElement>();
   private overlayVideos = new Map<string, HTMLVideoElement>(); // per video overlay id
   private raf = 0;
@@ -142,47 +154,70 @@ export class PlaybackEngine {
     return img.complete && img.naturalWidth ? img : null;
   }
 
-  /** Person mask (background blur) at a source time; loads and decodes the whole AMSK file once. */
+  /**
+   * Person mask (background blur) at a source time. The compressed AMSK file is loaded once; frames
+   * are inflated on demand a little ahead of the playhead (a full-resolution mask of a long recording
+   * would not fit in memory decoded), keeping a small window of decoded frames.
+   */
   private mask(assetId: string, sourceTime: number): FrameSource | null {
     const a = this.assets[assetId];
     if (!a?.maskUrl) return null;
     let m = this.masks.get(assetId);
-    if (!m || (m.state === "error" && m.url !== a.maskUrl)) {
-      m = { url: a.maskUrl, state: "loading", index: -1 };
+    if (!m || m.url !== a.maskUrl) {
+      const entry: MaskEntry = { url: a.maskUrl, state: "loading", index: -1, decoded: new Map(), inflight: new Set() };
+      // keep showing the previous mask while a better one loads
+      if (m?.state === "ready") Object.assign(entry, { fallback: m });
+      m = entry;
       this.masks.set(assetId, m);
-      const entry = m;
       void (async () => {
         try {
           const buf = new Uint8Array(await (await fetch(entry.url)).arrayBuffer());
           const h = parseMaskHeader(buf);
-          const size = h.width * h.height;
-          const frames = new Uint8Array(size * h.count);
-          for (let i = 0; i < h.count; i++) {
-            const part = buf.subarray(h.dataStart + h.offsets[i], h.dataStart + h.offsets[i + 1]);
-            const raw = new Uint8Array(await new Response(new Blob([part]).stream().pipeThrough(new DecompressionStream("deflate-raw"))).arrayBuffer());
-            frames.set(raw.subarray(0, size), i * size);
-          }
           const canvas = document.createElement("canvas");
           canvas.width = h.width;
           canvas.height = h.height;
-          Object.assign(entry, { h, frames, canvas, state: "ready" });
+          Object.assign(entry, { h, buf, canvas, state: "ready", fallback: undefined });
           this.invalidate();
         } catch {
           entry.state = "error";
         }
       })();
     }
-    if (m.state !== "ready" || !m.h || !m.frames || !m.canvas) return null;
-    const i = maskFrameIndex(m.h, sourceTime);
-    if (i !== m.index) {
-      const size = m.h.width * m.h.height;
+    if (m.state !== "ready" && m.fallback) m = m.fallback;
+    if (m.state !== "ready" || !m.h || !m.buf || !m.canvas) return null;
+    const h = m.h;
+    const i = maskFrameIndex(h, sourceTime);
+    for (let k = 0; k < 12; k++) this.inflateMask(m, Math.min(h.count - 1, i + k));
+    // exact frame, else the nearest decoded one before it (only while it is being inflated)
+    let use = i;
+    while (use >= 0 && !m.decoded.has(use) && i - use < 6) use--;
+    const gray = use >= 0 ? m.decoded.get(use) : undefined;
+    if (!gray) return m.index >= 0 ? { image: m.canvas, width: h.width, height: h.height } : null;
+    if (use !== m.index) {
       const ctx = m.canvas.getContext("2d")!;
-      const img = ctx.createImageData(m.h.width, m.h.height);
-      maskToRgba(m.frames.subarray(i * size, (i + 1) * size), img.data);
+      const img = ctx.createImageData(h.width, h.height);
+      maskToRgba(gray, img.data);
       ctx.putImageData(img, 0, 0);
-      m.index = i;
+      m.index = use;
     }
-    return { image: m.canvas, width: m.h.width, height: m.h.height };
+    // drop frames well behind the playhead
+    for (const k of m.decoded.keys()) if (k < i - 8 || k > i + 40) m.decoded.delete(k);
+    return { image: m.canvas, width: h.width, height: h.height };
+  }
+
+  private inflateMask(m: MaskEntry, i: number) {
+    if (!m.h || !m.buf || m.decoded.has(i) || m.inflight.has(i)) return;
+    m.inflight.add(i);
+    const size = m.h.width * m.h.height;
+    const part = m.buf.subarray(m.h.dataStart + m.h.offsets[i], m.h.dataStart + m.h.offsets[i + 1]);
+    void new Response(new Blob([part as BlobPart]).stream().pipeThrough(new DecompressionStream("deflate-raw")))
+      .arrayBuffer()
+      .then((ab) => {
+        m.decoded.set(i, new Uint8Array(ab).subarray(0, size));
+        if (i === m.index + 1 || m.index < 0 || !this.isPlaying()) this.invalidate();
+      })
+      .catch(() => {})
+      .finally(() => m.inflight.delete(i));
   }
 
   private scratch(key: string, w: number, h: number) {

@@ -141,7 +141,7 @@ function composeImage(style: string | null, scene: string) {
 }
 
 async function suggestWithClaude(question: string, segments: SpokenSegment[], theme: ThemeTokens, duration: number, style: string | null): Promise<RawSuggestion[]> {
-  const client = new Anthropic();
+  const client = new Anthropic(env.anthropicKey ? { apiKey: env.anthropicKey } : {});
   const response = await client.beta.messages.parse({
     model: env.claudeModel,
     max_tokens: 16000,
@@ -202,15 +202,23 @@ async function styleFor(comp: { questionId: string | null; project: { theme: { b
   return raw?.trim() ? fillStyle(raw.trim(), theme) : null;
 }
 
-export async function suggestBroll(compositionId: string, segments: SpokenSegment[], duration: number) {
+export async function suggestBroll(compositionId: string, segments: SpokenSegment[], duration: number, opts: { fallback?: boolean } = {}) {
   const comp = await prisma.videoComposition.findUniqueOrThrow({ where: { id: compositionId }, include: { project: { include: { theme: true } }, question: true } });
   const doc = comp.document as unknown as { theme: ThemeTokens; meta?: { questionText?: string } };
   const theme = comp.project.theme ? themeFromRow(comp.project.theme) : doc.theme;
   if (!segments.length) throw new Error("Brak transkrypcji — najpierw wygeneruj napisy, żeby AI wiedziało, o czym mówi ekspert.");
   const question = comp.question?.text ?? doc.meta?.questionText ?? "";
   const style = await styleFor(comp, theme);
-  const raw = env.anthropicConfigured ? await suggestWithClaude(question, segments, theme, duration, style) : suggestHeuristic(segments, theme, duration, style);
-  return { suggestions: sanitize(raw, duration), engine: env.anthropicConfigured ? "claude" : "basic", styled: !!style };
+  if (env.anthropicConfigured) {
+    try {
+      return { suggestions: sanitize(await suggestWithClaude(question, segments, theme, duration, style), duration), engine: "claude", styled: !!style, warning: null as string | null };
+    } catch (e) {
+      // automatic run: a Claude problem (key, quota) must not stop the infographics
+      if (!opts.fallback) throw e;
+      return { suggestions: sanitize(suggestHeuristic(segments, theme, duration, style), duration), engine: "basic", styled: !!style, warning: `Claude: ${(e as Error).message}` };
+    }
+  }
+  return { suggestions: sanitize(suggestHeuristic(segments, theme, duration, style), duration), engine: "basic", styled: !!style, warning: null as string | null };
 }
 
 /**

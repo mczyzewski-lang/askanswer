@@ -5,6 +5,18 @@ function str(name: string, def = ""): string {
   return v === undefined || v === "" ? def : v;
 }
 
+/**
+ * API keys as pasted into Railway: tolerate a copied `NAME=` prefix, surrounding quotes,
+ * "Bearer " and stray spaces/new lines (a key never contains any of these).
+ */
+export function cleanSecret(raw: string, name = ""): string {
+  let v = raw.trim();
+  if (name && v.toUpperCase().startsWith(`${name.toUpperCase()}=`)) v = v.slice(name.length + 1).trim();
+  v = v.replace(/^["'`]+|["'`;]+$/g, "").trim();
+  v = v.replace(/^(Bearer|Key)\s+/i, "");
+  return v.replace(/\s+/g, "");
+}
+
 export const env = {
   get databaseUrl() {
     return str("DATABASE_URL");
@@ -21,7 +33,7 @@ export const env = {
     return s;
   },
   get elevenLabsKey() {
-    return str("ELEVENLABS_API_KEY");
+    return cleanSecret(str("ELEVENLABS_API_KEY"), "ELEVENLABS_API_KEY");
   },
   get elevenLabsBaseUrl() {
     return str("ELEVENLABS_BASE_URL", "https://api.elevenlabs.io").replace(/\/$/, "");
@@ -55,7 +67,7 @@ export const env = {
     return str("HIGGSFIELD_MODEL", "kling-video/v3.0/pro/text-to-video");
   },
   get openaiKey() {
-    return str("OPENAI_API_KEY").trim().replace(/^["']|["']$/g, "");
+    return cleanSecret(str("OPENAI_API_KEY"), "OPENAI_API_KEY");
   },
   get openaiBaseUrl() {
     return str("OPENAI_BASE_URL", "https://api.openai.com/v1").replace(/\/$/, "");
@@ -63,8 +75,11 @@ export const env = {
   get openaiImageModel() {
     return str("OPENAI_IMAGE_MODEL", "gpt-image-2");
   },
+  get anthropicKey() {
+    return cleanSecret(str("ANTHROPIC_API_KEY"), "ANTHROPIC_API_KEY");
+  },
   get anthropicConfigured() {
-    return Boolean(str("ANTHROPIC_API_KEY") || str("ANTHROPIC_AUTH_TOKEN"));
+    return Boolean(this.anthropicKey || str("ANTHROPIC_AUTH_TOKEN"));
   },
   get claudeModel() {
     return str("CLAUDE_MODEL", "claude-opus-5-5");

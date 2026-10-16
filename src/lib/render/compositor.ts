@@ -579,6 +579,61 @@ function boxBlur(px: Uint8ClampedArray, w: number, h: number, r: number) {
 }
 
 /**
+ * Replace pixels covered by the person (mask alpha, slightly grown) with a weighted average of the
+ * nearby background: blur(colour·w) / blur(w) with w = 1 − person. Far inside the person (no
+ * background in reach) the original colour stays — it is hidden under the sharp person anyway.
+ */
+export function fillBehindPerson(px: Uint8ClampedArray, maskPx: Uint8ClampedArray, w: number, h: number) {
+  const N = w * h;
+  const wt = new Float32Array(N);
+  const acc = new Float32Array(N * 3);
+  for (let i = 0; i < N; i++) {
+    const person = Math.min(1, (maskPx[i * 4 + 3] / 255) * 1.6);
+    const k = (1 - person) ** 2;
+    wt[i] = k;
+    acc[i * 3] = px[i * 4] * k;
+    acc[i * 3 + 1] = px[i * 4 + 1] * k;
+    acc[i * 3 + 2] = px[i * 4 + 2] * k;
+  }
+  const rad = Math.max(2, Math.round(Math.max(w, h) / 14));
+  for (let pass = 0; pass < 3; pass++) {
+    floatBoxBlur(wt, w, h, 1, rad);
+    floatBoxBlur(acc, w, h, 3, rad);
+  }
+  for (let i = 0; i < N; i++) {
+    const person = maskPx[i * 4 + 3] / 255;
+    if (person < 0.02 || wt[i] < 1e-3) continue;
+    // fully filled where the person is, faded in over the soft edge
+    const t = Math.min(1, person * 1.6) * Math.min(1, wt[i] / 0.05);
+    for (let c = 0; c < 3; c++) px[i * 4 + c] = px[i * 4 + c] * (1 - t) + (acc[i * 3 + c] / wt[i]) * t;
+  }
+}
+
+/** Separable running-sum box blur of an interleaved float image (ch channels), edges clamped. */
+function floatBoxBlur(a: Float32Array, w: number, h: number, ch: number, r: number) {
+  const tmp = new Float32Array(a.length);
+  const n = 2 * r + 1;
+  for (let y = 0; y < h; y++)
+    for (let c = 0; c < ch; c++) {
+      let s = 0;
+      for (let k = -r; k <= r; k++) s += a[(y * w + Math.min(w - 1, Math.max(0, k))) * ch + c];
+      for (let x = 0; x < w; x++) {
+        tmp[(y * w + x) * ch + c] = s / n;
+        s += a[(y * w + Math.min(w - 1, x + r + 1)) * ch + c] - a[(y * w + Math.max(0, x - r)) * ch + c];
+      }
+    }
+  for (let x = 0; x < w; x++)
+    for (let c = 0; c < ch; c++) {
+      let s = 0;
+      for (let k = -r; k <= r; k++) s += tmp[(Math.min(h - 1, Math.max(0, k)) * w + x) * ch + c];
+      for (let y = 0; y < h; y++) {
+        a[(y * w + x) * ch + c] = s / n;
+        s += tmp[(Math.min(h - 1, y + r + 1) * w + x) * ch + c] - tmp[(Math.max(0, y - r) * w + x) * ch + c];
+      }
+    }
+}
+
+/**
  * Background blur behind the expert: the frame is blurred (down- and up-sampling, identical in the
  * browser and in the export), then the sharp person is drawn on top through the segmentation mask.
  * `blur` 1..100 = strength.
@@ -602,8 +657,15 @@ function drawWithBlurredBackground(ctx: Ctx, doc: EditorDocument, frame: FrameSo
   mid.ctx.drawImage(frame.image, (r.x * midW) / W, (r.y * midH) / H, (r.w * midW) / W, (r.h * midH) / H);
   sm.ctx.clearRect(0, 0, smW, smH);
   sm.ctx.drawImage(mid.canvas, 0, 0, smW, smH);
-  // smooth the tiny image (box blur ×2 ≈ gaussian) so the upscale has no blocky edges
+  // the person's own colours are removed from the background first and the hole is filled from the
+  // surrounding room (normalised blur), so no blurred "ghost" of the expert glows around the edges
   const img = sm.ctx.getImageData(0, 0, smW, smH);
+  const ms = scratch("blur-msk", smW, smH);
+  ms.ctx.imageSmoothingEnabled = true;
+  ms.ctx.clearRect(0, 0, smW, smH);
+  ms.ctx.drawImage(mask.image, (r.x * smW) / W, (r.y * smH) / H, (r.w * smW) / W, (r.h * smH) / H);
+  fillBehindPerson(img.data, ms.ctx.getImageData(0, 0, smW, smH).data, smW, smH);
+  // smooth the tiny image (box blur ×2 ≈ gaussian) so the upscale has no blocky edges
   boxBlur(img.data, smW, smH, 2);
   boxBlur(img.data, smW, smH, 2);
   sm.ctx.putImageData(img, 0, 0);

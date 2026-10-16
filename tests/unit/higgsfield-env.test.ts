@@ -27,3 +27,14 @@ describe("Higgsfield credentials from Railway variables", () => {
     expect(higgsfieldConfigured()).toBe(false);
   });
 });
+
+describe("API keys pasted into Railway", () => {
+  it("strips quotes, a copied NAME= prefix, Bearer and whitespace", async () => {
+    const { cleanSecret } = await import("../../src/lib/server/env");
+    expect(cleanSecret('"sk-proj-abc123"', "OPENAI_API_KEY")).toBe("sk-proj-abc123");
+    expect(cleanSecret('OPENAI_API_KEY="sk-proj-abc123"', "OPENAI_API_KEY")).toBe("sk-proj-abc123");
+    expect(cleanSecret("  'sk-proj-abc\n123' ", "OPENAI_API_KEY")).toBe("sk-proj-abc123");
+    expect(cleanSecret("Bearer sk-ant-xyz", "ANTHROPIC_API_KEY")).toBe("sk-ant-xyz");
+    expect(cleanSecret('""', "OPENAI_API_KEY")).toBe("");
+  });
+});
