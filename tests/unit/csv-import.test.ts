@@ -5,8 +5,8 @@ describe("CSV import — Prompter", () => {
   it("reads Kategoria;Podkategoria;Hook;Treść with a multi-line quoted Treść", () => {
     const csv = 'Kategoria;Podkategoria;Hook;Treść\r\nGrowth;sprzedaż;3 błędy, które kosztują Cię klientów;"Pierwszy błąd…\r\nDrugi błąd…"\r\nGrowth;;Dlaczego reklamy nie działają?;Bo komunikat.\r\n';
     expect(parseImportCsv(csv, true)).toEqual([
-      { text: "3 błędy, które kosztują Cię klientów", script: "Pierwszy błąd…\nDrugi błąd…", categoryName: "Growth", subcategoryName: "sprzedaż", instructions: null, maxDurationSec: null },
-      { text: "Dlaczego reklamy nie działają?", script: "Bo komunikat.", categoryName: "Growth", subcategoryName: undefined, instructions: null, maxDurationSec: null },
+      { text: "3 błędy, które kosztują Cię klientów", script: "Pierwszy błąd…\nDrugi błąd…", categoryName: "Growth", subcategoryName: "sprzedaż", instructions: null, expertName: undefined, maxDurationSec: null },
+      { text: "Dlaczego reklamy nie działają?", script: "Bo komunikat.", categoryName: "Growth", subcategoryName: undefined, instructions: null, expertName: undefined, maxDurationSec: null },
     ]);
   });
 

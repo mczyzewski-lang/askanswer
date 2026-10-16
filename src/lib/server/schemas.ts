@@ -11,6 +11,8 @@ export const QuestionInput = z.object({
   script: z.string().trim().max(8000).nullable().optional(),
   maxDurationSec: z.number().int().min(5).max(1800).nullable().optional(),
   expertId: z.string().nullable().optional(),
+  /** CSV "Ekspert" column: matched by name to an existing expert */
+  expertName: z.string().trim().max(120).optional(),
   status: z.enum(["TO_RECORD", "IN_PROGRESS", "RECORDED", "NEEDS_FIX", "APPROVED"]).optional(),
 });
 

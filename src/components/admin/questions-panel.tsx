@@ -201,6 +201,8 @@ export function QuestionsPanel({ data, refresh, toast }: PanelProps) {
         </div>
       </div>
 
+      <UnassignedBanner data={data} refresh={refresh} toast={toast} />
+
       <div className="mt-5">
         {visible.length === 0 ? (
           <EmptyState title={T.prompter ? "Brak skryptów" : "Brak pytań"}>{T.prompter ? "Dodaj skrypty (Hook + Treść) ręcznie, wklej je blokami lub zaimportuj plik CSV." : "Dodaj pytania ręcznie, wklej listę lub zaimportuj plik CSV."}</EmptyState>
@@ -229,6 +231,44 @@ export function QuestionsPanel({ data, refresh, toast }: PanelProps) {
           ) : null}
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+/** Items without an expert are on nobody's recording link — say so and offer a one-click assignment. */
+function UnassignedBanner({ data, refresh, toast }: PanelProps) {
+  const T = terms(data.project.format);
+  const unassigned = data.questions.filter((q) => !q.expertId).length;
+  const [busy, setBusy] = useState(false);
+  if (!unassigned) return null;
+  const members = data.experts.filter((e) => data.projectExpertIds.includes(e.id));
+  const assign = async (expertId: string, name: string) => {
+    setBusy(true);
+    try {
+      const r = await api<{ assigned: number }>(`/api/admin/projects/${data.project.id}/experts/${expertId}`, { method: "POST", json: { scope: "unassigned" } });
+      toast(`Przypisano ${r.assigned} ${plural(r.assigned, T.one, T.few, T.many)} do: ${name}`);
+      refresh();
+    } catch (err) {
+      toast((err as Error).message, "err");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="mt-4 flex flex-wrap items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900" data-testid="unassigned-banner">
+      <AlertCircle className="h-4 w-4 shrink-0" />
+      <span className="min-w-0 flex-1">
+        <b>
+          {unassigned} {plural(unassigned, T.one, T.few, T.many)} bez eksperta
+        </b>{" "}
+        — nie {unassigned === 1 ? "pojawi się" : "pojawią się"} w żadnym linku do nagrywania.
+        {members.length === 0 ? " Dodaj eksperta w Ustawienia → Eksperci projektu." : ""}
+      </span>
+      {members.map((e) => (
+        <Button key={e.id} size="sm" variant="outline" disabled={busy} onClick={() => assign(e.id, e.name)}>
+          Przypisz do: {e.name}
+        </Button>
+      ))}
     </div>
   );
 }

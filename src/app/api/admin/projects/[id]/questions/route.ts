@@ -11,6 +11,14 @@ export const POST = route(async (req: Request, ctx: { params: Promise<{ id: stri
   const { id: projectId } = await ctx.params;
   const raw = await req.json();
   const items = z.array(QuestionInput).min(1).max(500).parse(Array.isArray(raw?.items) ? raw.items : [raw]);
+  // who gets items that name no expert: the category's default expert, else the project's only expert
+  const members = await prisma.projectExpert.findMany({ where: { projectId }, select: { expertId: true } });
+  const soleMember = members.length === 1 ? members[0].expertId : null;
+  const names = [...new Set(items.map((i) => i.expertName?.toLowerCase()).filter(Boolean))] as string[];
+  const byName = new Map<string, string>();
+  if (names.length) {
+    for (const e of await prisma.expert.findMany({ select: { id: true, name: true } })) if (names.includes(e.name.trim().toLowerCase())) byName.set(e.name.trim().toLowerCase(), e.id);
+  }
   const created = await prisma.$transaction(async (tx) => {
     const max = await tx.question.aggregate({ where: { projectId }, _max: { order: true } });
     let order = (max._max.order ?? -1) + 1;
@@ -49,7 +57,7 @@ export const POST = route(async (req: Request, ctx: { params: Promise<{ id: stri
       }
       out.push(
         await tx.question.create({
-          data: { projectId, text: it.text, script: it.script ?? null, categoryId, subcategoryId, instructions: it.instructions ?? null, maxDurationSec: it.maxDurationSec ?? null, expertId: it.expertId ?? defaultExpertId, order: order++ },
+          data: { projectId, text: it.text, script: it.script ?? null, categoryId, subcategoryId, instructions: it.instructions ?? null, maxDurationSec: it.maxDurationSec ?? null, expertId: it.expertId ?? (it.expertName ? byName.get(it.expertName.toLowerCase()) : undefined) ?? defaultExpertId ?? soleMember, order: order++ },
         }),
       );
     }

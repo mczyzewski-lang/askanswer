@@ -136,6 +136,24 @@ test("Prompter CSV import: Kategoria;Podkategoria;Hook;Treść (Excel Windows-12
     const s = d.questions.find((q: { text: string }) => q.text.startsWith("3 błędy"));
     expect(s.script).toBe("Pierwszy błąd.\nDrugi błąd.");
     expect(s).toMatchObject({ categoryName: "Growth", subcategoryName: "sprzedaż" });
+
+    // nobody assigned yet → visible warning; then one click assigns them to the project's expert
+    await expect(page.getByTestId("unassigned-banner")).toContainText("2 skrypty bez eksperta");
+    const ex = (await (await request.post(`/api/admin/projects/${project.id}/experts`, { data: { name: "Ekspert CSV" } })).json()).expert;
+    await page.reload();
+    await page.getByRole("button", { name: "Przypisz do: Ekspert CSV" }).click();
+    await expect(page.getByTestId("unassigned-banner")).toHaveCount(0);
+
+    // with a single project expert, new imports are assigned to them automatically
+    const more = Buffer.from("Hook;Treść\nTrzeci hook do nagrania;Krótka treść.\n");
+    await page.locator('input[type="file"][accept*="csv"]').setInputFiles({ name: "wiecej.csv", mimeType: "text/csv", buffer: more });
+    await expect(page.getByText("Zaimportowano 1 skrypt")).toBeVisible();
+    await expect(page.getByTestId("unassigned-banner")).toHaveCount(0);
+
+    // and the expert's recording link lists all three scripts
+    const { token } = await newInvitation(request, project.id, ex.id);
+    const session = await (await request.get(`/api/record/${token}`)).json();
+    expect(session.questions).toHaveLength(3);
   } finally {
     await request.delete(`/api/admin/projects/${project.id}`);
   }

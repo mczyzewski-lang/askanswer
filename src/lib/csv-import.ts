@@ -7,6 +7,8 @@ import Papa from "papaparse";
  *   Kategoria;Podkategoria;Hook;Treść
  *   Growth;sprzedaż;3 błędy, które kosztują Cię klientów;"Pierwszy błąd…
  *   Drugi błąd…"
+ * Optional column "Ekspert" (name as in Eksperci) assigns the row; without it the category's default
+ * expert or the project's only expert is used.
  * Multi-line Treść must be in quotes (Excel does it for Alt+Enter line breaks).
  * UTF-8 (with or without BOM) and Windows-1250 (Polish Excel "CSV") are both read correctly.
  */
@@ -16,6 +18,7 @@ export interface ImportRow {
   categoryName?: string;
   subcategoryName?: string;
   instructions?: string | null;
+  expertName?: string;
   maxDurationSec?: number | null;
 }
 
@@ -54,6 +57,7 @@ export function parseImportCsv(text: string, prompter: boolean): ImportRow[] {
         categoryName: get("kategoria", "category") || undefined,
         subcategoryName: get("podkategoria", "temat", "subcategory") || undefined,
         instructions: get("instrukcje", "instructions", "wskazówki") || null,
+        expertName: get("ekspert", "expert") || undefined,
         maxDurationSec: Number.isFinite(max) && max > 0 ? Math.round(max) : null,
       };
     })
@@ -64,14 +68,14 @@ export function parseImportCsv(text: string, prompter: boolean): ImportRow[] {
 export function csvTemplate(prompter: boolean): string {
   const rows = prompter
     ? [
-        ["Kategoria", "Podkategoria", "Hook", "Treść"],
-        ["Growth", "sprzedaż", "3 błędy, które kosztują Cię klientów", "Pierwszy błąd to brak odpowiedzi w ciągu 24 godzin.\nDrugi błąd to oferta bez konkretnej ceny.\nTrzeci błąd to brak follow-upu po spotkaniu."],
-        ["Growth", "", "Dlaczego Twoje reklamy nie działają?", "Najczęściej problemem nie jest budżet, tylko komunikat."],
+        ["Kategoria", "Podkategoria", "Hook", "Treść", "Ekspert"],
+        ["Growth", "sprzedaż", "3 błędy, które kosztują Cię klientów", "Pierwszy błąd to brak odpowiedzi w ciągu 24 godzin.\nDrugi błąd to oferta bez konkretnej ceny.\nTrzeci błąd to brak follow-upu po spotkaniu.", ""],
+        ["Growth", "", "Dlaczego Twoje reklamy nie działają?", "Najczęściej problemem nie jest budżet, tylko komunikat.", ""],
       ]
     : [
-        ["Kategoria", "Podkategoria", "Pytanie", "Instrukcje", "Czas"],
-        ["Rozwody", "dzieci", "Kto decyduje o opiece nad dzieckiem?", "Odpowiedz w 3–4 zdaniach", "60"],
-        ["Rozwody", "", "Ile trwa sprawa rozwodowa?", "", ""],
+        ["Kategoria", "Podkategoria", "Pytanie", "Instrukcje", "Czas", "Ekspert"],
+        ["Rozwody", "dzieci", "Kto decyduje o opiece nad dzieckiem?", "Odpowiedz w 3–4 zdaniach", "60", ""],
+        ["Rozwody", "", "Ile trwa sprawa rozwodowa?", "", "", ""],
       ];
   return "﻿" + Papa.unparse(rows, { delimiter: ";", newline: "\r\n", quotes: true });
 }

@@ -23,9 +23,10 @@ test("prompter: script scrolls with the expert's voice, recording is saved", asy
   expect(before.projectExpertIds).toContain(expert.id);
 
   const q = await (await request.post(`/api/admin/projects/${project.id}/questions`, { data: { text: HOOK, script: SCRIPT } })).json();
-  // "Przypisz bez eksperta" from the settings card
+  // the project's only expert gets new scripts automatically (nothing left for "Przypisz bez eksperta")
+  expect(q.items[0].expertId).toBe(expert.id);
   const assigned = await (await request.post(`/api/admin/projects/${project.id}/experts/${expert.id}`, { data: { scope: "unassigned" } })).json();
-  expect(assigned.assigned).toBe(1);
+  expect(assigned.assigned).toBe(0);
 
   const { url, token } = await newInvitation(request, project.id, expert.id);
   const session = await (await request.get(`/api/record/${token}`)).json();
