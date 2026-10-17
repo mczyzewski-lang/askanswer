@@ -197,6 +197,17 @@ test("hybrid project: mixed CSV (typ;kategoria;podkategoria;tytuł wideo;treść
   const d = await (await request.get(`/api/admin/projects/${project.id}`)).json();
   const qp = d.questions.find((x: { text: string }) => x.text === "Jak podnieść ceny?");
   expect(qp).toMatchObject({ kind: "QUESTION_PROMPTER", script: "Zacznij od nowych klientów.", subcategoryName: "ceny" });
+
+  // re-importing the corrected file (with the narrator's question) updates the items, no duplicates
+  const csv2 = "typ;kategoria;podkategoria;tytuł wideo;pytanie (lektor);treść\npytaniazprompterem;Growth;ceny;Jak podnieść ceny?;\"Chcę podnieść ceny, jak to zrobić?\";Zacznij od nowych klientów.\n";
+  await page.locator('input[type="file"][accept=".csv,text/csv"]').setInputFiles({ name: "hybryda2.csv", mimeType: "text/csv", buffer: Buffer.from(csv2, "utf-8") });
+  await expect(page.getByText(/zaktualizowano 1 istniejących/)).toBeVisible();
+  await expect(badges).toHaveCount(3);
+  const d2 = await (await request.get(`/api/admin/projects/${project.id}`)).json();
+  expect(d2.questions.find((x: { text: string }) => x.text === "Jak podnieść ceny?").spokenText).toBe("Chcę podnieść ceny, jak to zrobić?");
+  await page.getByRole("button", { name: "Więcej" }).nth(2).click();
+  await page.getByRole("menuitem", { name: "Edytuj" }).click();
+  await expect(page.locator("#qspoken")).toHaveValue("Chcę podnieść ceny, jak to zrobić?");
 });
 
 test("bulk actions: select several (shift = range), change status, delete", async ({ page, request }) => {

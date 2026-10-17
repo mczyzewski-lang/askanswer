@@ -192,9 +192,10 @@ export function QuestionsPanel({ data, refresh, toast }: PanelProps) {
       return;
     }
     try {
-      const r = await api<{ created: number }>(`/api/admin/projects/${data.project.id}/questions`, { method: "POST", json: { items: rows } });
+      // a re-imported file updates the items it already contains (by title) instead of duplicating them
+      const r = await api<{ created: number; updated: number }>(`/api/admin/projects/${data.project.id}/questions`, { method: "POST", json: { items: rows, upsert: true } });
       const kinds = new Set(rows.map((x) => x.kind).filter(Boolean));
-      toast(`Zaimportowano ${r.created} ${plural(r.created, T.one, T.few, T.many)}${kinds.size > 1 && !T.hybrid ? " — plik miesza typy: ustaw format projektu „Hybryda” w Ustawieniach" : ""}`);
+      toast(`Zaimportowano ${r.created} ${plural(r.created, T.one, T.few, T.many)}${r.updated ? `, zaktualizowano ${r.updated} istniejących` : ""}${kinds.size > 1 && !T.hybrid ? " — plik miesza typy: ustaw format projektu „Hybryda” w Ustawieniach" : ""}`);
       refresh();
     } catch (err) {
       toast((err as Error).message, "err");
