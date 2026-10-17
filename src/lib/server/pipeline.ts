@@ -27,6 +27,8 @@ async function step(takeId: string, name: string) {
 interface Markers {
   narrationStart?: number | null;
   narrationEnd?: number | null;
+  /** front camera: flip horizontally, so the video is what the expert saw in the mirrored preview */
+  mirrored?: boolean;
 }
 
 export async function processTake(takeId: string): Promise<void> {
@@ -54,7 +56,7 @@ export async function processTake(takeId: string): Promise<void> {
     if (!normalizedId) {
       await step(takeId, "Normalizacja wideo");
       const out = path.join(work, "normalized.mp4");
-      await normalizeRecording(src.path, out, undefined, duration);
+      await normalizeRecording(src.path, out, undefined, duration, !!(take.markers as Markers | null)?.mirrored);
       const n = await probe(out);
       const key = `projects/${take.recording.projectId}/takes/${takeId}/normalized.mp4`;
       const size = await putFile(key, out, "video/mp4");

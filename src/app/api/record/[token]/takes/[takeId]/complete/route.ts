@@ -16,7 +16,7 @@ export const runtime = "nodejs";
 const Body = z.object({
   totalChunks: z.number().int().min(1).max(10_000),
   durationSec: z.number().optional(),
-  markers: z.object({ narrationStart: z.number().nullable().optional(), narrationEnd: z.number().nullable().optional() }).optional(),
+  markers: z.object({ narrationStart: z.number().nullable().optional(), narrationEnd: z.number().nullable().optional(), mirrored: z.boolean().optional() }).optional(),
 });
 
 function sniff(head: Buffer): "webm" | "mp4" | null {

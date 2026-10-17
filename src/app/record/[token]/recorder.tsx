@@ -647,7 +647,8 @@ function RecordScreen(props: {
       mimeType: mime,
       mode: modeRef.current,
       narrationAssetId: narration?.assetId ?? null,
-      markers: markers.current,
+      // front camera: saved mirrored, exactly as the expert sees themselves in the preview
+      markers: { ...markers.current, mirrored: props.mirrored },
       durationSec: 0,
       createdAt: Date.now(),
     });
@@ -674,7 +675,7 @@ function RecordScreen(props: {
         mimeType: mime,
         mode: modeRef.current,
         narrationAssetId: narration?.assetId ?? null,
-        markers: { ...markers.current },
+        markers: { ...markers.current, mirrored: props.mirrored },
         durationSec: duration,
         blob,
         createdAt: Date.now(),
@@ -1129,7 +1130,7 @@ function CameraView({ stream, mirrored, fit = "contain" }: { stream: MediaStream
     if (v.srcObject !== stream) v.srcObject = stream;
     if (stream) void v.play().catch(() => {});
   }, [stream]);
-  // preview is mirrored like a mirror for the front camera; the recording itself is not mirrored
+  // preview is mirrored like a mirror for the front camera; the server saves that recording mirrored too
   return <video ref={ref} className={cn("absolute inset-0 h-full w-full bg-black", fit === "cover" ? "object-cover" : "object-contain", mirrored && "-scale-x-100")} muted playsInline autoPlay />;
 }
 
@@ -1138,9 +1139,10 @@ function CameraView({ stream, mirrored, fit = "contain" }: { stream: MediaStream
  * (TikTok / Reels buttons) and the lower part (captions, description) stay free on the video.
  */
 function FaceGuide({ mirrored }: { mirrored: boolean }) {
-  // the front-camera preview is a mirror, the recording is not: on screen the guide is mirrored
-  // too, so that in the finished video the face ends up slightly left of centre
-  const cx = mirrored ? 90 - 38 : 38;
+  // front-camera recordings are saved mirrored (as seen in the preview), so the guide on the left
+  // means the face is on the left in the finished video too
+  void mirrored;
+  const cx = 38;
   return (
     <svg className="pointer-events-none absolute inset-0 h-full w-full" viewBox="0 0 90 160" preserveAspectRatio="xMidYMid slice" aria-hidden data-testid="face-guide" data-cx={cx}>
       <defs>
@@ -1151,7 +1153,7 @@ function FaceGuide({ mirrored }: { mirrored: boolean }) {
       </defs>
       <rect width="90" height="160" fill="rgba(0,0,0,.35)" mask="url(#face)" />
       <ellipse cx={cx} cy="54" rx="20" ry="27" fill="none" stroke="white" strokeOpacity=".8" strokeWidth=".5" strokeDasharray="2 1.5" />
-      <line x1={mirrored ? 18 : 6} y1="28" x2={mirrored ? 84 : 72} y2="28" stroke="white" strokeOpacity=".25" strokeWidth=".25" />
+      <line x1="6" y1="28" x2="72" y2="28" stroke="white" strokeOpacity=".25" strokeWidth=".25" />
     </svg>
   );
 }

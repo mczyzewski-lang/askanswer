@@ -105,7 +105,7 @@ export async function decodeDuration(file: string): Promise<number> {
  * 30 fps, rotation applied, max 1080×1920, keyframe every second (fast, accurate seeking).
  * The original upload is kept untouched next to it.
  */
-export async function normalizeRecording(input: string, output: string, onProgress?: (p: number) => void, duration = 0): Promise<void> {
+export async function normalizeRecording(input: string, output: string, onProgress?: (p: number) => void, duration = 0, mirror = false): Promise<void> {
   await run(
     env.ffmpeg,
     [
@@ -118,7 +118,7 @@ export async function normalizeRecording(input: string, output: string, onProgre
       "-map",
       "0:a:0?",
       "-vf",
-      "scale='if(gt(iw,ih),min(1920,iw),min(1080,iw))':-2:flags=lanczos,fps=30,format=yuv420p",
+      `${mirror ? "hflip," : ""}scale='if(gt(iw,ih),min(1920,iw),min(1080,iw))':-2:flags=lanczos,fps=30,format=yuv420p`,
       "-c:v",
       "libx264",
       "-preset",

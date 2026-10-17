@@ -13,7 +13,7 @@ export interface PendingTake {
   mimeType: string;
   mode: "CONTINUOUS" | "ANSWER_ONLY";
   narrationAssetId: string | null;
-  markers: { narrationStart: number | null; narrationEnd: number | null };
+  markers: { narrationStart: number | null; narrationEnd: number | null; mirrored?: boolean };
   durationSec: number;
   blob: Blob;
   createdAt: number;

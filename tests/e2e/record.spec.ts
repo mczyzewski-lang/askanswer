@@ -93,6 +93,8 @@ test("expert records answers on a phone via the invitation link", async ({ page,
     // narration stored as its own asset, not recorded through the microphone
     expect(t.assets.some((a: { kind: string }) => a.kind === "NARRATION")).toBeTruthy();
     expect(t.markers.narrationEnd).toBeGreaterThan(0.5);
+    // front camera: saved mirrored, as the expert saw it in the preview
+    expect(t.markers.mirrored).toBe(true);
     const original = t.assets.find((a: { kind: string }) => a.kind === "RECORDING_ORIGINAL");
     const normalized = t.assets.find((a: { kind: string }) => a.kind === "RECORDING_NORMALIZED");
     expect(original.sizeBytes).toBeGreaterThan(10_000);
