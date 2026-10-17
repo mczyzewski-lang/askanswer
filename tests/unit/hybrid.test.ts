@@ -19,6 +19,17 @@ describe("hybrid projects", () => {
     expect(rows[2]).toMatchObject({ kind: "QUESTION_PROMPTER", text: "Jak podnieść ceny?", script: "Zacznij od nowych klientów.", subcategoryName: "ceny" });
   });
 
+  it("6 columns: the video title and, separately, the question the narrator reads", () => {
+    const rows = parseHybridCsv(
+      'pytaniazprompterem;Growth;ceny;Jak podnieść ceny?;Chcę podnieść ceny, ale boję się, że klienci odejdą. Co robić?;"Zacznij od nowych klientów.\nPotem reszta."\npytania;Rozwody;;Kto decyduje o opiece?;;Odpowiedz krótko\nprompter;Growth;;3 błędy;;Pierwszy błąd.',
+    )!;
+    expect(rows[0]).toMatchObject({ kind: "QUESTION_PROMPTER", text: "Jak podnieść ceny?", spokenText: "Chcę podnieść ceny, ale boję się, że klienci odejdą. Co robić?", script: "Zacznij od nowych klientów.\nPotem reszta." });
+    expect(rows[1]).toMatchObject({ kind: "QUESTION", text: "Kto decyduje o opiece?", spokenText: null, instructions: "Odpowiedz krótko" });
+    expect(rows[2]).toMatchObject({ kind: "PROMPTER", text: "3 błędy", script: "Pierwszy błąd." });
+    const withHeader = parseHybridCsv("Typ;Kategoria;Podkategoria;Tytuł wideo;Pytanie (czyta lektor);Treść\npytaniazprompterem;Growth;;Tytuł;Pełne pytanie klienta?;Odpowiedź z promptera")!;
+    expect(withHeader[0]).toMatchObject({ text: "Tytuł", spokenText: "Pełne pytanie klienta?", script: "Odpowiedź z promptera" });
+  });
+
   it("reads it with a header too, and leaves other files to the old parser", () => {
     const rows = parseHybridCsv("Typ;Kategoria;Podkategoria;Tytuł wideo;Treść\nPrompter;Growth;;Hook tutaj;Treść tutaj")!;
     expect(rows[0]).toMatchObject({ kind: "PROMPTER", text: "Hook tutaj", script: "Treść tutaj" });

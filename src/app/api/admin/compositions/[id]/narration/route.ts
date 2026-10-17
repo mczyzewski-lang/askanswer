@@ -16,7 +16,7 @@ export const POST = route(async (req: Request, ctx: { params: Promise<{ id: stri
   if (!rateLimit(`tts-admin:${user.id}`, { capacity: 30, perMinute: 30 })) return json({ error: "Zbyt wiele żądań" }, 429);
   const { voiceId, text, modelId } = z.object({ voiceId: z.string().min(1).max(100), text: z.string().min(1).max(1000).optional(), modelId: z.string().max(100).optional().nullable() }).parse(await req.json());
   const comp = await prisma.videoComposition.findUniqueOrThrow({ where: { id }, include: { question: true, project: true } });
-  const t = text ?? comp.question?.text;
+  const t = text ?? (comp.question?.spokenText?.trim() || comp.question?.text);
   if (!t) return json({ error: "Brak tekstu pytania" }, 400);
   try {
     // an explicitly chosen voice in the Studio wins over the project collection

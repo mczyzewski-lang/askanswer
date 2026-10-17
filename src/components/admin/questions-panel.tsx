@@ -183,7 +183,7 @@ export function QuestionsPanel({ data, refresh, toast }: PanelProps) {
     if (!rows.length) {
       toast(
         T.hybrid
-          ? "Nie znaleziono pozycji. Format: pytania/prompter/pytaniazprompterem;kategoria;podkategoria;tytuł wideo;treść"
+          ? "Nie znaleziono pozycji. Format: typ (pytania/prompter/pytaniazprompterem);kategoria;podkategoria;tytuł wideo;pytanie (lektor);treść"
           : T.prompter
             ? "Nie znaleziono skryptów. Plik CSV powinien mieć nagłówek: Kategoria;Podkategoria;Hook;Treść"
             : "Nie znaleziono pytań. Plik CSV powinien mieć nagłówek: Kategoria;Podkategoria;Pytanie;Instrukcje;Czas",
@@ -222,7 +222,7 @@ export function QuestionsPanel({ data, refresh, toast }: PanelProps) {
         <Button variant="outline" onClick={() => fileRef.current?.click()}>
           <FileUp /> Import CSV
         </Button>
-        <Button variant="ghost" onClick={downloadTemplate} title={T.hybrid ? "Kolumny: Typ (pytania/prompter/pytaniazprompterem);Kategoria;Podkategoria;Tytuł wideo;Treść" : T.prompter ? "Kolumny: Kategoria;Podkategoria;Hook;Treść" : "Kolumny: Kategoria;Podkategoria;Pytanie;Instrukcje;Czas"}>
+        <Button variant="ghost" onClick={downloadTemplate} title={T.hybrid ? "Kolumny: Typ (pytania/prompter/pytaniazprompterem);Kategoria;Podkategoria;Tytuł wideo;Pytanie (lektor);Treść" : T.prompter ? "Kolumny: Kategoria;Podkategoria;Hook;Treść" : "Kolumny: Kategoria;Podkategoria;Pytanie;Instrukcje;Czas"}>
           <Download /> Wzór CSV
         </Button>
         <input
@@ -869,6 +869,7 @@ function QuestionDialog({ open, question, data, onClose, refresh, toast }: { ope
   const [script, setScript] = useState("");
   const [max, setMax] = useState<string>("");
   const [kind, setKind] = useState<QuestionKind>("QUESTION");
+  const [spoken, setSpoken] = useState("");
   const T = terms(data.project.format);
   // what the item is recorded as (hybrid projects choose it per item)
   const k = T.hybrid ? kind : effectiveKind(null, data.project.format);
@@ -886,6 +887,7 @@ function QuestionDialog({ open, question, data, onClose, refresh, toast }: { ope
     setScript(question?.script ?? "");
     setMax(question?.maxDurationSec ? String(question.maxDurationSec) : "");
     setKind(effectiveKind(question?.kind, data.project.format));
+    setSpoken(question?.spokenText ?? "");
   }
   const theme = data.project.theme ? themeFromRow(data.project.theme) : DEFAULT_THEME;
   return (
@@ -904,7 +906,8 @@ function QuestionDialog({ open, question, data, onClose, refresh, toast }: { ope
                 ...(subcategoryId === "__new" && newSub.trim() ? { subcategoryName: newSub.trim() } : {}),
                 expertId: expertId || null, instructions: instructions || null, maxDurationSec: max ? Number(max) : null,
                 ...(usesScript ? { script: script.trim() || null } : {}),
-                ...(T.hybrid ? { kind } : {}) };
+                ...(T.hybrid ? { kind } : {}),
+                ...(kindHasNarration(k) ? { spokenText: spoken.trim() || null } : {}) };
               try {
                 if (question) await api(`/api/admin/questions/${question.id}`, { method: "PATCH", json: body });
                 else await api(`/api/admin/projects/${data.project.id}/questions`, { method: "POST", json: body });
@@ -936,10 +939,17 @@ function QuestionDialog({ open, question, data, onClose, refresh, toast }: { ope
               </div>
             ) : null}
             <div className="space-y-1.5">
-              <Label htmlFor="qtext">{k === "PROMPTER" ? "Hook (tytuł wideo)" : k === "QUESTION_PROMPTER" ? "Pytanie klienta (tytuł wideo, czyta lektor)" : T.hybrid ? "Pytanie (tytuł wideo, czyta lektor)" : T.title}</Label>
+              <Label htmlFor="qtext">{k === "PROMPTER" ? "Hook (tytuł wideo)" : T.hybrid ? "Tytuł wideo (na górze filmu)" : T.title}</Label>
               <Textarea id="qtext" value={text} onChange={(e) => setText(e.target.value)} required minLength={3} rows={k === "PROMPTER" ? 2 : 3} placeholder={k === "PROMPTER" ? "np. 3 błędy, które kosztują Cię klientów" : "np. Dlaczego warto zastrzec znak towarowy?"} />
               {k === "PROMPTER" ? <p className="text-xs text-muted">Hook to pierwsze zdanie rolki — ekspert mówi je na początku, a na wideo pojawia się jako tytuł.</p> : null}
             </div>
+            {kindHasNarration(k) ? (
+              <div className="space-y-1.5">
+                <Label htmlFor="qspoken">Pytanie czytane przez lektora (opcjonalnie)</Label>
+                <Textarea id="qspoken" value={spoken} onChange={(e) => setSpoken(e.target.value)} rows={2} placeholder="np. Dzień dobry, rozwodzę się i zastanawiam, kto zdecyduje o opiece nad dziećmi?" />
+                <p className="text-xs text-muted">Gdy puste, lektor czyta tytuł wideo. Na filmie u góry zawsze widać tytuł.</p>
+              </div>
+            ) : null}
             {usesScript ? (
               <div className="space-y-1.5">
                 <Label htmlFor="qscript">{k === "QUESTION_PROMPTER" ? "Odpowiedź (prompter)" : "Treść"}</Label>

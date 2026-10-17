@@ -91,13 +91,15 @@ test("hybrid: question read by the narrator, answer from the prompter, CTA end c
   test.skip(browserName !== "chromium", "fake media devices are Chromium-only");
   await adminRequest(request);
   const QUESTION = "Jak klient może szybciej dostać odpowiedź?";
+  // what the narrator reads differs from the title on the video
+  const SPOKEN = "Dzień dobry, moi klienci czekają na odpowiedź kilka dni. Jak to przyspieszyć?";
   const project = await (await request.post("/api/admin/projects", { data: { name: "Hybryda — rolki", format: "HYBRID", preset: "pravna" } })).json();
   const cta = await request.patch(`/api/admin/projects/${project.id}`, { data: { ctaEnabled: true, ctaUrl: "kancelaria.pl", ctaText: "Umów konsultację", ctaSeconds: 3 } });
   expect(cta.ok()).toBeTruthy();
   const expert = (await (await request.post(`/api/admin/projects/${project.id}/experts`, { data: { name: "Ewa Hybryda" } })).json()).expert;
   const q = await (
     await request.post(`/api/admin/projects/${project.id}/questions`, {
-      data: { items: [{ kind: "QUESTION_PROMPTER", text: QUESTION, script: SCRIPT }, { kind: "PROMPTER", text: HOOK, script: SCRIPT }, { kind: "QUESTION", text: "Czy to pytanie ma lektora?" }] },
+      data: { items: [{ kind: "QUESTION_PROMPTER", text: QUESTION, spokenText: SPOKEN, script: SCRIPT }, { kind: "PROMPTER", text: HOOK, script: SCRIPT }, { kind: "QUESTION", text: "Czy to pytanie ma lektora?" }] },
     })
   ).json();
   const { url, token } = await newInvitation(request, project.id, expert.id);
@@ -131,6 +133,8 @@ test("hybrid: question read by the narrator, answer from the prompter, CTA end c
       const doc = comp.composition.document;
       expect(doc.narration).toHaveLength(1); // the narrator's question is in the video
       expect(doc.overlays.find((o: { role?: string }) => o.role === "question").text).toBe(QUESTION);
+      const stats = await (await request.get("http://127.0.0.1:4010/__stats", { headers: { "xi-api-key": "mock-key" } })).json();
+      expect(JSON.stringify(stats.tts)).toContain("moi klienci czekają na odpowiedź kilka dni");
       expect(doc.endCard).toMatchObject({ url: "kancelaria.pl", text: "Umów konsultację", seconds: 3 });
       return;
     }

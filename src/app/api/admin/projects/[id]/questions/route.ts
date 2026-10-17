@@ -57,7 +57,7 @@ export const POST = route(async (req: Request, ctx: { params: Promise<{ id: stri
       }
       out.push(
         await tx.question.create({
-          data: { projectId, text: it.text, script: it.script ?? null, kind: it.kind ?? null, categoryId, subcategoryId, instructions: it.instructions ?? null, maxDurationSec: it.maxDurationSec ?? null, expertId: it.expertId ?? (it.expertName ? byName.get(it.expertName.toLowerCase()) : undefined) ?? defaultExpertId ?? soleMember, order: order++ },
+          data: { projectId, text: it.text, script: it.script ?? null, kind: it.kind ?? null, spokenText: it.spokenText || null, categoryId, subcategoryId, instructions: it.instructions ?? null, maxDurationSec: it.maxDurationSec ?? null, expertId: it.expertId ?? (it.expertName ? byName.get(it.expertName.toLowerCase()) : undefined) ?? defaultExpertId ?? soleMember, order: order++ },
         }),
       );
     }

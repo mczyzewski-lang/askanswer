@@ -235,6 +235,8 @@ model Question {
   script         String?
   /// QUESTION | PROMPTER | QUESTION_PROMPTER; null = from the project format
   kind           String?
+  /// what the narrator reads when it differs from the video title (text); null = the title
+  spokenText     String?
   expertId       String?
   expert         Expert?            @relation(fields: [expertId], references: [id], onDelete: SetNull)
   text           String

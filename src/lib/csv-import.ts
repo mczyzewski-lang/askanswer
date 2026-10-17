@@ -16,6 +16,8 @@ import { kindFromCsv, KIND_LABELS, type QuestionKind } from "./question-kinds";
 export interface ImportRow {
   kind?: QuestionKind;
   text: string;
+  /** the question the narrator reads, when different from the video title */
+  spokenText?: string | null;
   script?: string | null;
   categoryName?: string;
   subcategoryName?: string;
@@ -84,19 +86,25 @@ export function csvTemplate(prompter: boolean): string {
 
 /**
  * Mixed (hybrid) file — one row per item, with or without a header row:
- *   pytania|prompter|pytaniazprompterem ; kategoria ; podkategoria ; tytuł wideo ; treść [; ekspert]
- * The video title is shown at the top of the video (and read by the narrator for questions);
- * "treść" is the prompter text (prompter kinds) or the expert's notes (pytania).
- * Returns null when the file is not in this format.
+ *   typ ; kategoria ; podkategoria ; tytuł wideo ; pytanie (czyta lektor) ; treść [; ekspert]
+ *   typ = pytania | prompter | pytaniazprompterem
+ * - tytuł wideo: shown at the top of the video (prompter: the hook)
+ * - pytanie: what the ElevenLabs narrator reads (pytania / pytaniazprompterem); empty = the title
+ * - treść: the prompter text (prompter kinds) or notes for the expert (pytania)
+ * The older 5-column layout (without "pytanie") is still read. Returns null for other files.
  */
 export function parseHybridCsv(text: string): ImportRow[] | null {
   const res = Papa.parse<string[]>(text.replace(/^\uFEFF/, ""), { header: false, skipEmptyLines: "greedy" });
   const rows = res.data.filter((r) => r.some((c) => String(c ?? "").trim()));
   if (!rows.length) return null;
   const clean = (v: unknown) => String(v ?? "").replace(/\r/g, "").trim();
-  let col = { kind: 0, cat: 1, sub: 2, title: 3, body: 4, expert: 5 };
+  let col: { kind: number; cat: number; sub: number; title: number; spoken: number; body: number; expert: number };
   let body = rows;
-  if (!kindFromCsv(clean(rows[0][0]))) {
+  if (kindFromCsv(clean(rows[0][0]))) {
+    // no header: 6+ columns = with the narrator's question; 5 = the older layout
+    const wide = rows.some((r) => r.length >= 6);
+    col = wide ? { kind: 0, cat: 1, sub: 2, title: 3, spoken: 4, body: 5, expert: 6 } : { kind: 0, cat: 1, sub: 2, title: 3, spoken: -1, body: 4, expert: -1 };
+  } else {
     // header row: find the columns by name
     const h = rows[0].map((c) => key(clean(c)));
     const find = (...names: string[]) => h.findIndex((x) => names.map(key).includes(x));
@@ -106,8 +114,10 @@ export function parseHybridCsv(text: string): ImportRow[] | null {
       kind: kindCol,
       cat: find("kategoria", "category"),
       sub: find("podkategoria", "temat", "subcategory"),
-      title: find("wideotitle", "wideo-title", "tytułwideo", "tytul wideo", "tytuł", "tytul", "title", "hook", "pytanie"),
-      body: find("treść", "tresc", "script", "skrypt", "content", "tekst"),
+      title: find("wideotitle", "wideo-title", "tytułwideo", "tytul wideo", "tytuł", "tytul", "title", "hook"),
+      // "Pytanie", "Pytanie (czyta lektor)", "Lektor"…
+      spoken: h.findIndex((x) => x.startsWith("pytanie") || x.includes("lektor") || x === "question"),
+      body: find("treść", "tresc", "script", "skrypt", "content", "tekst", "odpowiedź", "odpowiedz"),
       expert: find("ekspert", "expert"),
     };
     body = rows.slice(1);
@@ -118,10 +128,15 @@ export function parseHybridCsv(text: string): ImportRow[] | null {
       const kind = kindFromCsv(at(r, col.kind));
       if (!kind) return null;
       const title = at(r, col.title);
+      const spoken = at(r, col.spoken);
       const content = at(r, col.body);
       const base = { kind, categoryName: at(r, col.cat) || undefined, subcategoryName: at(r, col.sub) || undefined, expertName: at(r, col.expert) || undefined, maxDurationSec: null };
-      if (kind === "QUESTION") return { ...base, text: title || content, script: null, instructions: title && content ? content : null };
-      return { ...base, text: title || content.split(/\n/)[0], script: content || null, instructions: null };
+      if (kind === "PROMPTER") return { ...base, text: title || content.split(/\n/)[0], script: content || null, instructions: null, spokenText: null };
+      // narrator kinds: the title on the video, the question the narrator reads (if different)
+      const shown = title || spoken;
+      const read = spoken && spoken !== shown ? spoken : null;
+      if (kind === "QUESTION") return { ...base, text: shown || content, spokenText: read, script: null, instructions: shown && content ? content : null };
+      return { ...base, text: shown || content.split(/\n/)[0], spokenText: read, script: content || null, instructions: null };
     })
     .filter((r): r is ImportRow => !!r && r.text.length >= 3);
 }
@@ -129,10 +144,10 @@ export function parseHybridCsv(text: string): ImportRow[] | null {
 /** Example of the mixed file (UTF-8 with BOM). */
 export function hybridCsvTemplate(): string {
   const rows = [
-    ["Typ", "Kategoria", "Podkategoria", "Tytuł wideo", "Treść"],
-    [KIND_LABELS.QUESTION.csv, "Rozwody", "dzieci", "Kto decyduje o opiece nad dzieckiem?", "Wskazówka dla eksperta: odpowiedz w 3–4 zdaniach"],
-    [KIND_LABELS.PROMPTER.csv, "Growth", "sprzedaż", "3 błędy, które kosztują Cię klientów", "Pierwszy błąd to brak odpowiedzi w ciągu 24 godzin.\nDrugi błąd to oferta bez konkretnej ceny."],
-    [KIND_LABELS.QUESTION_PROMPTER.csv, "Growth", "", "Jak podnieść ceny i nie stracić klientów?", "Zacznij od klientów, którzy najbardziej cenią Twoją pracę.\nPodnieś cenę dla nowych zleceń, nie dla trwających."],
+    ["Typ", "Kategoria", "Podkategoria", "Tytuł wideo", "Pytanie (czyta lektor)", "Treść"],
+    [KIND_LABELS.QUESTION.csv, "Rozwody", "dzieci", "Kto decyduje o opiece nad dzieckiem?", "Dzień dobry, rozwodzę się i zastanawiam, kto zdecyduje, z kim zostaną dzieci?", "Wskazówka dla eksperta: odpowiedz w 3–4 zdaniach"],
+    [KIND_LABELS.PROMPTER.csv, "Growth", "sprzedaż", "3 błędy, które kosztują Cię klientów", "", "Pierwszy błąd to brak odpowiedzi w ciągu 24 godzin.\nDrugi błąd to oferta bez konkretnej ceny."],
+    [KIND_LABELS.QUESTION_PROMPTER.csv, "Growth", "ceny", "Jak podnieść ceny i nie stracić klientów?", "Chcę podnieść ceny, ale boję się, że klienci odejdą. Jak to zrobić?", "Zacznij od klientów, którzy najbardziej cenią Twoją pracę.\nPodnieś cenę dla nowych zleceń, nie dla trwających."],
   ];
   return "\uFEFF" + Papa.unparse(rows, { delimiter: ";", newline: "\r\n", quotes: true });
 }

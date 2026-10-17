@@ -11,6 +11,8 @@ export const QuestionInput = z.object({
   script: z.string().trim().max(8000).nullable().optional(),
   /** QUESTION | PROMPTER | QUESTION_PROMPTER (hybrid projects); null = from the project format */
   kind: z.enum(["QUESTION", "PROMPTER", "QUESTION_PROMPTER"]).nullable().optional(),
+  /** the question the narrator reads, when it differs from the video title */
+  spokenText: z.string().trim().max(1000).nullable().optional(),
   maxDurationSec: z.number().int().min(5).max(1800).nullable().optional(),
   expertId: z.string().nullable().optional(),
   /** CSV "Ekspert" column: matched by name to an existing expert */

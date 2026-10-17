@@ -112,8 +112,9 @@ export async function narratorVoice(project: NarrationProject, question: { id: s
 }
 
 /** Narration of a question with the project's settings (voice/collection, model, natural hesitations). */
-export async function questionNarration(project: NarrationProject, question: { id: string; text: string }, override: { voiceId?: string | null; modelId?: string | null; text?: string } = {}) {
-  const base = override.text ?? question.text;
+export async function questionNarration(project: NarrationProject, question: { id: string; text: string; spokenText?: string | null }, override: { voiceId?: string | null; modelId?: string | null; text?: string } = {}) {
+  // the narrator reads the client's question; the video title (text) when no separate one is given
+  const base = override.text ?? (question.spokenText?.trim() || question.text);
   const text = project.naturalFillers ? withFillers(base, question.id) : base;
   const voiceId = override.voiceId || (await narratorVoice(project, { id: question.id, text: base }));
   return ensureNarration(text, { voiceId, modelId: override.modelId || project.ttsModel, projectId: project.id });
