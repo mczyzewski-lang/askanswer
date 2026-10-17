@@ -78,6 +78,8 @@ describe("illustrations of the expert's thoughts", () => {
     expect(p).toContain("«Jeśli czegoś nie wpiszesz, sąd sam tego nie doda.»");
     expect(p).toContain("A judge reading a document");
     expect(p).toMatch(/one short headline \(max 5 words\)/);
+    // no text where the captions are
+    expect(p).toMatch(/bottom 30% of the image must stay completely free of lettering/);
     expect(p).toMatch(/up to 3 thin arrows/);
     expect(p).toMatch(/no paragraphs/);
     for (const hex of [DEFAULT_THEME.background, DEFAULT_THEME.accent, DEFAULT_THEME.highlight, DEFAULT_THEME.text]) expect(p).toContain(hex);
@@ -117,3 +119,11 @@ describe("style colours", () => {
   });
 });
 
+describe("text stays above the captions", () => {
+  it("every image prompt that may contain text keeps it out of the bottom 30%", async () => {
+    const { composeIllustration, openaiInfographicPrompt } = await import("../../src/lib/server/broll");
+    const { DEFAULT_THEME } = await import("../../src/lib/themes");
+    expect(composeIllustration(null, "Scene", DEFAULT_THEME)).toMatch(/bottom 30% of the image must stay completely free of lettering/);
+    expect(openaiInfographicPrompt({ headline: "H", items: [{ value: "1", label: "a" }] } as never, DEFAULT_THEME, null)).toMatch(/bottom 30% of the image must stay completely free of lettering/);
+  });
+});

@@ -144,6 +144,13 @@ export function sanitize(list: RawSuggestion[], duration: number): BrollSuggesti
   return out.slice(0, 6);
 }
 
+/**
+ * Captions are laid over the bottom of every video: any text the image model draws must stay out of
+ * the lower 30% (and the top, where the title sits) — said plainly and repeated, the model obeys it better.
+ */
+export const TEXT_SAFE_ZONE =
+  "TEXT PLACEMENT (strict): every letter, word, number, label and arrow label must be inside the band between 20% and 68% of the image height. The bottom 30% of the image must stay completely free of lettering — not even small labels or numbers — because the video captions are placed there; keep it to artwork only.";
+
 function compose(style: string | null, scene: string) {
   return style ? `${style} ${scene.trim()}` : scene.trim();
 }
@@ -155,6 +162,7 @@ export function composeIllustration(style: string | null, scene: string, theme: 
     scene.trim(),
     `Colours of the brand theme: background ${c(theme.background)}, main shapes ${c(theme.primary)} and ${c(theme.secondary)}, accents ${c(theme.accent)} and ${c(theme.highlight)}, text and light details ${c(theme.text)}.`,
     "Minimal text allowed, in Polish: one short headline (max 5 words) that sums up the thought, and up to 3 thin arrows with 1-3-word labels pointing at the key elements — clean, sparse and legible. No other text, no logos.",
+    TEXT_SAFE_ZONE,
   ].join(" ");
 }
 
@@ -326,6 +334,7 @@ export function openaiInfographicPrompt(info: InfographicData, theme: ThemeToken
     `Rows:\n${rows}`,
     info.note ? `Small footnote: «${info.note}»` : "",
     "Layout: keep the top 22% and the bottom 32% of the image calm, without text (the video title and captions are placed there). Put the infographic card with all text in the middle band, large and legible on a phone.",
+    TEXT_SAFE_ZONE,
     `Brand colours: background ${c(theme.background)}, card ${c(theme.primary)}, highlights ${c(theme.accent)} and ${c(theme.highlight)}, text ${c(theme.text)}.`,
     "Clean, modern, premium design with simple icons; high contrast; no logos, no watermarks, no people's faces.",
     style ? `Visual style of the illustration elements (as a still image): ${style}` : "",
@@ -355,7 +364,8 @@ export function illustrationPrompt(
       : "",
     "Composition: one clear focal visual metaphor, readable on a phone within a second; the key subject in the middle of the frame (between 25% and 65% of the height); the top 20% and the bottom 30% quieter (a title and captions are placed there), but the artwork fills the whole frame edge to edge — no cards, borders, panels or frames.",
     `Colours — use exactly this brand palette and nothing far from it: background ${c(theme.background)}, main shapes ${c(theme.primary)} and ${c(theme.secondary)}, accents and arrows ${c(theme.accent)} and ${c(theme.highlight)}, text and light details ${c(theme.text)}.`,
-    "Text: minimal, only in Polish with correct letters (ą ć ę ł ń ó ś ź ż), taken from what the expert says — at most one short headline (max 5 words) in the upper-middle area and up to 3 thin arrows or callout lines with 1-3-word labels pointing at elements; large and legible on a phone; no paragraphs, no other words, nothing in the bottom 30% (captions), no logos or watermarks.",
+    "Text: minimal, only in Polish with correct letters (ą ć ę ł ń ó ś ź ż), taken from what the expert says — at most one short headline (max 5 words) in the upper-middle area and up to 3 thin arrows or callout lines with 1-3-word labels pointing at elements; large and legible on a phone; no paragraphs, no other words, no logos or watermarks.",
+    TEXT_SAFE_ZONE,
     "No realistic portraits of real people; faceless or stylised figures only.",
     styled ? "" : "Style: premium modern editorial illustration, bold simple shapes, soft depth and light grain, high contrast.",
   ]
