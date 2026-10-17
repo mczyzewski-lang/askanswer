@@ -783,6 +783,11 @@ function TakeRow({ t, q, refresh, toast, onOpenStudio }: { t: Take; q: Q; onOpen
             <DropdownMenuItem onSelect={() => call(`/api/admin/takes/${t.id}/transcribe${t.hasTranscript ? "?force=1" : ""}`, "POST", "Zlecono transkrypcję")}>
               <RefreshCw /> {t.hasTranscript ? "Transkrybuj ponownie" : "Ponów transkrypcję"}
             </DropdownMenuItem>
+            {t.status === "READY" ? (
+              <DropdownMenuItem onSelect={() => call(`/api/admin/takes/${t.id}/renormalize`, "POST", "Obraz zostanie przetworzony ponownie — montaż zostaje")}>
+                <RotateCcw /> Napraw obraz (rozciągnięty / zła orientacja)
+              </DropdownMenuItem>
+            ) : null}
             {t.status === "FAILED" ? (
               <DropdownMenuItem onSelect={() => call(`/api/admin/takes/${t.id}/reprocess`, "POST", "Ponowiono przetwarzanie")}>
                 <RotateCcw /> Ponów przetwarzanie

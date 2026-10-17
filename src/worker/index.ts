@@ -21,7 +21,7 @@ async function handle(job: { id: string; type: string; payload: unknown }) {
   const p = job.payload as Record<string, string>;
   switch (job.type) {
     case "process-take":
-      return processTake(p.takeId);
+      return processTake(p.takeId, { renormalize: Boolean((job.payload as { renormalize?: boolean }).renormalize) });
     case "transcribe-take":
       return transcribeTake(p.takeId, Boolean(p.force));
     case "render":

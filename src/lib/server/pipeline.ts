@@ -10,7 +10,8 @@ import path from "node:path";
 import { Prisma } from "@prisma/client";
 import { prisma } from "./db";
 import { decodeDuration, decodePcm, extractSpeechAudio, makePreviewProxy, normalizeRecording, probe } from "./ffmpeg";
-import { makeTempDir, putFile, toLocalFile, diskFullMessage } from "./storage";
+import { makeTempDir, putFile, toLocalFile, diskFullMessage, deleteObject } from "./storage";
+import { deleteAssets } from "./assets";
 import { computeWaveform, detectPauses } from "../editor/silence";
 import { buildSegments } from "../editor/subtitles";
 import { buildInitialDocument } from "../editor/factory";
@@ -33,7 +34,11 @@ interface Markers {
   mirrored?: boolean;
 }
 
-export async function processTake(takeId: string): Promise<void> {
+/**
+ * `renormalize`: build the edit master again from the original upload (e.g. after a fix in the
+ * normalization) — the asset keeps its id, so the edit (composition) stays as it is.
+ */
+export async function processTake(takeId: string, opts: { renormalize?: boolean } = {}): Promise<void> {
   const take = await prisma.recordingTake.findUniqueOrThrow({ where: { id: takeId }, include: { recording: true } });
   if (!take.originalAssetId) throw new Error("Take has no uploaded media");
   const original = await prisma.mediaAsset.findUniqueOrThrow({ where: { id: take.originalAssetId } });
@@ -55,6 +60,28 @@ export async function processTake(takeId: string): Promise<void> {
 
     // 3. normalize (orientation, CFR, H.264/AAC) — new asset, original untouched
     let normalizedId = take.normalizedAssetId;
+    if (opts.renormalize && normalizedId) {
+      await step(takeId, "Ponowna normalizacja wideo");
+      const old = await prisma.mediaAsset.findUniqueOrThrow({ where: { id: normalizedId } });
+      const out = path.join(work, "normalized.mp4");
+      await normalizeRecording(src.path, out, undefined, duration, !!(take.markers as Markers | null)?.mirrored);
+      const n = await probe(out);
+      // a new file name, so no browser keeps showing the old picture from its cache
+      const key = `projects/${take.recording.projectId}/takes/${takeId}/normalized-${Date.now()}.mp4`;
+      const size = await putFile(key, out, "video/mp4");
+      const meta = (old.meta ?? {}) as { proxyAssetId?: string; maskAssetId?: string };
+      await prisma.mediaAsset.update({
+        where: { id: old.id },
+        // the preview proxy and the person mask are made again from the new picture
+        data: { storageKey: key, sizeBytes: size, durationSec: n.duration, width: n.width, height: n.height, fps: n.fps, meta: Prisma.DbNull },
+      });
+      await deleteObject(old.storageKey).catch(() => {});
+      await deleteAssets([meta.proxyAssetId]);
+      if (meta.maskAssetId) {
+        await deleteAssets([meta.maskAssetId]);
+        await enqueue("segment-asset", { assetId: old.id }, { idempotencyKey: `segment:${old.id}:${Date.now()}`, maxAttempts: 2 });
+      }
+    }
     if (!normalizedId) {
       await step(takeId, "Normalizacja wideo");
       const out = path.join(work, "normalized.mp4");
@@ -157,7 +184,7 @@ export async function processTake(takeId: string): Promise<void> {
 
     await prisma.recordingTake.update({ where: { id: takeId }, data: { status: "READY", processingStep: "Gotowe do edycji" } });
     const q = await prisma.question.findUnique({ where: { id: take.recording.questionId } });
-    if (q && (q.status === "TO_RECORD" || q.status === "IN_PROGRESS")) await prisma.question.update({ where: { id: q.id }, data: { status: "RECORDED" } });
+    if (!opts.renormalize && q && (q.status === "TO_RECORD" || q.status === "IN_PROGRESS")) await prisma.question.update({ where: { id: q.id }, data: { status: "RECORDED" } });
   } catch (e) {
     await prisma.recordingTake.update({ where: { id: takeId }, data: { status: "FAILED", processingError: (diskFullMessage(e) ?? (e as Error).message).slice(0, 2000) } });
     throw e;

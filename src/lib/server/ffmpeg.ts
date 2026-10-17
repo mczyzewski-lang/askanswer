@@ -105,7 +105,57 @@ export async function decodeDuration(file: string): Promise<number> {
  * 30 fps, rotation applied, max 1080×1920, keyframe every second (fast, accurate seeking).
  * The original upload is kept untouched next to it.
  */
+/**
+ * The size the recording has for most of its time. Browsers can change the camera resolution in the
+ * middle of a recording (e.g. the first frames landscape 640×480, then portrait), and FFmpeg would
+ * otherwise keep the first frame's size and stretch everything after it.
+ */
+export async function dominantFrameSize(file: string, duration = 0): Promise<{ width: number; height: number } | null> {
+  const { stdout } = await run(env.ffprobe, ["-v", "error", "-select_streams", "v:0", "-skip_frame", "nokey", "-show_entries", "frame=best_effort_timestamp_time,width,height,sample_aspect_ratio", "-of", "json", file]);
+  const frames = (JSON.parse(stdout.toString()) as { frames?: Array<{ width?: number; height?: number; sample_aspect_ratio?: string; best_effort_timestamp_time?: string }> }).frames ?? [];
+  const rows = frames
+    .map((f) => {
+      const sar = (f.sample_aspect_ratio ?? "").split(":").map(Number);
+      const k = sar.length === 2 && sar[0] > 0 && sar[1] > 0 ? sar[0] / sar[1] : 1;
+      return { w: Math.round((f.width ?? 0) * k), h: f.height ?? 0, t: Number(f.best_effort_timestamp_time) };
+    })
+    .filter((r) => r.w > 0 && r.h > 0);
+  if (!rows.length) return null;
+  const end = Math.max(duration, ...rows.map((r) => (Number.isFinite(r.t) ? r.t : 0)));
+  const time = new Map<string, number>();
+  rows.forEach((r, i) => {
+    const t0 = Number.isFinite(r.t) ? r.t : i;
+    const next = rows[i + 1];
+    const t1 = next && Number.isFinite(next.t) ? next.t : Math.max(t0 + 1, end);
+    const key = `${r.w}x${r.h}`;
+    time.set(key, (time.get(key) ?? 0) + Math.max(0.001, t1 - t0));
+  });
+  const best = [...time.entries()].sort((a, b) => b[1] - a[1])[0][0].split("x").map(Number);
+  return { width: best[0], height: best[1] };
+}
+
+/** Output size: the dominant frame size (rotation applied), max 1080 on the short side, even. */
+export function normalizedSize(src: { width: number; height: number }, rotation = 0): { width: number; height: number } {
+  let { width: w, height: h } = src;
+  if (Math.abs(rotation) % 180 === 90) [w, h] = [h, w];
+  const k = Math.min(1, (w > h ? 1920 : 1080) / w);
+  const even = (n: number) => Math.max(2, Math.round(n / 2) * 2);
+  return { width: even(w * k), height: even(h * k) };
+}
+
 export async function normalizeRecording(input: string, output: string, onProgress?: (p: number) => void, duration = 0, mirror = false): Promise<void> {
+  // a fixed output size from the frames that make up most of the recording; frames of another size
+  // (a resolution switch of the camera) are fitted in, never stretched
+  let size: { width: number; height: number } | null = null;
+  try {
+    const dom = await dominantFrameSize(input, duration);
+    if (dom) size = normalizedSize(dom, (await probe(input)).rotation);
+  } catch {
+    size = null;
+  }
+  const fit = size
+    ? `scale='trunc(iw*sar/2)*2':ih,setsar=1,scale=${size.width}:${size.height}:force_original_aspect_ratio=decrease:flags=lanczos,pad=${size.width}:${size.height}:(ow-iw)/2:(oh-ih)/2:black,setsar=1`
+    : "scale='if(gt(iw,ih),min(1920,iw),min(1080,iw))':-2:flags=lanczos";
   await run(
     env.ffmpeg,
     [
@@ -118,7 +168,7 @@ export async function normalizeRecording(input: string, output: string, onProgre
       "-map",
       "0:a:0?",
       "-vf",
-      `${mirror ? "hflip," : ""}scale='if(gt(iw,ih),min(1920,iw),min(1080,iw))':-2:flags=lanczos,fps=30,format=yuv420p`,
+      `${mirror ? "hflip," : ""}${fit},fps=30,format=yuv420p`,
       "-c:v",
       "libx264",
       "-preset",

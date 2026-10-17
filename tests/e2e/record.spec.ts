@@ -107,6 +107,17 @@ test("expert records answers on a phone via the invitation link", async ({ page,
   expect(first.durationSec).toBeGreaterThan(5);
   expect(first.durationSec).toBeLessThan(first.markers.narrationEnd + 2 + 2.5 + 3);
 
+  // "Napraw obraz": the master is made again from the original; same asset, same edit
+  const normId = first.assets.find((a: { kind: string }) => a.kind === "RECORDING_NORMALIZED").id;
+  const rn = await request.post(`/api/admin/takes/${first.id}/renormalize`);
+  expect(rn.ok()).toBeTruthy();
+  await expect
+    .poll(async () => (await (await request.get(`/api/admin/takes/${first.id}`)).json()).status, { timeout: 120_000 })
+    .toBe("READY");
+  const again = await (await request.get(`/api/admin/takes/${first.id}`)).json();
+  expect(again.assets.find((a: { kind: string }) => a.kind === "RECORDING_NORMALIZED").id).toBe(normId);
+  expect(again.compositionIds).toEqual(first.compositionIds);
+
   // films in editing / approved: a "Twoje filmy" button top right, each film is the CURRENT edit
   const pr = await request.patch(`/api/admin/questions/${q1.id}`, { data: { status: "IN_PROGRESS" } });
   expect(pr.ok()).toBeTruthy();
