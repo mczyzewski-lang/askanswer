@@ -8,7 +8,8 @@
  * safe-area guides) is never drawn here.
  */
 import type { CalloutOverlay, ColorRef, EditorDocument, FaceBubble, FontRef, ImageOverlay, Overlay, ShapeOverlay, TextOverlay, ThemeTokens, VideoOverlay } from "../editor/types";
-import { clipAt, contentDuration, docDuration, overlayEnd, segmentAt, timedSegments, type TimedSegment } from "../editor/timeline";
+import { DEFAULT_BUBBLE } from "../editor/types";
+import { clipAt, docDuration, endCardStart, overlayEnd, segmentAt, timedSegments, type TimedSegment } from "../editor/timeline";
 import { zoomAt } from "../editor/zoom";
 
 // Minimal structural type satisfied by both DOM and @napi-rs/canvas contexts.
@@ -408,9 +409,9 @@ export function drawFaceBubble(ctx: Ctx, doc: EditorDocument, b: FaceBubble, mai
   const cy = b.y * H;
   const r = main.rect;
   // face square in output coordinates, then in source pixels
-  const side = Math.min(r.w, r.h, (W * 0.62) / Math.max(0.5, b.zoom ?? 1.25));
+  const side = Math.min(r.w, r.h, (W * 0.62) / Math.max(0.5, b.zoom ?? DEFAULT_BUBBLE.zoom!));
   const fx = r.x + r.w / 2;
-  const fy = r.y + r.h * (b.fy ?? 0.3);
+  const fy = r.y + r.h * (b.fy ?? DEFAULT_BUBBLE.fy!);
   const kx = main.frame.width / r.w;
   const ky = main.frame.height / r.h;
   let sx = (fx - side / 2 - r.x) * kx;
@@ -533,7 +534,7 @@ export function layoutSubtitle(ctx: Ctx, doc: EditorDocument, seg: TimedSegment)
   const blockH = lines.length * lineH;
   const widths = lines.map((l) => l.reduce((n, w) => n + w.width, 0) + spaceW * Math.max(0, l.length - 1));
   const blockW = Math.max(...widths);
-  const cy = st.y * doc.height;
+  const cy = (seg.seg.y ?? st.y) * doc.height;
   return { lines, font, lineH, spaceW, blockRect: { x: (doc.width - blockW) / 2, y: cy - blockH / 2, w: blockW, h: blockH } };
 }
 
@@ -825,12 +826,14 @@ export function drawEndCard(ctx: Ctx, doc: EditorDocument, local: number, env: R
   const th = doc.theme;
   const k = Math.min(1, Math.max(0, local / 0.35));
   ctx.save();
-  ctx.globalAlpha = k;
+  // over the video: the expert stays faintly visible (and audible) under the card
+  ctx.globalAlpha = k * (card.placement === "overlay" ? 0.86 : 1);
   const g = ctx.createLinearGradient(0, 0, W * 0.4, H);
   g.addColorStop(0, resolveColor("$background", th));
   g.addColorStop(1, resolveColor("$primary", th));
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, W, H);
+  ctx.globalAlpha = k;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   const blocks: Array<{ h: number; draw: (y: number) => void }> = [];
@@ -936,9 +939,7 @@ export function drawFrame(ctx: Ctx, doc: EditorDocument, t: number, env: RenderE
   }
   drawSubtitles(ctx, doc, t);
   // CTA end card after the last frame of the content
-  if (doc.endCard) {
-    const c0 = contentDuration(doc);
-    if (c0 > 0 && t >= c0) drawEndCard(ctx, doc, t - c0, env);
-  }
+  const c0 = endCardStart(doc);
+  if (c0 != null && t >= c0) drawEndCard(ctx, doc, t - c0, env);
   ctx.restore();
 }

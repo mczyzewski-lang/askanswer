@@ -10,6 +10,7 @@ export type Selection =
   | { kind: "zoom"; id: string }
   | { kind: "subtitles"; segId?: string }
   | { kind: "pause"; id: string }
+  | { kind: "endcard" }
   | null;
 
 export interface RenderInfo {

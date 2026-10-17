@@ -137,6 +137,7 @@ export async function projectData(id: string) {
       ctaUrl: p.ctaUrl,
       ctaText: p.ctaText,
       ctaSeconds: p.ctaSeconds,
+      ctaPlacement: p.ctaPlacement as "append" | "overlay",
       themeId: p.themeId,
       themeName: p.theme?.name ?? null,
       theme: p.theme,

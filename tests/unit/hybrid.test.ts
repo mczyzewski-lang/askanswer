@@ -4,9 +4,9 @@ import { parseHybridCsv } from "../../src/lib/csv-import";
 import { effectiveKind, kindFromCsv } from "../../src/lib/question-kinds";
 import { buildInitialDocument } from "../../src/lib/editor/factory";
 import { DEFAULT_THEME } from "../../src/lib/themes";
-import { contentDuration, docDuration } from "../../src/lib/editor/timeline";
+import { contentDuration, docDuration, endCardStart, timedSegments } from "../../src/lib/editor/timeline";
 import { applyEndCard } from "../../src/lib/end-card";
-import { drawFrame, type Ctx } from "../../src/lib/render/compositor";
+import { drawFrame, layoutSubtitle, type Ctx } from "../../src/lib/render/compositor";
 
 describe("hybrid projects", () => {
   it("reads the mixed CSV without a header", () => {
@@ -77,5 +77,38 @@ describe("question + prompter recording", () => {
       [4.3, 6.1, 30, false],
     ]);
     expect(contentDuration(doc)).toBeCloseTo(28.2);
+  });
+});
+
+describe("CTA placement and per-fragment subtitles", () => {
+  const base = () => buildInitialDocument({ questionText: "Q", theme: DEFAULT_THEME, mode: "ANSWER_ONLY", recording: { assetId: "rec", duration: 10 }, segments: [], pauses: [], visibility: "FULL", questionSeconds: 4 });
+  it("overlay sits over the last seconds, append adds them", () => {
+    const doc = base();
+    applyEndCard(doc, { ctaEnabled: true, ctaUrl: "kancelaria.pl", ctaText: null, ctaSeconds: 3, ctaPlacement: "overlay" });
+    expect(docDuration(doc)).toBeCloseTo(10);
+    expect(endCardStart(doc)).toBeCloseTo(7);
+    applyEndCard(doc, { ctaEnabled: true, ctaUrl: "kancelaria.pl", ctaText: null, ctaSeconds: 3, ctaPlacement: "append" });
+    expect(docDuration(doc)).toBeCloseTo(13);
+    expect(endCardStart(doc)).toBeCloseTo(10);
+  });
+  it("keeps a placement chosen for one video in the Studio", () => {
+    const doc = base();
+    applyEndCard(doc, { ctaEnabled: true, ctaUrl: "a.pl", ctaText: null, ctaSeconds: 3, ctaPlacement: "append" });
+    doc.endCard = { ...doc.endCard!, placement: "overlay", seconds: 5, custom: true };
+    applyEndCard(doc, { ctaEnabled: true, ctaUrl: "b.pl", ctaText: null, ctaSeconds: 3, ctaPlacement: "append" });
+    expect(doc.endCard).toMatchObject({ url: "b.pl", placement: "overlay", seconds: 5 });
+  });
+  it("moves one subtitle fragment only", () => {
+    const doc = base();
+    doc.subtitles.segments = [
+      { id: "s1", assetId: "rec", words: [{ id: "w1", text: "Jeden", start: 0.5, end: 1 }] },
+      { id: "s2", assetId: "rec", words: [{ id: "w2", text: "Dwa", start: 2, end: 2.5 }], y: 0.3 },
+    ];
+    const c = createCanvas(1080, 1920).getContext("2d") as unknown as Ctx;
+    const segs = timedSegments(doc);
+    const a = layoutSubtitle(c, doc, segs[0]);
+    const b = layoutSubtitle(c, doc, segs[1]);
+    expect(a.blockRect.y + a.blockRect.h / 2).toBeCloseTo(doc.subtitles.style.y * 1920, 0);
+    expect(b.blockRect.y + b.blockRect.h / 2).toBeCloseTo(0.3 * 1920, 0);
   });
 });

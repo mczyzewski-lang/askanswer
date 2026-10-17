@@ -17,7 +17,7 @@ export const SAFE_ZONES: Record<string, { label: string; zones: Array<[number, n
 type Drag =
   | { mode: "move"; ids: string[]; startX: number; startY: number; orig: Map<string, { x: number; y: number }> }
   | { mode: "resize"; id: string; handle: "nw" | "ne" | "sw" | "se" | "e" | "w"; startX: number; startY: number; orig: Overlay; rect: Rect }
-  | { mode: "subs"; startY: number; origY: number }
+  | { mode: "subs"; segId?: string; startY: number; origY: number }
   | { mode: "bubble"; id: string; startX: number; startY: number; orig: { x: number; y: number } }
   | { mode: "bubbleSize"; id: string };
 
@@ -80,8 +80,9 @@ export function Preview({ engine }: { engine: PlaybackEngine | null }) {
   const c = ctx();
   const selRects: Array<{ o: Overlay; r: Rect }> = c ? doc.overlays.filter((o) => selIds.includes(o.id)).map((o) => ({ o, r: overlayRect(c, doc, o) })) : [];
   let subRect: Rect | null = null;
+  const subSeg = c && doc.subtitles.enabled ? segmentAt(cachedSegments(doc), time) : null;
   if (c && doc.subtitles.enabled) {
-    const seg = segmentAt(cachedSegments(doc), time);
+    const seg = subSeg;
     if (seg) {
       const L = layoutSubtitle(c, doc, seg);
       subRect = { x: L.blockRect.x - 20, y: L.blockRect.y - 12, w: L.blockRect.w + 40, h: L.blockRect.h + 24 };
@@ -117,9 +118,11 @@ export function Preview({ engine }: { engine: PlaybackEngine | null }) {
       return;
     }
     if (subRect && p.x >= subRect.x && p.x <= subRect.x + subRect.w && p.y >= subRect.y && p.y <= subRect.y + subRect.h) {
-      st.select({ kind: "subtitles" });
+      // dragging moves only THIS fragment (e.g. away from a graphic); the global position is in the panel
+      const segId = subSeg?.seg.id;
+      st.select({ kind: "subtitles", segId });
       st.beginGesture();
-      drag.current = { mode: "subs", startY: p.y, origY: doc.subtitles.style.y };
+      drag.current = { mode: "subs", segId, startY: p.y, origY: subSeg?.seg.y ?? doc.subtitles.style.y };
       (e.target as HTMLElement).setPointerCapture(e.pointerId);
       return;
     }
@@ -214,7 +217,12 @@ export function Preview({ engine }: { engine: PlaybackEngine | null }) {
         hh.push(H / 2);
       }
       setGuides({ v, h: hh });
-      st.updateGesture((base) => ({ ...base, subtitles: { ...base.subtitles, style: { ...base.subtitles.style, y } } }));
+      const segId = d.segId;
+      st.updateGesture((base) =>
+        segId
+          ? { ...base, subtitles: { ...base.subtitles, segments: base.subtitles.segments.map((g) => (g.id === segId ? { ...g, y } : g)) } }
+          : { ...base, subtitles: { ...base.subtitles, style: { ...base.subtitles.style, y } } },
+      );
     } else if (d.mode === "resize") {
       const o = d.orig;
       const dxp = p.x - d.startX;

@@ -43,7 +43,38 @@ export function Properties() {
     if (z) return <ZoomProps z={z} />;
   }
   if (sel?.kind === "subtitles") return <SubtitleStyleProps />;
+  if (sel?.kind === "endcard" && doc.endCard) return <EndCardProps />;
   return <CompositionProps />;
+}
+
+/** CTA end card of this video: text / address come from the project settings, placement and length can be changed here. */
+function EndCardProps() {
+  const doc = useStudio((s) => s.doc)!;
+  const apply = useStudio((s) => s.apply);
+  const card = doc.endCard!;
+  const set = (p: { placement?: "append" | "overlay"; seconds?: number }) => apply((d) => (d.endCard ? { ...d, endCard: { ...d.endCard, ...p, custom: true } } : d), `endcard:${Object.keys(p).join(",")}`);
+  return (
+    <Section title="Plansza CTA">
+      <p className="text-[12.5px] leading-snug text-studio-muted">
+        {card.text ? `${card.text} · ` : ""}
+        {card.url}
+        <br />
+        Treść i adres zmienisz w ustawieniach projektu.
+      </p>
+      <Row label="Pokaż">
+        <Seg value={card.placement ?? "append"} onChange={(v) => set({ placement: v })} options={[["append", "Po filmie"], ["overlay", "Na wideo"]]} />
+      </Row>
+      <p className="text-[12px] text-studio-muted">{card.placement === "overlay" ? "Plansza przykrywa ostatnie sekundy wideo; głos eksperta trwa pod nią." : "Plansza jest dodana po ostatniej klatce — film wydłuża się o jej czas."}</p>
+      <Row label={`Czas: ${card.seconds} s`}>
+        <Slider value={card.seconds} min={1} max={10} step={0.5} onChange={(v) => set({ seconds: v })} format={(v) => `${v} s`} />
+      </Row>
+      {card.custom ? (
+        <SButton variant="ghost" onClick={() => apply((d) => (d.endCard ? { ...d, endCard: { ...d.endCard, custom: false } } : d))}>
+          Jak w ustawieniach projektu (po zapisie i odświeżeniu)
+        </SButton>
+      ) : null}
+    </Section>
+  );
 }
 
 function patchOverlay<T extends Overlay>(id: string, patch: Partial<T>, key?: string) {
@@ -327,11 +358,11 @@ function ImageProps({ o }: { o: ImageOverlay }) {
               <Row label={`Wielkość: ${Math.round(b.size * 100)}%`}>
                 <Slider value={Math.round(b.size * 100)} min={10} max={90} onChange={(v) => setB({ size: v / 100 }, "size")} />
               </Row>
-              <Row label={`Przybliżenie twarzy: ${(b.zoom ?? 1.25).toFixed(1)}×`}>
-                <Slider value={Math.round((b.zoom ?? 1.25) * 10)} min={6} max={30} onChange={(v) => setB({ zoom: v / 10 }, "zoom")} />
+              <Row label={`Przybliżenie twarzy: ${(b.zoom ?? DEFAULT_BUBBLE.zoom!).toFixed(1)}×`}>
+                <Slider value={Math.round((b.zoom ?? DEFAULT_BUBBLE.zoom!) * 10)} min={6} max={30} onChange={(v) => setB({ zoom: v / 10 }, "zoom")} />
               </Row>
               <Row label="Wysokość twarzy w kadrze">
-                <Slider value={Math.round((b.fy ?? 0.3) * 100)} min={10} max={80} onChange={(v) => setB({ fy: v / 100 }, "fy")} />
+                <Slider value={Math.round((b.fy ?? DEFAULT_BUBBLE.fy!) * 100)} min={10} max={80} onChange={(v) => setB({ fy: v / 100 }, "fy")} />
               </Row>
               {fullFrame ? (
                 <SButton
@@ -516,8 +547,31 @@ export function SubtitleStyleProps() {
   const apply = useStudio((s) => s.apply);
   const st = doc.subtitles.style;
   const ps = (p: Partial<typeof st>) => apply((d) => ({ ...d, subtitles: { ...d.subtitles, style: { ...d.subtitles.style, ...p } } }), `subs:${Object.keys(p).join(",")}`);
+  const segId = useStudio((s) => (s.selection?.kind === "subtitles" ? s.selection.segId : undefined));
+  const seg = segId ? doc.subtitles.segments.find((g) => g.id === segId) : undefined;
+  const setSegY = (y: number | null) => apply((d) => ({ ...d, subtitles: { ...d.subtitles, segments: d.subtitles.segments.map((g) => (g.id === segId ? { ...g, y } : g)) } }), `seg-y:${segId}`);
+  const moved = doc.subtitles.segments.filter((g) => g.y != null).length;
   return (
     <div>
+      {seg ? (
+        <Section title="Ten fragment napisów">
+          <p className="text-[12.5px] leading-snug text-studio-muted">„{seg.words.map((w) => w.text).join(" ").slice(0, 80)}”</p>
+          <Row label="Pozycja Y">
+            <Slider value={seg.y ?? st.y} min={0.05} max={0.95} step={0.005} onChange={(v) => setSegY(v)} format={(v) => `${Math.round(v * 100)}%`} />
+          </Row>
+          <p className="text-[12px] text-studio-muted">Przeciągnij napis na podglądzie, aby przesunąć tylko ten fragment (np. gdy zasłania grafikę).</p>
+          {seg.y != null ? (
+            <span className="flex flex-wrap gap-2">
+              <SButton variant="ghost" onClick={() => setSegY(null)} data-testid="seg-y-reset">
+                Jak pozostałe
+              </SButton>
+              <SButton variant="ghost" onClick={() => apply((d) => ({ ...d, subtitles: { ...d.subtitles, style: { ...d.subtitles.style, y: seg.y! }, segments: d.subtitles.segments.map((g) => ({ ...g, y: null })) } }))}>
+                Ustaw dla wszystkich
+              </SButton>
+            </span>
+          ) : null}
+        </Section>
+      ) : null}
       <Section title="Napisy">
         <Toggle label="Pokaż napisy" checked={doc.subtitles.enabled} onChange={(v) => apply((d) => ({ ...d, subtitles: { ...d.subtitles, enabled: v } }))} />
         <Row label="Styl">
@@ -566,9 +620,17 @@ export function SubtitleStyleProps() {
             <option value="pop">Pop</option>
           </Select>
         </Row>
-        <Row label="Pozycja Y">
+        <Row label={seg ? "Pozycja Y (wszystkie)" : "Pozycja Y"}>
           <Slider value={st.y} min={0.1} max={0.92} step={0.005} onChange={(v) => ps({ y: v })} format={(v) => `${Math.round(v * 100)}%`} />
         </Row>
+        {moved ? (
+          <p className="text-[12px] text-studio-muted">
+            {moved} {moved === 1 ? "fragment ma" : "fragmenty mają"} własną pozycję.{" "}
+            <button className="underline" onClick={() => apply((d) => ({ ...d, subtitles: { ...d.subtitles, segments: d.subtitles.segments.map((g) => ({ ...g, y: null })) } }))}>
+              Wyrównaj wszystkie
+            </button>
+          </p>
+        ) : null}
         <Row label="Szerokość">
           <Slider value={st.maxWidth} min={0.4} max={0.95} step={0.01} onChange={(v) => ps({ maxWidth: v })} format={(v) => `${Math.round(v * 100)}%`} />
         </Row>

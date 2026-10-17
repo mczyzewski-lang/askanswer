@@ -266,6 +266,9 @@ test("studio: pauses, cuts, subtitles, zoom, theme, persistence and real MP4 exp
   const bgCall = (bgStats.openai as Array<{ prompt: string }>).find((c) => c.prompt.includes("background plate"))!;
   expect(bgCall.prompt).toContain("jasna kancelaria z regałem książek");
   expect(bgCall.prompt).toMatch(/No people/);
+  // backgrounds are kept in the project: every video of it can pick an earlier one
+  const lib = await (await request.get(`/api/admin/compositions/${compId}/background`)).json();
+  expect(lib.assets.length).toBeGreaterThanOrEqual(3);
 
   // Test 13 — real server-side MP4 export
   await page.getByRole("button", { name: "Eksportuj" }).click();

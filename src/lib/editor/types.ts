@@ -189,7 +189,7 @@ export interface FaceBubble {
 }
 
 // upper left, clear of the platform buttons (right) and the caption area (lower half)
-export const DEFAULT_BUBBLE: FaceBubble = { x: 0.18, y: 0.32, size: 0.3, zoom: 1.25, fy: 0.3 };
+export const DEFAULT_BUBBLE: FaceBubble = { x: 0.18, y: 0.32, size: 0.3, zoom: 0.6, fy: 0.5 };
 
 /** Uploaded video placed as its own layer (picture-in-picture, B-roll, animated graphic). */
 export interface VideoOverlay extends OverlayBase {
@@ -215,6 +215,8 @@ export interface SubtitleSegment {
   id: string;
   assetId: string;
   words: SubWord[];
+  /** this fragment only: vertical centre (0–1) instead of the global style.y — e.g. to clear a graphic */
+  y?: number | null;
 }
 
 export type SubtitlePresetKey = "minimal-white" | "bold-social" | "dynamic-highlight" | "elegant-premium" | "clean-corporate";
@@ -258,6 +260,10 @@ export interface EndCard {
   seconds: number;
   url: string;
   text: string | null;
+  /** append = added after the last frame (longer video); overlay = over the last seconds of the video */
+  placement?: "append" | "overlay";
+  /** placement / seconds changed for this video in the Studio — the project's later changes keep them */
+  custom?: boolean;
 }
 
 export interface EditorDocument {

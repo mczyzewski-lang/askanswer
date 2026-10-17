@@ -1,8 +1,8 @@
 "use client";
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { AudioLines, Captions, Film, ImagePlus, Loader2, Mic2, Music, Type, X, ZoomIn } from "lucide-react";
+import { AudioLines, Captions, Film, Flag, ImagePlus, Loader2, Mic2, Music, Type, X, ZoomIn } from "lucide-react";
 import type { AVClip, AudioClip, EditorDocument, Overlay, Waveform, ZoomEffect } from "@/lib/editor/types";
-import { clipEnd, docDuration, formatTimecode, moveClip, overlayEnd, retimeSegment, shiftSegment, snapToFrame, sourceRangeToTimeline, trimClip, timedSegments } from "@/lib/editor/timeline";
+import { clipEnd, docDuration, endCardStart, formatTimecode, moveClip, overlayEnd, retimeSegment, shiftSegment, snapToFrame, sourceRangeToTimeline, trimClip, timedSegments } from "@/lib/editor/timeline";
 import { cn } from "@/lib/utils";
 import { useStudio } from "./store";
 import type { PlaybackEngine } from "./playback";
@@ -63,7 +63,9 @@ export function Timeline({ engine }: { engine: PlaybackEngine | null }) {
   const zoomItems = useMemo(() => lanes(doc.zooms), [doc.zooms]);
   const zoomLanes = Math.max(1, ...zoomItems.map((z) => z.lane + 1));
 
+  const ctaAt = endCardStart(doc);
   const rows = [
+    ...(ctaAt != null ? [{ key: "cta", label: "Plansza CTA", icon: <Flag className="h-3.5 w-3.5" />, h: 28 }] : []),
     { key: "overlays", label: "Tekst i grafika", icon: <Type className="h-3.5 w-3.5" />, h: 10 + overlayLanes * 24 },
     { key: "subs", label: "Napisy", icon: <Captions className="h-3.5 w-3.5" />, h: 30 },
     { key: "zoom", label: "Zbliżenia", icon: <ZoomIn className="h-3.5 w-3.5" />, h: 8 + zoomLanes * 22 },
@@ -300,6 +302,26 @@ export function Timeline({ engine }: { engine: PlaybackEngine | null }) {
               <Loader2 className="h-3 w-3 shrink-0 animate-spin" /> <span className="truncate">Rysuję: {i.title}</span>
             </div>
           ))}
+          {/* CTA end card: its own layer — after the video or over its last seconds */}
+          {ctaAt != null && doc.endCard ? (
+            <button
+              className={cn(
+                "absolute z-[2] flex items-center gap-1 overflow-hidden rounded-[5px] px-2 text-[10.5px] font-medium text-white/95 shadow-sm",
+                doc.endCard.placement === "overlay" ? "bg-orange-500/60 ring-1 ring-inset ring-orange-300/70" : "bg-orange-500/85",
+                selection?.kind === "endcard" && "ring-2 ring-white",
+              )}
+              style={{ left: x(ctaAt), width: Math.max(8, x(doc.endCard.seconds)), top: rowTop.cta + 4, height: 20 }}
+              onPointerDown={(e) => {
+                e.stopPropagation();
+                useStudio.getState().select({ kind: "endcard" });
+                seek(ctaAt + 0.5);
+              }}
+              title="Plansza CTA — kliknij, aby zmienić"
+              data-testid="cta-layer"
+            >
+              <span className="truncate">CTA · {doc.endCard.url || doc.endCard.text} · {doc.endCard.placement === "overlay" ? "na wideo" : "po filmie"}</span>
+            </button>
+          ) : null}
           {/* subtitles */}
           {segs.map((s) => (
             <Block

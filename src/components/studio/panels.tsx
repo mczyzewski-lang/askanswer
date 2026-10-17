@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Check, CircleDot, Combine, ImagePlus, Loader2, Music2, Plus, RefreshCw, Scissors, Sparkles, Split, Square, Trash2, Undo2, X } from "lucide-react";
 import type { AssetInfo, AudioClip, AVClip, EditorDocument, Overlay, TextOverlay } from "@/lib/editor/types";
 import {
@@ -245,6 +245,38 @@ function AiBackgroundPanel({ meta, current, disabled, onPick }: { meta: StudioMe
   const [idea, setIdea] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // the project's library: backgrounds generated earlier for any video of this project
+  const [library, setLibrary] = useState<string[]>([]);
+  const loadLibrary = useCallback(async () => {
+    const data = await fetch(`/api/admin/compositions/${meta.compositionId}/background`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .catch(() => null);
+    if (!data) return;
+    useStudio.getState().addAssets(data.assets ?? []);
+    setLibrary((data.assets ?? []).map((a: { id: string }) => a.id));
+  }, [meta.compositionId]);
+  useEffect(() => {
+    void loadLibrary();
+  }, [loadLibrary]);
+  const earlier = library.filter((id) => !variants.includes(id));
+  const thumb = (id: string, label: string, testid: string) => (
+    <button
+      key={id}
+      type="button"
+      onClick={() => onPick(id)}
+      aria-pressed={current === id}
+      aria-label={label}
+      data-testid={testid}
+      className={cn("overflow-hidden rounded-md border-2 bg-studio-3", current === id ? "border-emerald-400" : "border-transparent hover:border-white/30")}
+    >
+      {assets[id] ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={assets[id].url} alt="" className="aspect-[9/16] w-full object-cover" loading="lazy" />
+      ) : (
+        <div className="aspect-[9/16] w-full" />
+      )}
+    </button>
+  );
   const generate = async () => {
     setErr(null);
     setBusy(true);
@@ -263,6 +295,7 @@ function AiBackgroundPanel({ meta, current, disabled, onPick }: { meta: StudioMe
           const ids: string[] = job.result?.variantIds ?? [job.result?.assetId].filter(Boolean);
           st.apply((d) => ({ ...d, meta: { ...d.meta, bgVariants: [...ids, ...(d.meta.bgVariants ?? [])].slice(0, 24) } }), "bg-variants");
           if (ids[0] && !current) onPick(ids[0]);
+          void loadLibrary();
           break;
         }
         if (Date.now() - started > 6 * 60_000) throw new Error("Generowanie trwa zbyt długo — spróbuj ponownie.");
@@ -287,26 +320,11 @@ function AiBackgroundPanel({ meta, current, disabled, onPick }: { meta: StudioMe
         {busy ? <Loader2 className="animate-spin" /> : <Sparkles />} {busy ? "OpenAI maluje tło…" : variants.length ? "Wygeneruj kolejne tła" : "Wygeneruj tło (warianty)"}
       </SButton>
       <p className="text-[11px] leading-snug text-studio-muted">W kolorach motywu i stylu kategorii, bez ludzi i tekstu, dopasowane do pytania. Bez pomysłu AI dobierze scenę do tematu.</p>
-      {variants.length ? (
-        <div className="grid grid-cols-3 gap-1.5">
-          {variants.map((id, i) => (
-            <button
-              key={id}
-              type="button"
-              onClick={() => onPick(id)}
-              aria-pressed={current === id}
-              aria-label={`Tło ${i + 1}`}
-              data-testid="ai-background-variant"
-              className={cn("overflow-hidden rounded-md border-2 bg-studio-3", current === id ? "border-emerald-400" : "border-transparent hover:border-white/30")}
-            >
-              {assets[id] ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={assets[id].url} alt="" className="aspect-[9/16] w-full object-cover" loading="lazy" />
-              ) : (
-                <div className="aspect-[9/16] w-full" />
-              )}
-            </button>
-          ))}
+      {variants.length ? <div className="grid grid-cols-3 gap-1.5">{variants.map((id, i) => thumb(id, `Tło ${i + 1}`, "ai-background-variant"))}</div> : null}
+      {earlier.length ? (
+        <div className="space-y-1.5 pt-1" data-testid="ai-background-library">
+          <p className="text-[11px] font-medium uppercase tracking-[0.08em] text-studio-muted">Wcześniejsze tła w projekcie</p>
+          <div className="grid max-h-72 grid-cols-3 gap-1.5 overflow-y-auto">{earlier.map((id, i) => thumb(id, `Wcześniejsze tło ${i + 1}`, "ai-background-earlier"))}</div>
         </div>
       ) : null}
       {err ? <p className="text-[12px] text-red-300">{err}</p> : null}

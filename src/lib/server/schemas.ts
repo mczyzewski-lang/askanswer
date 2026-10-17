@@ -40,6 +40,7 @@ export const ProjectInput = z.object({
   ctaUrl: z.string().trim().max(200).nullable().optional(),
   ctaText: z.string().trim().max(200).nullable().optional(),
   ctaSeconds: z.number().int().min(1).max(10).optional(),
+  ctaPlacement: z.enum(["append", "overlay"]).optional(),
   dailyQuestionLimit: z.number().int().min(0).max(500).optional(),
   questionVisibility: z.enum(["NARRATION_ONLY", "FIRST_SECONDS", "FULL"]).optional(),
   questionSeconds: z.number().min(1).max(60).optional(),

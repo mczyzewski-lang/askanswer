@@ -24,10 +24,17 @@ export function contentDuration(doc: EditorDocument): number {
   return d;
 }
 
-/** Whole video: the content plus the CTA end card, when the project has one. */
+/** Whole video: the content plus the CTA end card when it is added after the last frame. */
 export function docDuration(doc: EditorDocument): number {
   const d = contentDuration(doc);
-  return d > 0 && doc.endCard ? d + doc.endCard.seconds : d;
+  return d > 0 && doc.endCard && doc.endCard.placement !== "overlay" ? d + doc.endCard.seconds : d;
+}
+
+/** When the CTA end card appears (null = none): after the content, or over its last seconds. */
+export function endCardStart(doc: EditorDocument): number | null {
+  const d = contentDuration(doc);
+  if (!doc.endCard || d <= 0) return null;
+  return doc.endCard.placement === "overlay" ? Math.max(0, d - doc.endCard.seconds) : d;
 }
 
 export function overlayEnd(o: Overlay, duration: number): number {

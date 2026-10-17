@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button, Card, Input, Label, NativeSelect, Switch, Textarea } from "@/components/ui";
-import { api } from "@/lib/utils";
+import { api, cn } from "@/lib/utils";
 import type { PanelProps } from "./project-view";
 import { VoicePicker } from "@/components/voice-picker";
 import { ProjectExpertsCard } from "./project-experts-card";
@@ -43,6 +43,7 @@ export function SettingsPanel({ data, refresh, toast }: PanelProps) {
     ctaUrl: p.ctaUrl ?? "",
     ctaText: p.ctaText ?? "",
     ctaSeconds: p.ctaSeconds,
+    ctaPlacement: p.ctaPlacement ?? "append",
   });
   const [voices, setVoices] = useState<VoiceList | null>(null);
   const [collections, setCollections] = useState<Array<{ id: string; name: string; items: unknown[] }>>([]);
@@ -108,10 +109,32 @@ export function SettingsPanel({ data, refresh, toast }: PanelProps) {
           <label className="flex items-center justify-between gap-4 text-sm">
             <span>
               Plansza CTA na końcu każdego filmu
-              <span className="block text-xs text-muted">Wyśrodkowany adres strony z podpisem, w kolorach motywu — dodawana po ostatniej klatce, w Studio i w eksporcie.</span>
+              <span className="block text-xs text-muted">Wyśrodkowany adres strony z podpisem, w kolorach motywu — w Studio (osobna warstwa na osi czasu) i w eksporcie.</span>
             </span>
             <Switch checked={form.ctaEnabled} onCheckedChange={(v) => set("ctaEnabled", v)} aria-label="Plansza CTA na końcu filmu" />
           </label>
+          {form.ctaEnabled ? (
+            <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Jak pokazać planszę CTA" data-testid="cta-placement">
+              {(
+                [
+                  ["append", "Dodaj po filmie", "Film wydłuża się o czas planszy."],
+                  ["overlay", "Nałóż na końcówkę", "Plansza przykrywa ostatnie sekundy, głos eksperta trwa pod nią."],
+                ] as const
+              ).map(([v, name, hint]) => (
+                <button
+                  key={v}
+                  type="button"
+                  role="radio"
+                  aria-checked={form.ctaPlacement === v}
+                  onClick={() => set("ctaPlacement", v)}
+                  className={cn("rounded-xl border p-2.5 text-left text-xs transition", form.ctaPlacement === v ? "border-ink bg-white shadow-sm" : "border-line hover:border-black/20")}
+                >
+                  <span className="block text-sm font-medium">{name}</span>
+                  <span className="mt-0.5 block text-muted">{hint}</span>
+                </button>
+              ))}
+            </div>
+          ) : null}
           {form.ctaEnabled ? (
             <div className="grid gap-3 sm:grid-cols-[1fr_1fr_110px]">
               <div className="space-y-1.5">
