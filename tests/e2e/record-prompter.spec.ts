@@ -110,6 +110,8 @@ test("hybrid: question read by the narrator, answer from the prompter, CTA end c
   await page.getByRole("checkbox").check();
   await page.getByRole("button", { name: "Rozpocznij nagrywanie" }).click();
   await page.getByRole("button", { name: /Gotowe/ }).click();
+  // the list says quietly what kind of recording each item is
+  await expect(page.getByTestId("item-kind")).toHaveText(["Pytanie z prompterem", "Prompter", "Pytanie"]);
   await page.getByText(QUESTION).click();
   await expect(page.getByTestId("qp-question")).toHaveText(QUESTION);
   const prompter = page.getByTestId("prompter");

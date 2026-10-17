@@ -60,6 +60,8 @@ interface UploadState {
 
 const DEFAULT_ANSWER_SEC = 90;
 
+const ITEM_KIND: Record<NonNullable<Question["kind"]>, string> = { QUESTION: "Pytanie", PROMPTER: "Prompter", QUESTION_PROMPTER: "Pytanie z prompterem" };
+
 export function Recorder({ token }: { token: string }) {
   const [screen, setScreen] = useState<Screen>("loading");
   const [videosOpen, setVideosOpen] = useState(false);
@@ -443,7 +445,15 @@ export function Recorder({ token }: { token: string }) {
                         {recorded ? <Check className="h-4 w-4" /> : n}
                       </span>
                       <span className="flex-1">
-                        <span className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.12em] text-white/45">{[q.category, q.subcategory].filter(Boolean).join(" · ")}</span>
+                        <span className="mb-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+                          <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-white/45">{[q.category, q.subcategory].filter(Boolean).join(" · ")}</span>
+                          {/* mixed projects: what kind of recording this is, said quietly */}
+                          {session.project.format === "HYBRID" && q.kind ? (
+                            <span className="rounded-full border border-white/15 px-2 py-px text-[10.5px] font-medium text-white/55" data-testid="item-kind">
+                              {ITEM_KIND[q.kind]}
+                            </span>
+                          ) : null}
+                        </span>
                         <span className="block text-[16px] font-medium leading-snug">{q.text}</span>
                         <span className="mt-1.5 block text-[12.5px] text-white/50">
                           {uploadingNow
