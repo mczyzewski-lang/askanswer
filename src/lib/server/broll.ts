@@ -481,3 +481,46 @@ async function storeInfographic(projectId: string, file: string, W: number, H: n
   });
   return { assetId: asset.id, warning };
 }
+
+/**
+ * Background plate behind the expert (replacing the room / green screen): calm, on-brand, with
+ * depth, no people and no text; the area where the expert stands stays simple.
+ */
+export function backgroundPrompt(p: { idea: string | null; question: string | null; category: string | null }, theme: ThemeTokens, style: string | null) {
+  const c = (hex: string) => `${colorName(hex)} (${hex})`;
+  return [
+    "Vertical 9:16 background plate for a talking-head video: an expert will be composited in front of it, standing in the centre and lower half of the frame (head and shoulders).",
+    p.idea ? `Scene: ${p.idea}` : `Scene: a premium, calm setting that fits the topic${p.category ? ` «${p.category}»` : ""}${p.question ? ` and the viewer's question «${p.question}»` : ""} — e.g. a modern office, studio or abstract set with a few meaningful objects related to the topic.`,
+    "Composition: natural perspective at eye level, soft shallow depth of field (the background is slightly out of focus), gentle light from the front so a person in front fits in; keep the centre and the lower half simple and uncluttered.",
+    `Colours: built on the brand palette — ${c(theme.background)} and ${c(theme.primary)} dominant, small accents in ${c(theme.accent)} and ${c(theme.highlight)}.`,
+    "No people, no faces, no hands, no text, letters, logos or watermarks.",
+    style ? `Visual style (as a still background, toned down): ${style}` : "Style: photographic, premium, modern, slightly cinematic.",
+  ].join("\n");
+}
+
+export async function generateBackground(jobId: string, p: { compositionId: string; idea?: string | null; width?: number; height?: number }) {
+  void jobId;
+  const comp = await prisma.videoComposition.findUniqueOrThrow({ where: { id: p.compositionId }, include: { project: { include: { theme: true } }, question: { include: { category: true } } } });
+  const theme = comp.project.theme ? themeFromRow(comp.project.theme) : (comp.document as unknown as { theme: ThemeTokens }).theme;
+  if (!openaiConfigured()) throw new OpenAIImageError(`Tło AI wymaga klucza OpenAI. ${openaiKeyDiagnostics()}`, false);
+  const W = p.width ?? 1080;
+  const H = p.height ?? 1920;
+  const style = await styleFor(comp, theme);
+  const prompt = backgroundPrompt({ idea: p.idea ?? null, question: comp.question?.text ?? null, category: comp.question?.category?.name ?? null }, theme, style);
+  const dir = await makeTempDir("background");
+  try {
+    const n = env.illustrationVariants;
+    const raws = Array.from({ length: n }, (_, i) => path.join(dir, `bg-src-${i}.png`));
+    const got = await generateOpenAIImage(prompt, { width: W, height: H, out: raws });
+    const variantIds: string[] = [];
+    for (let i = 0; i < got; i++) {
+      const file = path.join(dir, `bg-${i}.png`);
+      await coverTo(raws[i], file, W, H);
+      const v = await storeInfographic(comp.projectId, file, W, H, p.idea?.slice(0, 60) || "tło", { engine: "background", variant: String(i + 1) }, null, "Tło AI");
+      variantIds.push(v.assetId);
+    }
+    return { assetId: variantIds[0], variantIds };
+  } finally {
+    await fsp.rm(dir, { recursive: true, force: true });
+  }
+}

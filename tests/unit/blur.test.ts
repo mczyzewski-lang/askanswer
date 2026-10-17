@@ -166,3 +166,70 @@ describe("face bubble over full-screen graphics", () => {
     expect(at(10, 10)).toEqual([0, 0, 255]); // the graphic around it
   });
 });
+
+describe("green screen and AI background", () => {
+  it("detects a green screen and keys it out around the person", async () => {
+    const { greenBorderShare, chromaKeyMask } = await import("../../src/lib/server/segment");
+    const w = 60;
+    const h = 100;
+    const raw = new Uint8Array(w * h * 3);
+    const refined = new Uint8Array(w * h);
+    for (let y = 0; y < h; y++)
+      for (let x = 0; x < w; x++) {
+        const i = y * w + x;
+        const person = x >= 20 && x < 40 && y >= 30;
+        raw.set(person ? [180, 140, 120] : [40, 200, 60], i * 3);
+        // the model's mask is a bit too wide (2 px) — the key fixes the edge
+        refined[i] = x >= 18 && x < 42 && y >= 28 ? 255 : 0;
+      }
+    expect(greenBorderShare(raw, w, h)).toBeGreaterThan(0.8);
+    const m = chromaKeyMask(raw, refined, w, h);
+    expect(m[60 * w + 30]).toBeGreaterThan(240); // person
+    expect(m[60 * w + 18]).toBeLessThan(20); // green next to the person
+    expect(m[5 * w + 5]).toBe(0); // far background
+    const room = new Uint8Array(w * h * 3).fill(120);
+    expect(greenBorderShare(room, w, h)).toBe(0);
+  });
+
+  it("draws the AI image behind the masked person", () => {
+    const W = 90;
+    const H = 160;
+    const person = createCanvas(W, H);
+    const pctx = person.getContext("2d");
+    pctx.fillStyle = "#ff0000";
+    pctx.fillRect(0, 0, W, H);
+    const bg = createCanvas(W, H);
+    const bctx = bg.getContext("2d");
+    bctx.fillStyle = "#0000ff";
+    bctx.fillRect(0, 0, W, H);
+    const mask = createCanvas(W, H);
+    const mctx = mask.getContext("2d");
+    const md = mctx.createImageData(W, H);
+    const gray = new Uint8Array(W * H);
+    for (let y = 0; y < H; y++) for (let x = 30; x < 60; x++) gray[y * W + x] = 255;
+    maskToRgba(gray, md.data);
+    mctx.putImageData(md, 0, 0);
+    const doc = buildInitialDocument({ questionText: "Q", theme: DEFAULT_THEME, mode: "ANSWER_ONLY", recording: { assetId: "rec", duration: 5 }, segments: [], pauses: [], visibility: "FULL", questionSeconds: 0 });
+    doc.width = W;
+    doc.height = H;
+    doc.overlays = [];
+    doc.subtitles.enabled = false;
+    doc.clips[0].background = { blur: 0, imageAssetId: "bg" };
+    const sc = new Map<string, import("@napi-rs/canvas").Canvas>();
+    const out = createCanvas(W, H);
+    drawFrame(out.getContext("2d") as unknown as Ctx, doc, 1, {
+      getFrame: () => ({ image: person as unknown as CanvasImageSource, width: W, height: H }),
+      getImage: (id) => (id === "bg" ? { image: bg as unknown as CanvasImageSource, width: W, height: H } : null),
+      getMask: () => ({ image: mask as unknown as CanvasImageSource, width: W, height: H }),
+      scratch: (k, w, h) => {
+        let c = sc.get(k);
+        if (!c || c.width !== w || c.height !== h) sc.set(k, (c = createCanvas(w, h)));
+        return { canvas: c as unknown as CanvasImageSource, ctx: c.getContext("2d") as unknown as Ctx };
+      },
+    });
+    const px = out.getContext("2d").getImageData(0, 0, W, H).data;
+    const at = (x: number, y: number) => [...px.subarray((y * W + x) * 4, (y * W + x) * 4 + 3)];
+    expect(at(45, 80)).toEqual([255, 0, 0]);
+    expect(at(10, 80)).toEqual([0, 0, 255]);
+  });
+});

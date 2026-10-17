@@ -225,10 +225,13 @@ export async function renderVideoSegment(job: SegmentJob, onFrame?: (done: numbe
   const ctx = canvas.getContext("2d") as unknown as SKRSContext2D;
   const srcCanvases = new Map<string, Canvas>();
   const images = new Map<string, Image>();
-  for (const o of doc.overlays) {
-    const id = o.kind === "image" || o.kind === "logo" ? (o.assetId ?? (o.kind === "logo" ? doc.theme.logoAssetId : null)) : null;
-    if (id && assets.has(id) && !images.has(id)) images.set(id, await loadImage(await fsp.readFile(assets.get(id)!.path)));
-  }
+  const imageIds = [
+    ...doc.overlays.map((o) => (o.kind === "image" || o.kind === "logo" ? (o.assetId ?? (o.kind === "logo" ? doc.theme.logoAssetId : null)) : null)),
+    // replacement backgrounds behind the expert, and the logo on the CTA end card
+    ...doc.clips.map((c) => c.background?.imageAssetId ?? null),
+    doc.endCard ? (doc.theme.logoAssetId ?? null) : null,
+  ];
+  for (const id of imageIds) if (id && assets.has(id) && !images.has(id)) images.set(id, await loadImage(await fsp.readFile(assets.get(id)!.path)));
   // background blur: person masks, decoded frame by frame (one cached frame per recording)
   const masks = new Map<string, { buf: Buffer; h: MaskHeader; canvas: Canvas; index: number }>();
   for (const a of job.assets) {

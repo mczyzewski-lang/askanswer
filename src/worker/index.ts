@@ -42,6 +42,10 @@ async function handle(job: { id: string; type: string; payload: unknown }) {
       const { segmentAsset } = await import("../lib/server/segment");
       return segmentAsset(p.assetId);
     }
+    case "generate-background": {
+      const { generateBackground } = await import("../lib/server/broll");
+      return generateBackground(job.id, job.payload as Parameters<typeof generateBackground>[1]);
+    }
     case "generate-infographic":
       return generateInfographic(job.id, job.payload as Parameters<typeof generateInfographic>[1]);
     default:

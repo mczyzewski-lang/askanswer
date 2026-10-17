@@ -154,7 +154,47 @@ export function stabilize(cur: Uint8Array, prev: Uint8Array) {
   }
 }
 
-export async function segmentVideoFile(file: string, onProgress?: (done: number, total: number) => void): Promise<Uint8Array> {
+/** Share of strongly green pixels along the top and the sides of a frame (rgb24, w×h). */
+export function greenBorderShare(raw: Uint8Array, w: number, h: number): number {
+  let green = 0;
+  let n = 0;
+  const check = (x: number, y: number) => {
+    const k = (y * w + x) * 3;
+    const r = raw[k];
+    const g = raw[k + 1];
+    const b = raw[k + 2];
+    n++;
+    if (g > 70 && g > r * 1.25 && g > b * 1.2) green++;
+  };
+  for (let y = 0; y < h; y += 3) {
+    const top = y < h * 0.18;
+    for (let x = 0; x < w; x += 3) if (top || x < w * 0.12 || x >= w * 0.88) check(x, y);
+  }
+  return n ? green / n : 0;
+}
+
+/**
+ * Green screen: the key (how much a pixel is NOT green) gives clean hair and edges; it is limited
+ * to the area around the person found by the model, so studio edges outside the screen go too.
+ */
+export function chromaKeyMask(raw: Uint8Array, refined: Uint8Array, w: number, h: number): Uint8Array {
+  const N = w * h;
+  const seg = new Float32Array(N);
+  for (let i = 0; i < N; i++) seg[i] = refined[i] / 255;
+  const near = new Float32Array(N);
+  boxMean(seg, w, h, Math.max(3, Math.round(Math.max(w, h) / 80)), near, new Float32Array(N));
+  const out = new Uint8Array(N);
+  for (let i = 0, k = 0; i < N; i++, k += 3) {
+    const d = raw[k + 1] - Math.max(raw[k], raw[k + 2]);
+    const t = Math.min(1, Math.max(0, (d - 15) / 45));
+    const key = 1 - t * t * (3 - 2 * t);
+    const keep = Math.min(1, near[i] * 3);
+    out[i] = Math.round(Math.round(key * keep * 63) * 4.0477);
+  }
+  return out;
+}
+
+export async function segmentVideoFile(file: string, onProgress?: (done: number, total: number) => void): Promise<Uint8Array & { greenscreen: boolean }> {
   const info = await probe(file);
   if (!info.hasVideo || !info.width || !info.height) throw new Error("Nagranie nie ma obrazu");
   const { ort, s } = await model();
@@ -174,6 +214,9 @@ export async function segmentVideoFile(file: string, onProgress?: (done: number,
   const frames: Uint8Array[] = [];
   let prev: Float32Array | null = null;
   let prevOut: Uint8Array | null = null;
+  // green screen: decided from the first frames, then keyed for the whole recording
+  let greenVotes = 0;
+  let greenscreen: boolean | null = null;
   let pending: Buffer = Buffer.alloc(0);
   const handle = async (raw: Buffer) => {
     for (let i = 0, j = 0; i < luma.length; i++, j += 3) luma[i] = (raw[j] * 0.299 + raw[j + 1] * 0.587 + raw[j + 2] * 0.114) / 255;
@@ -214,7 +257,12 @@ export async function segmentVideoFile(file: string, onProgress?: (done: number,
       }
     }
     prev = cur;
-    const refined = refineMask(cur, box.cw, box.ch, luma, gw, gh);
+    let refined = refineMask(cur, box.cw, box.ch, luma, gw, gh);
+    if (greenscreen === null) {
+      greenVotes += greenBorderShare(raw, gw, gh) > 0.45 ? 1 : 0;
+      if (frames.length >= 4) greenscreen = greenVotes >= 3;
+    }
+    if (greenscreen ?? greenBorderShare(raw, gw, gh) > 0.45) refined = chromaKeyMask(raw, refined, gw, gh);
     if (prevOut) stabilize(refined, prevOut);
     prevOut = refined;
     frames.push(zlib.deflateRawSync(refined, { level: 6 }));
@@ -231,7 +279,7 @@ export async function segmentVideoFile(file: string, onProgress?: (done: number,
   const code: number = await new Promise((r) => (ff.exitCode !== null ? r(ff.exitCode) : ff.on("close", r)));
   if (code !== 0) throw new Error(`Segmentacja: FFmpeg ${code}: ${err.slice(-500)}`);
   if (!frames.length) throw new Error("Segmentacja: brak klatek");
-  return encodeMaskFile(gw, gh, MASK_FPS, frames);
+  return Object.assign(encodeMaskFile(gw, gh, MASK_FPS, frames), { greenscreen: !!greenscreen || (greenscreen === null && greenVotes > 0) });
 }
 
 /** Worker job: mask for one recording asset, stored once (asset meta.maskAssetId). */
@@ -244,14 +292,15 @@ export async function segmentAsset(assetId: string): Promise<{ maskAssetId: stri
   const dir = await makeTempDir("mask");
   try {
     const data = await segmentVideoFile(src.path);
+    const greenscreen = data.greenscreen;
     const out = path.join(dir, "mask.amsk");
     await fsp.writeFile(out, data);
     const key = asset.storageKey.replace(/\.[a-z0-9]+$/i, "") + `.mask${MASK_VERSION}.amsk`;
     const size = await putFile(key, out, "application/octet-stream");
     const mask = await prisma.mediaAsset.create({
-      data: { kind: "SEGMENTATION_MASK", projectId: asset.projectId, storageKey: key, mimeType: "application/octet-stream", sizeBytes: size, durationSec: asset.durationSec, hasAudio: false, hasVideo: false, meta: { sourceAssetId: asset.id, fps: MASK_FPS, version: MASK_VERSION } },
+      data: { kind: "SEGMENTATION_MASK", projectId: asset.projectId, storageKey: key, mimeType: "application/octet-stream", sizeBytes: size, durationSec: asset.durationSec, hasAudio: false, hasVideo: false, meta: { sourceAssetId: asset.id, fps: MASK_FPS, version: MASK_VERSION, greenscreen } },
     });
-    await prisma.mediaAsset.update({ where: { id: asset.id }, data: { meta: { ...meta, maskAssetId: mask.id, maskVersion: MASK_VERSION } } });
+    await prisma.mediaAsset.update({ where: { id: asset.id }, data: { meta: { ...meta, maskAssetId: mask.id, maskVersion: MASK_VERSION, greenscreen } } });
     // the previous, coarser mask is no longer needed
     if (old && old !== mask.id) {
       const prevMask = await prisma.mediaAsset.findUnique({ where: { id: old } });

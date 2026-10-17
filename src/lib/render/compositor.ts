@@ -724,9 +724,27 @@ export function lookFilter(l: { brightness: number; contrast: number; saturate: 
   return `brightness(${f(l.brightness)}) contrast(${f(l.contrast)}) saturate(${f(l.saturate)})`;
 }
 
-function drawWithBlurredBackground(ctx: Ctx, doc: EditorDocument, frame: FrameSource, mask: FrameSource, r: Rect, blur: number, scratch: NonNullable<RenderEnv["scratch"]>, look = "none") {
+function drawWithBlurredBackground(
+  ctx: Ctx,
+  doc: EditorDocument,
+  frame: FrameSource,
+  mask: FrameSource,
+  r: Rect,
+  blur: number,
+  scratch: NonNullable<RenderEnv["scratch"]>,
+  look = "none",
+  bgImage: FrameSource | null = null,
+  despill = false,
+) {
   const W = doc.width;
   const H = doc.height;
+  if (bgImage) {
+    // replacement background (AI image) instead of the room: cover the frame, the person goes on top
+    const k = Math.max(W / bgImage.width, H / bgImage.height);
+    ctx.drawImage(bgImage.image, (W - bgImage.width * k) / 2, (H - bgImage.height * k) / 2, bgImage.width * k, bgImage.height * k);
+    drawPerson(ctx, doc, frame, mask, r, scratch, look, despill);
+    return;
+  }
   // 1) blurred background: two-step downscale keeps it smooth instead of blocky
   const f = 6 + (Math.min(100, blur) / 100) * 34; // 6..40 × smaller
   const midW = Math.max(8, Math.round(W / Math.sqrt(f)));
@@ -761,7 +779,13 @@ function drawWithBlurredBackground(ctx: Ctx, doc: EditorDocument, frame: FrameSo
   mid.ctx.drawImage(sm.canvas, 0, 0, midW, midH);
   ctx.drawImage(mid.canvas, 0, 0, W, H);
 
-  // 2) sharp person through the mask (the mask covers the whole source frame, so it uses the same placement)
+  drawPerson(ctx, doc, frame, mask, r, scratch, look, despill);
+}
+
+/** The sharp person through the mask (the mask covers the whole source frame, so it uses the same placement). */
+function drawPerson(ctx: Ctx, doc: EditorDocument, frame: FrameSource, mask: FrameSource, r: Rect, scratch: NonNullable<RenderEnv["scratch"]>, look: string, despill = false) {
+  const W = doc.width;
+  const H = doc.height;
   const person = scratch("blur-person", W, H);
   person.ctx.globalCompositeOperation = "source-over";
   person.ctx.clearRect(0, 0, W, H);
@@ -773,7 +797,20 @@ function drawWithBlurredBackground(ctx: Ctx, doc: EditorDocument, frame: FrameSo
   person.ctx.globalCompositeOperation = "destination-in";
   person.ctx.drawImage(mask.image, r.x, r.y, r.w, r.h);
   person.ctx.globalCompositeOperation = "source-over";
+  if (despill) despillGreen(person.ctx, W, H);
   ctx.drawImage(person.canvas, 0, 0);
+}
+
+/** Green-screen spill: green can't be brighter than the larger of red and blue (classic despill). */
+export function despillGreen(c: Ctx, W: number, H: number) {
+  const img = c.getImageData(0, 0, W, H);
+  const px = img.data;
+  for (let i = 0; i < px.length; i += 4) {
+    if (!px[i + 3]) continue;
+    const lim = Math.max(px[i], px[i + 2]);
+    if (px[i + 1] > lim) px[i + 1] = lim;
+  }
+  c.putImageData(img, 0, 0);
 }
 
 /**
@@ -869,10 +906,11 @@ export function drawFrame(ctx: Ctx, doc: EditorDocument, t: number, env: RenderE
       ctx.imageSmoothingEnabled = true;
       (ctx as unknown as { imageSmoothingQuality: string }).imageSmoothingQuality = "high";
       const blur = clip.background?.blur ?? 0;
-      const mask = blur > 0 ? env.getMask?.(clip.assetId, frame.time ?? src) : null;
+      const bgImage = clip.background?.imageAssetId ? env.getImage(clip.background.imageAssetId) : null;
+      const mask = blur > 0 || bgImage ? env.getMask?.(clip.assetId, frame.time ?? src) : null;
       // automatic picture correction: the same filter in the browser and in the export
       const look = clip.look ? lookFilter(clip.look) : "none";
-      if (blur > 0 && mask && env.scratch) drawWithBlurredBackground(ctx, doc, frame, mask, r, blur, env.scratch, look);
+      if ((blur > 0 || bgImage) && mask && env.scratch) drawWithBlurredBackground(ctx, doc, frame, mask, r, blur, env.scratch, look, bgImage, !!clip.background?.despill);
       else {
         ctx.save();
         ctx.filter = look;

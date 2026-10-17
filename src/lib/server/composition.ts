@@ -22,6 +22,7 @@ export async function loadStudio(id: string) {
   const ids = new Set(referencedAssetIds(doc));
   // illustration variants to choose from in the AI tab
   for (const it of doc.meta.aiBroll ?? []) for (const v of it.variants ?? []) ids.add(v);
+  for (const v of doc.meta.bgVariants ?? []) ids.add(v);
   if (doc.theme.logoAssetId) ids.add(doc.theme.logoAssetId);
   const assets = (await Promise.all([...ids].map((a) => assetInfo(a, true)))).filter(Boolean);
   // other takes of the same question (for "Zamień ujęcie")

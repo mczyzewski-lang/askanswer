@@ -30,7 +30,7 @@ const avClip = z.object({
   volume: num.min(0).max(4),
   muted: z.boolean(),
   framing: z.object({ scale: num.min(1).max(4), cx: num.min(0).max(1), cy: num.min(0).max(1) }),
-  background: z.object({ blur: num.min(0).max(100) }).optional(),
+  background: z.object({ blur: num.min(0).max(100), imageAssetId: z.string().max(64).nullable().optional(), despill: z.boolean().optional() }).optional(),
   look: z.object({ brightness: num.min(0.5).max(2), contrast: num.min(0.5).max(2), saturate: num.min(0).max(3) }).optional(),
   label: z.string().max(120).optional(),
   audioAssetId: z.string().max(64).nullable().optional(),
@@ -203,5 +203,6 @@ export const EditorDocumentSchema = z.object({
       .optional(),
     autoVisuals: z.string().max(20).optional(),
     autoPolish: z.string().max(20).optional(),
+    bgVariants: z.array(z.string().max(64)).max(24).optional(),
   }),
 });

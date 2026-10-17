@@ -60,8 +60,11 @@ export interface AVClip {
   muted: boolean;
   /** Base framing (crop/reposition). scale >= 1, centre in normalized source coords. */
   framing: { scale: number; cx: number; cy: number };
-  /** Background behind the expert: blur strength 0 (off) .. 100, via the recording's person mask. */
-  background?: { blur: number };
+  /**
+   * Background behind the expert, via the recording's person mask (or the green-screen key):
+   * blur strength 0..100, or a replacement image (AI-generated) drawn behind the expert.
+   */
+  background?: { blur: number; imageAssetId?: string | null; /** green screen: remove the green spill on the edges */ despill?: boolean };
   /** automatic picture correction ("magic" like iMovie): CSS-style filter factors, absent = off */
   look?: PictureLook;
   label?: string;
@@ -287,6 +290,8 @@ export interface EditorDocument {
     autoVisuals?: string;
     /** set once the automatic finishing (blur, voice, zooms, picture) has been applied */
     autoPolish?: string;
+    /** AI background plates generated for this video (to switch between) */
+    bgVariants?: string[];
   };
 }
 
@@ -345,6 +350,8 @@ export interface AssetInfo {
   voiceId?: string | null;
   /** Recordings: person mask (AMSK file) for background blur, once computed. */
   maskUrl?: string | null;
+  /** the recording was made in front of a green screen (detected with the person mask) */
+  greenscreen?: boolean;
   /** quality generation of the mask (older ones are recomputed when blur is used) */
   maskVersion?: number | null;
 }

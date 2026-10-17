@@ -252,6 +252,21 @@ test("studio: pauses, cuts, subtitles, zoom, theme, persistence and real MP4 exp
   expect(blurred.composition.document.clips.every((c: { background?: { blur: number } }) => (c.background?.blur ?? 0) > 0)).toBeTruthy();
   expect(blurred.assets.some((a: { maskUrl?: string | null }) => !!a.maskUrl)).toBeTruthy();
 
+  // AI background instead of the room: OpenAI plates (mock), pick one → every clip uses it, also in the export below
+  await page.getByRole("button", { name: "Tło AI" }).click();
+  await page.getByTestId("ai-background").getByLabel("Pomysł na tło").fill("jasna kancelaria z regałem książek");
+  await page.getByTestId("ai-background-generate").click();
+  await expect(page.getByTestId("ai-background-variant")).toHaveCount(3, { timeout: 90_000 });
+  await page.getByTestId("ai-background-variant").nth(1).click();
+  await expect(page.getByTestId("ai-background-variant").nth(1)).toHaveAttribute("aria-pressed", "true");
+  await waitSaved(page);
+  const withBg = (await (await request.get(`/api/admin/compositions/${compId}`)).json()).composition.document;
+  expect(withBg.clips.every((c: { background?: { imageAssetId?: string } }) => !!c.background?.imageAssetId)).toBeTruthy();
+  const bgStats = await (await request.get("http://127.0.0.1:4010/__stats", { headers: { "xi-api-key": "mock-key" } })).json();
+  const bgCall = (bgStats.openai as Array<{ prompt: string }>).find((c) => c.prompt.includes("background plate"))!;
+  expect(bgCall.prompt).toContain("jasna kancelaria z regałem książek");
+  expect(bgCall.prompt).toMatch(/No people/);
+
   // Test 13 — real server-side MP4 export
   await page.getByRole("button", { name: "Eksportuj" }).click();
   await page.getByRole("button", { name: "Renderuj MP4" }).click();

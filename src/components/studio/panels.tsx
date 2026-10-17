@@ -154,14 +154,31 @@ function BackgroundBlurSection({ meta }: { meta: StudioMeta }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [outdated]);
 
+  // background mode: off / blurred room / AI image instead of the room (or the green screen)
+  const imageId = doc.clips.find((c) => c.background?.imageAssetId)?.background?.imageAssetId ?? null;
+  const mode: "off" | "blur" | "image" = imageId ? "image" : blur > 0 ? "blur" : "off";
+  const [imagePanel, setImagePanel] = useState(false);
+  const greenscreen = doc.clips.some((c) => assets[c.assetId]?.greenscreen);
+  const bgFor = (c: AVClip, assetId: string) => ({ blur: 0, imageAssetId: assetId, despill: !!assets[c.assetId]?.greenscreen || undefined });
+  const setImage = (assetId: string) =>
+    apply((d) => ({ ...d, clips: d.clips.map((c) => (mode === "image" && !c.background ? c : { ...c, background: bgFor(c, assetId) })) }), "bg-image");
+  const onClip = (c: AVClip, on: boolean) =>
+    apply((d) => ({ ...d, clips: d.clips.map((x) => (x.id !== c.id ? x : { ...x, background: !on ? undefined : mode === "image" && imageId ? bgFor(x, imageId) : { blur: strength } })) }), `bg-clip:${c.id}`);
+
   return (
     <Section title="Tło za ekspertem">
-      <Seg<"off" | "blur">
-        value={blur > 0 ? "blur" : "off"}
-        onChange={(v) => (v === "off" ? setBlur(0) : void enable())}
+      <Seg<"off" | "blur" | "image">
+        value={imagePanel && mode !== "blur" ? "image" : mode}
+        onChange={(v) => {
+          setImagePanel(v === "image");
+          if (v === "off") setBlur(0);
+          else if (v === "blur") void enable();
+          else if (!masksReady || outdated) void enable(true);
+        }}
         options={[
           ["off", "Bez zmian"],
           ["blur", "Rozmyte"],
+          ["image", "Tło AI"],
         ]}
       />
       {busy ? (
@@ -169,24 +186,32 @@ function BackgroundBlurSection({ meta }: { meta: StudioMeta }) {
           <Loader2 className="h-3.5 w-3.5 animate-spin" /> {outdated ? "Poprawiam krawędzie maski (nowa, dokładniejsza wersja)…" : "Wykrywam sylwetkę eksperta…"} zwykle 1–2 minuty na minutę nagrania.
         </p>
       ) : null}
+      {greenscreen && mode !== "off" ? (
+        <p className="rounded-md bg-emerald-500/10 px-2 py-1 text-[11.5px] text-emerald-300" data-testid="greenscreen-detected">
+          Wykryto greenscreen — tło jest wycinane po kolorze (czyste włosy i krawędzie), zielona poświata usuwana.
+        </p>
+      ) : null}
+      {imagePanel || mode === "image" ? <AiBackgroundPanel meta={meta} current={imageId} disabled={busy || !masksReady} onPick={setImage} /> : null}
       {blur > 0 ? (
+        <Row label={`Siła rozmycia: ${strength}`}>
+          <Slider
+            value={strength}
+            min={5}
+            max={100}
+            step={5}
+            onChange={(v) => {
+              setStrength(v);
+              setBlur(v, true);
+            }}
+          />
+        </Row>
+      ) : null}
+      {mode !== "off" ? (
         <>
-          <Row label={`Siła rozmycia: ${strength}`}>
-            <Slider
-              value={strength}
-              min={5}
-              max={100}
-              step={5}
-              onChange={(v) => {
-                setStrength(v);
-                setBlur(v, true);
-              }}
-            />
-          </Row>
           {!masksReady ? <p className="text-[11.5px] text-amber-300">Maska jeszcze się wczytuje…</p> : null}
           {doc.clips.length > 1 ? (
             <div className="space-y-1" data-testid="blur-clips">
-              <p className="text-[11.5px] text-studio-muted">Rozmycie w klipach (nagranie jest pocięte):</p>
+              <p className="text-[11.5px] text-studio-muted">{mode === "image" ? "Tło AI" : "Rozmycie"} w klipach (nagranie jest pocięte):</p>
               {[...doc.clips]
                 .sort((a, b) => a.start - b.start)
                 .map((c, i) => (
@@ -194,25 +219,98 @@ function BackgroundBlurSection({ meta }: { meta: StudioMeta }) {
                     <span>
                       Klip {i + 1} <span className="text-studio-muted">· {formatShort(c.start)}–{formatShort(clipEnd(c))}</span>
                     </span>
-                    <input
-                      type="checkbox"
-                      aria-label={`Rozmycie w klipie ${i + 1}`}
-                      checked={(c.background?.blur ?? 0) > 0}
-                      onChange={(e) => apply((d) => ({ ...d, clips: d.clips.map((x) => (x.id === c.id ? { ...x, background: e.target.checked ? { blur: strength } : undefined } : x)) }), `blur-clip:${c.id}`)}
-                    />
+                    <input type="checkbox" aria-label={`Rozmycie w klipie ${i + 1}`} checked={!!c.background && ((c.background.blur ?? 0) > 0 || !!c.background.imageAssetId)} onChange={(e) => onClip(c, e.target.checked)} />
                   </label>
                 ))}
             </div>
           ) : null}
           <p className="text-[11.5px] text-studio-muted" data-testid="blur-on">
-            Ekspert zostaje ostry, tło jest rozmyte — w podglądzie i w eksporcie.
+            {mode === "image" ? "Ekspert na tle AI" : "Ekspert zostaje ostry, tło jest rozmyte"} — w podglądzie i w eksporcie.
           </p>
         </>
-      ) : (
-        <p className="text-[11.5px] text-studio-muted">Rozmywa pokój za ekspertem, żeby wyglądało jak z obiektywu z małą głębią ostrości. Sylwetka jest wykrywana automatycznie (raz na nagranie).</p>
-      )}
+      ) : !imagePanel ? (
+        <p className="text-[11.5px] text-studio-muted">Rozmywa pokój za ekspertem albo podmienia tło na obraz AI (także greenscreen). Sylwetka jest wykrywana automatycznie (raz na nagranie).</p>
+      ) : null}
       {err ? <p className="text-[12px] text-red-300">{err}</p> : null}
     </Section>
+  );
+}
+
+const NO_VARIANTS: string[] = [];
+
+/** "Tło AI": OpenAI background plates in the theme colours, variants to pick from. */
+function AiBackgroundPanel({ meta, current, disabled, onPick }: { meta: StudioMeta; current: string | null; disabled: boolean; onPick: (assetId: string) => void }) {
+  const variants = useStudio((s) => s.doc?.meta.bgVariants ?? NO_VARIANTS);
+  const assets = useStudio((s) => s.assets);
+  const [idea, setIdea] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const generate = async () => {
+    setErr(null);
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/admin/compositions/${meta.compositionId}/background`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ idea: idea.trim() || null }) });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? `Błąd HTTP ${res.status}`);
+      const started = Date.now();
+      for (;;) {
+        await new Promise((r) => setTimeout(r, 2500));
+        const job = await (await fetch(`/api/admin/jobs/${data.jobId}`, { cache: "no-store" })).json().catch(() => null);
+        if (job?.status === "FAILED") throw new Error(job.error ?? "Nie udało się wygenerować tła");
+        if (job?.status === "SUCCEEDED") {
+          const st = useStudio.getState();
+          st.addAssets(job.assets ?? []);
+          const ids: string[] = job.result?.variantIds ?? [job.result?.assetId].filter(Boolean);
+          st.apply((d) => ({ ...d, meta: { ...d.meta, bgVariants: [...ids, ...(d.meta.bgVariants ?? [])].slice(0, 24) } }), "bg-variants");
+          if (ids[0] && !current) onPick(ids[0]);
+          break;
+        }
+        if (Date.now() - started > 6 * 60_000) throw new Error("Generowanie trwa zbyt długo — spróbuj ponownie.");
+      }
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="space-y-2 rounded-lg border border-studio-line p-2.5" data-testid="ai-background">
+      <textarea
+        value={idea}
+        onChange={(e) => setIdea(e.target.value)}
+        rows={2}
+        placeholder="Pomysł na tło (opcjonalnie), np. jasna kancelaria z regałem książek"
+        aria-label="Pomysł na tło"
+        className="w-full resize-y rounded-lg border border-studio-line bg-studio-3 px-2 py-1.5 text-[12px] text-studio-text outline-none focus:border-white/30"
+      />
+      <SButton className="w-full" onClick={generate} disabled={busy || disabled} data-testid="ai-background-generate">
+        {busy ? <Loader2 className="animate-spin" /> : <Sparkles />} {busy ? "OpenAI maluje tło…" : variants.length ? "Wygeneruj kolejne tła" : "Wygeneruj tło (warianty)"}
+      </SButton>
+      <p className="text-[11px] leading-snug text-studio-muted">W kolorach motywu i stylu kategorii, bez ludzi i tekstu, dopasowane do pytania. Bez pomysłu AI dobierze scenę do tematu.</p>
+      {variants.length ? (
+        <div className="grid grid-cols-3 gap-1.5">
+          {variants.map((id, i) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => onPick(id)}
+              aria-pressed={current === id}
+              aria-label={`Tło ${i + 1}`}
+              data-testid="ai-background-variant"
+              className={cn("overflow-hidden rounded-md border-2 bg-studio-3", current === id ? "border-emerald-400" : "border-transparent hover:border-white/30")}
+            >
+              {assets[id] ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={assets[id].url} alt="" className="aspect-[9/16] w-full object-cover" loading="lazy" />
+              ) : (
+                <div className="aspect-[9/16] w-full" />
+              )}
+            </button>
+          ))}
+        </div>
+      ) : null}
+      {err ? <p className="text-[12px] text-red-300">{err}</p> : null}
+    </div>
   );
 }
 
