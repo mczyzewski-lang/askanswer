@@ -22,6 +22,7 @@ enum QuestionStatus {
   IN_PROGRESS // W trakcie
   RECORDED // Nagrane
   NEEDS_FIX // Do poprawy
+  TO_ACCEPT // Do akceptacji (gotowy montaż czeka na akceptację)
   APPROVED // Zatwierdzone
 }
 

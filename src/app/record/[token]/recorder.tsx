@@ -449,7 +449,7 @@ export function Recorder({ token }: { token: string }) {
                           {uploadingNow
                             ? "Wysyłanie…"
                             : recorded
-                              ? `${q.status === "APPROVED" ? "Film zatwierdzony" : q.status === "IN_PROGRESS" ? "Film w trakcie montażu" : "Nagrane"}${q.takes.length > 1 ? ` · ${q.takes.length} ujęcia` : ""} · dotknij, aby nagrać ponownie`
+                              ? `${q.status === "APPROVED" ? "Film zatwierdzony" : q.status === "TO_ACCEPT" ? "Film czeka na akceptację" : q.status === "IN_PROGRESS" ? "Film w trakcie montażu" : "Nagrane"}${q.takes.length > 1 ? ` · ${q.takes.length} ujęcia` : ""} · dotknij, aby nagrać ponownie`
                               : q.status === "NEEDS_FIX"
                                 ? "Do poprawy"
                                 : locked
@@ -1385,8 +1385,8 @@ function VideosSheet({ token, videos, onClose }: { token: string; videos: Expert
                   <Play className="ml-0.5 h-4 w-4" />
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className={cn("mb-1 inline-block rounded-full px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-[0.08em]", v.status === "APPROVED" ? "bg-emerald-400/20 text-emerald-300" : "bg-sky-400/20 text-sky-300")}>
-                    {v.status === "APPROVED" ? "Zatwierdzone" : "W trakcie montażu"}
+                  <span className={cn("mb-1 inline-block rounded-full px-2 py-0.5 text-[10.5px] font-semibold uppercase tracking-[0.08em]", v.status === "APPROVED" ? "bg-emerald-400/20 text-emerald-300" : v.status === "TO_ACCEPT" ? "bg-rose-400/20 text-rose-300" : "bg-sky-400/20 text-sky-300")}>
+                    {v.status === "APPROVED" ? "Zatwierdzone" : v.status === "TO_ACCEPT" ? "Do akceptacji" : "W trakcie montażu"}
                   </span>
                   <span className="block truncate text-[15px] font-medium">{v.text}</span>
                   <span className="block text-[12px] text-white/45">{v.category}</span>

@@ -17,7 +17,7 @@ export const QuestionInput = z.object({
   expertId: z.string().nullable().optional(),
   /** CSV "Ekspert" column: matched by name to an existing expert */
   expertName: z.string().trim().max(120).optional(),
-  status: z.enum(["TO_RECORD", "IN_PROGRESS", "RECORDED", "NEEDS_FIX", "APPROVED"]).optional(),
+  status: z.enum(["TO_RECORD", "IN_PROGRESS", "RECORDED", "NEEDS_FIX", "TO_ACCEPT", "APPROVED"]).optional(),
 });
 
 export const ProjectInput = z.object({

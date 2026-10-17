@@ -32,7 +32,7 @@ import { NarrationVoiceChanger } from "./narration";
 export interface StudioMeta {
   compositionId: string;
   project: { id: string; name: string; themeId: string | null; voiceId: string };
-  question: { id: string; text: string } | null;
+  question: { id: string; text: string; spokenText?: string | null; status?: string } | null;
   take: { id: string; takeNumber: number; hasTranscript: boolean; transcriptionError: string | null; markers: unknown } | null;
   takes: Array<{ id: string; takeNumber: number; durationSec: number | null }>;
   elevenLabs: boolean;
@@ -90,7 +90,7 @@ export function QuestionPanel({ meta }: { meta: StudioMeta }) {
       </Section>
       {meta.elevenLabs ? (
         <Section title="Lektor pytania (ElevenLabs)">
-          <NarrationVoiceChanger questionText={meta.question?.text ?? doc.meta.questionText} initialVoiceId={doc.narration.length ? null : meta.project.voiceId} />
+          <NarrationVoiceChanger questionText={meta.question?.spokenText || meta.question?.text || doc.meta.questionText} initialVoiceId={doc.narration.length ? null : meta.project.voiceId} />
         </Section>
       ) : null}
     </div>
@@ -159,7 +159,10 @@ function BackgroundBlurSection({ meta }: { meta: StudioMeta }) {
   const mode: "off" | "blur" | "image" = imageId ? "image" : blur > 0 ? "blur" : "off";
   const [imagePanel, setImagePanel] = useState(false);
   const greenscreen = doc.clips.some((c) => assets[c.assetId]?.greenscreen);
-  const bgFor = (c: AVClip, assetId: string) => ({ blur: 0, imageAssetId: assetId, despill: !!assets[c.assetId]?.greenscreen || undefined });
+  const imageBlur = doc.clips.find((c) => c.background?.imageAssetId)?.background?.imageBlur ?? 0;
+  const bgFor = (c: AVClip, assetId: string) => ({ blur: 0, imageAssetId: assetId, imageBlur: imageBlur || undefined, despill: !!assets[c.assetId]?.greenscreen || undefined });
+  const setImageBlur = (v: number) =>
+    apply((d) => ({ ...d, clips: d.clips.map((c) => (c.background?.imageAssetId ? { ...c, background: { ...c.background, imageBlur: v || undefined } } : c)) }), "bg-image-blur");
   const setImage = (assetId: string) =>
     apply((d) => ({ ...d, clips: d.clips.map((c) => (mode === "image" && !c.background ? c : { ...c, background: bgFor(c, assetId) })) }), "bg-image");
   const onClip = (c: AVClip, on: boolean) =>
@@ -192,6 +195,11 @@ function BackgroundBlurSection({ meta }: { meta: StudioMeta }) {
         </p>
       ) : null}
       {imagePanel || mode === "image" ? <AiBackgroundPanel meta={meta} current={imageId} disabled={busy || !masksReady} onPick={setImage} /> : null}
+      {mode === "image" ? (
+        <Row label={`Rozmycie tła AI: ${imageBlur}`}>
+          <Slider value={imageBlur} min={0} max={100} step={5} onChange={setImageBlur} aria-label="Rozmycie tła AI" />
+        </Row>
+      ) : null}
       {blur > 0 ? (
         <Row label={`Siła rozmycia: ${strength}`}>
           <Slider
@@ -846,7 +854,7 @@ export function AudioPanel({ meta, onUpload, onRegenerate }: { meta: StudioMeta;
         ) : (
           <p className="text-[12.5px] text-studio-muted">Brak ścieżki lektora{meta.elevenLabs ? "" : " — wymaga konfiguracji ElevenLabs"}.</p>
         )}
-        {meta.elevenLabs ? <NarrationVoiceChanger questionText={meta.question?.text} initialVoiceId={doc.narration.length ? null : meta.project.voiceId} /> : null}
+        {meta.elevenLabs ? <NarrationVoiceChanger questionText={meta.question?.spokenText || meta.question?.text} initialVoiceId={doc.narration.length ? null : meta.project.voiceId} /> : null}
         <p className="text-[11.5px] text-studio-muted">Głos lektora to osobny plik audio — nigdy nie jest nagrywany przez mikrofon telefonu.</p>
       </Section>
       <VoiceEnhanceSection meta={meta} />

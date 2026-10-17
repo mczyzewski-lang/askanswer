@@ -36,6 +36,7 @@ import { EXPORT_FORMATS } from "@/lib/editor/factory";
 import { FONT_FAMILIES } from "@/lib/themes";
 import { ensureFontsLoaded } from "@/lib/client/fonts";
 import { cn } from "@/lib/utils";
+import { QUESTION_STATUSES } from "@/lib/question-status";
 import { Dialog, DialogContent, Tip } from "@/components/ui";
 import { useStudio, type RenderInfo } from "./store";
 import { PlaybackEngine } from "./playback";
@@ -454,6 +455,7 @@ export function Studio({ id }: { id: string }) {
             {clean ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
           </button>
         </Tip>
+        {payload.question ? <StatusSwitch questionId={payload.question.id} initial={payload.question.status ?? "RECORDED"} /> : null}
         <SButton variant="primary" onClick={() => setExportOpen(true)}>
           <Download /> Eksportuj
         </SButton>
@@ -848,4 +850,39 @@ function skippedText(job: AutoVisualsJob | null): string | null {
   if (why === "no transcript") return "brak napisów — najpierw wygeneruj transkrypcję.";
   if (why === "disabled") return "wyłączone w ustawieniach projektu.";
   return null;
+}
+
+const STATUS_TONE: Record<string, string> = {
+  TO_RECORD: "bg-zinc-400",
+  IN_PROGRESS: "bg-sky-400",
+  RECORDED: "bg-violet-400",
+  NEEDS_FIX: "bg-amber-400",
+  TO_ACCEPT: "bg-rose-400",
+  APPROVED: "bg-emerald-400",
+};
+
+/** The recording's status (Do poprawy, Do akceptacji, Zatwierdzone…) changed right from the Studio. */
+function StatusSwitch({ questionId, initial }: { questionId: string; initial: string }) {
+  const [status, setStatus] = useState(initial);
+  const [busy, setBusy] = useState(false);
+  const change = async (next: string) => {
+    const prev = status;
+    setStatus(next);
+    setBusy(true);
+    const res = await fetch(`/api/admin/questions/${questionId}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ status: next }) }).catch(() => null);
+    if (!res?.ok) setStatus(prev);
+    setBusy(false);
+  };
+  return (
+    <label className="flex items-center gap-1.5 rounded-lg border border-studio-line bg-studio-2 px-2 py-1 text-[12.5px]" title="Status nagrania">
+      <span className={cn("h-2 w-2 shrink-0 rounded-full", STATUS_TONE[status] ?? "bg-zinc-400")} />
+      <select value={status} disabled={busy} onChange={(e) => void change(e.target.value)} aria-label="Status nagrania" data-testid="studio-status" className="bg-transparent text-studio-text outline-none">
+        {QUESTION_STATUSES.map(([k, label]) => (
+          <option key={k} value={k} className="bg-studio-2">
+            {label}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
 }

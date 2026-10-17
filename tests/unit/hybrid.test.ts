@@ -6,7 +6,7 @@ import { buildInitialDocument } from "../../src/lib/editor/factory";
 import { DEFAULT_THEME } from "../../src/lib/themes";
 import { contentDuration, docDuration, endCardStart, timedSegments } from "../../src/lib/editor/timeline";
 import { applyEndCard } from "../../src/lib/end-card";
-import { drawFrame, layoutSubtitle, type Ctx } from "../../src/lib/render/compositor";
+import { drawFaceBubble, drawFrame, layoutSubtitle, type Ctx } from "../../src/lib/render/compositor";
 
 describe("hybrid projects", () => {
   it("reads the mixed CSV without a header", () => {
@@ -110,5 +110,24 @@ describe("CTA placement and per-fragment subtitles", () => {
     const b = layoutSubtitle(c, doc, segs[1]);
     expect(a.blockRect.y + a.blockRect.h / 2).toBeCloseTo(doc.subtitles.style.y * 1920, 0);
     expect(b.blockRect.y + b.blockRect.h / 2).toBeCloseTo(0.3 * 1920, 0);
+  });
+});
+
+describe("face bubble", () => {
+  it("shows the composed frame (blurred / AI background), not the raw camera", () => {
+    const doc = buildInitialDocument({ questionText: "Q", theme: DEFAULT_THEME, mode: "ANSWER_ONLY", recording: { assetId: "rec", duration: 10 }, segments: [], pauses: [], visibility: "FULL", questionSeconds: 4 });
+    doc.width = 270;
+    doc.height = 480;
+    const raw = createCanvas(270, 480);
+    raw.getContext("2d").fillStyle = "#00ff00";
+    raw.getContext("2d").fillRect(0, 0, 270, 480);
+    const comp = createCanvas(270, 480);
+    comp.getContext("2d").fillStyle = "#ff0000";
+    comp.getContext("2d").fillRect(0, 0, 270, 480);
+    const out = createCanvas(270, 480);
+    const b = { x: 0.5, y: 0.5, size: 0.4 };
+    drawFaceBubble(out.getContext("2d") as unknown as Ctx, doc, b, { frame: { image: raw as never, width: 270, height: 480 }, rect: { x: 0, y: 0, w: 270, h: 480 }, composite: comp as never });
+    const px = out.getContext("2d").getImageData(135, 240, 1, 1).data;
+    expect([px[0], px[1]]).toEqual([255, 0]);
   });
 });

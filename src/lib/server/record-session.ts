@@ -73,7 +73,7 @@ export async function recordSession(token: string) {
     })),
     // films in editing / approved (watched on demand: GET /api/record/[token]/videos/[questionId])
     videos: questions
-      .filter((q) => (q.status === "IN_PROGRESS" || q.status === "APPROVED") && (q.recording?.takes ?? []).some((t) => t.status === "READY"))
+      .filter((q) => (q.status === "IN_PROGRESS" || q.status === "TO_ACCEPT" || q.status === "APPROVED") && (q.recording?.takes ?? []).some((t) => t.status === "READY"))
       .map((q) => ({ questionId: q.id, text: q.text, category: q.category?.name ?? "Ogólne", status: q.status })),
   };
 }

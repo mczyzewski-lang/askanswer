@@ -53,7 +53,7 @@ export async function loadStudio(id: string) {
   return {
     composition: { id: comp.id, name: comp.name, version: comp.version, status: comp.status, updatedAt: comp.updatedAt, document: doc },
     project: { id: comp.project.id, name: comp.project.name, themeId: comp.project.themeId, voiceId: comp.project.voiceId ?? env.defaultVoiceId },
-    question: comp.question ? { id: comp.question.id, text: comp.question.text } : null,
+    question: comp.question ? { id: comp.question.id, text: comp.question.text, spokenText: comp.question.spokenText, status: comp.question.status } : null,
     take: take
       ? {
           id: take.id,

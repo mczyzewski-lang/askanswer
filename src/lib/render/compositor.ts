@@ -395,6 +395,8 @@ export interface MainVideo {
   rect: Rect;
   /** picture correction filter of the clip ("none" = off) */
   look?: string;
+  /** the frame as composed (blurred / AI background), in output pixels — the bubble cuts from it */
+  composite?: Drawable;
 }
 
 /**
@@ -436,8 +438,16 @@ export function drawFaceBubble(ctx: Ctx, doc: EditorDocument, b: FaceBubble, mai
   ctx.arc(cx, cy, R - ring, 0, Math.PI * 2);
   ctx.clip();
   ctx.imageSmoothingEnabled = true;
-  ctx.filter = main.look ?? "none";
-  ctx.drawImage(main.frame.image, sx, sy, sw, sh, cx - R + ring, cy - R + ring, (R - ring) * 2, (R - ring) * 2);
+  if (main.composite) {
+    // background already blurred / replaced (and the look applied): cut the same square in output pixels
+    const s = Math.min(side, W, H);
+    const ox = Math.max(0, Math.min(W - s, fx - s / 2));
+    const oy = Math.max(0, Math.min(H - s, fy - s / 2));
+    ctx.drawImage(main.composite, ox, oy, s, s, cx - R + ring, cy - R + ring, (R - ring) * 2, (R - ring) * 2);
+  } else {
+    ctx.filter = main.look ?? "none";
+    ctx.drawImage(main.frame.image, sx, sy, sw, sh, cx - R + ring, cy - R + ring, (R - ring) * 2, (R - ring) * 2);
+  }
   ctx.restore();
 }
 
@@ -736,13 +746,17 @@ function drawWithBlurredBackground(
   look = "none",
   bgImage: FrameSource | null = null,
   despill = false,
+  imageBlur = 0,
 ) {
   const W = doc.width;
   const H = doc.height;
   if (bgImage) {
     // replacement background (AI image) instead of the room: cover the frame, the person goes on top
-    const k = Math.max(W / bgImage.width, H / bgImage.height);
-    ctx.drawImage(bgImage.image, (W - bgImage.width * k) / 2, (H - bgImage.height * k) / 2, bgImage.width * k, bgImage.height * k);
+    if (imageBlur > 0) ctx.drawImage(blurredPlate(bgImage, imageBlur, W, H, scratch), 0, 0, W, H);
+    else {
+      const k = Math.max(W / bgImage.width, H / bgImage.height);
+      ctx.drawImage(bgImage.image, (W - bgImage.width * k) / 2, (H - bgImage.height * k) / 2, bgImage.width * k, bgImage.height * k);
+    }
     drawPerson(ctx, doc, frame, mask, r, scratch, look, despill);
     return;
   }
@@ -781,6 +795,32 @@ function drawWithBlurredBackground(
   ctx.drawImage(mid.canvas, 0, 0, W, H);
 
   drawPerson(ctx, doc, frame, mask, r, scratch, look, despill);
+}
+
+/** The AI background softened (0–100), computed once per image and strength — the plate does not move. */
+const plateSig = new WeakMap<object, { img: object; blur: number; w: number; h: number }>();
+function blurredPlate(img: FrameSource, blur: number, W: number, H: number, scratch: NonNullable<RenderEnv["scratch"]>): Drawable {
+  const out = scratch("bg-plate", W, H);
+  const was = plateSig.get(out.canvas as object);
+  if (was && was.img === img.image && was.blur === blur && was.w === W && was.h === H) return out.canvas;
+  const f = 2 + (Math.min(100, blur) / 100) * 22; // 2..24 × smaller
+  const smW = Math.max(4, Math.round(W / f));
+  const smH = Math.max(4, Math.round(H / f));
+  const sm = scratch("bg-plate-sm", smW, smH);
+  sm.ctx.imageSmoothingEnabled = true;
+  const k = Math.max(smW / img.width, smH / img.height);
+  sm.ctx.clearRect(0, 0, smW, smH);
+  sm.ctx.drawImage(img.image, (smW - img.width * k) / 2, (smH - img.height * k) / 2, img.width * k, img.height * k);
+  const d = sm.ctx.getImageData(0, 0, smW, smH);
+  boxBlur(d.data, smW, smH, 2);
+  boxBlur(d.data, smW, smH, 2);
+  sm.ctx.putImageData(d, 0, 0);
+  out.ctx.imageSmoothingEnabled = true;
+  (out.ctx as unknown as { imageSmoothingQuality: string }).imageSmoothingQuality = "high";
+  out.ctx.clearRect(0, 0, W, H);
+  out.ctx.drawImage(sm.canvas, 0, 0, W, H);
+  plateSig.set(out.canvas as object, { img: img.image as object, blur, w: W, h: H });
+  return out.canvas;
 }
 
 /** The sharp person through the mask (the mask covers the whole source frame, so it uses the same placement). */
@@ -913,15 +953,24 @@ export function drawFrame(ctx: Ctx, doc: EditorDocument, t: number, env: RenderE
       const mask = blur > 0 || bgImage ? env.getMask?.(clip.assetId, frame.time ?? src) : null;
       // automatic picture correction: the same filter in the browser and in the export
       const look = clip.look ? lookFilter(clip.look) : "none";
-      if ((blur > 0 || bgImage) && mask && env.scratch) drawWithBlurredBackground(ctx, doc, frame, mask, r, blur, env.scratch, look, bgImage, !!clip.background?.despill);
-      else {
+      let composite: Drawable | undefined;
+      if ((blur > 0 || bgImage) && mask && env.scratch) {
+        // composed off-screen so the face bubble can show the same blurred / AI background
+        const comp = env.scratch("main-composite", W, H);
+        comp.ctx.clearRect(0, 0, W, H);
+        comp.ctx.imageSmoothingEnabled = true;
+        (comp.ctx as unknown as { imageSmoothingQuality: string }).imageSmoothingQuality = "high";
+        drawWithBlurredBackground(comp.ctx, doc, frame, mask, r, blur, env.scratch, look, bgImage, !!clip.background?.despill, clip.background?.imageBlur ?? 0);
+        ctx.drawImage(comp.canvas, 0, 0);
+        composite = comp.canvas;
+      } else {
         ctx.save();
         ctx.filter = look;
         ctx.drawImage(frame.image, r.x, r.y, r.w, r.h);
         ctx.restore();
       }
       drewVideo = true;
-      main = { frame, rect: r, look };
+      main = { frame, rect: r, look, composite };
     }
   }
   if (!drewVideo) {

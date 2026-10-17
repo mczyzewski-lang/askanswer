@@ -64,7 +64,7 @@ export interface AVClip {
    * Background behind the expert, via the recording's person mask (or the green-screen key):
    * blur strength 0..100, or a replacement image (AI-generated) drawn behind the expert.
    */
-  background?: { blur: number; imageAssetId?: string | null; /** green screen: remove the green spill on the edges */ despill?: boolean };
+  background?: { blur: number; imageAssetId?: string | null; /** AI background: how soft (0–100) */ imageBlur?: number; /** green screen: remove the green spill on the edges */ despill?: boolean };
   /** automatic picture correction ("magic" like iMovie): CSS-style filter factors, absent = off */
   look?: PictureLook;
   label?: string;

@@ -31,7 +31,8 @@ export function NarrationVoiceChanger({ questionText, initialVoiceId }: { questi
       const res = await fetch(`/api/admin/compositions/${compositionId}/narration`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ voiceId: voice, modelId: model || null, text: questionText || undefined }),
+        // the server picks the text: the narrator's question (spokenText), else the title
+        body: JSON.stringify({ voiceId: voice, modelId: model || null }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Nie udało się wygenerować lektora");

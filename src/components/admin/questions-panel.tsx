@@ -61,6 +61,7 @@ export const STATUS: Record<string, { label: string; tone: "gray" | "blue" | "am
   IN_PROGRESS: { label: "W trakcie", tone: "blue" },
   RECORDED: { label: "Nagrane", tone: "violet" },
   NEEDS_FIX: { label: "Do poprawy", tone: "amber" },
+  TO_ACCEPT: { label: "Do akceptacji", tone: "red" },
   APPROVED: { label: "Zatwierdzone", tone: "green" },
 };
 
@@ -70,9 +71,10 @@ const STATUS_LOOK: Record<string, { bar: string; field: string; dot: string }> =
   IN_PROGRESS: { bar: "border-l-sky-500", field: "border-sky-200 bg-sky-50 text-sky-800", dot: "bg-sky-500" },
   RECORDED: { bar: "border-l-violet-500", field: "border-violet-200 bg-violet-50 text-violet-800", dot: "bg-violet-500" },
   NEEDS_FIX: { bar: "border-l-amber-500", field: "border-amber-200 bg-amber-50 text-amber-900", dot: "bg-amber-500" },
+  TO_ACCEPT: { bar: "border-l-rose-500", field: "border-rose-200 bg-rose-50 text-rose-800", dot: "bg-rose-500" },
   APPROVED: { bar: "border-l-emerald-500", field: "border-emerald-200 bg-emerald-50 text-emerald-800", dot: "bg-emerald-500" },
 };
-const STATUS_ORDER = ["NEEDS_FIX", "RECORDED", "IN_PROGRESS", "APPROVED", "TO_RECORD"];
+const STATUS_ORDER = ["NEEDS_FIX", "TO_ACCEPT", "RECORDED", "IN_PROGRESS", "APPROVED", "TO_RECORD"];
 
 type SortKey = "manual" | "status" | "newest" | "takes" | "category" | "alpha";
 const SORTS: Array<[SortKey, string]> = [
@@ -587,7 +589,7 @@ function QuestionRow({
                   ✓ Treść zatwierdzona
                 </span>
               ) : null}
-              {q.status === "IN_PROGRESS" || q.status === "APPROVED" ? (
+              {q.status === "IN_PROGRESS" || q.status === "TO_ACCEPT" || q.status === "APPROVED" ? (
                 q.takes.some((t) => t.status === "READY") ? (
                   <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-800" data-testid="expert-sees-video">
                     ▶ Ekspert widzi film{q.takes.some((t) => t.editedDownload) ? " (eksport)" : " (nagranie)"}

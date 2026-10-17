@@ -26,10 +26,10 @@ export function Row({ label, children }: { label: string; children: ReactNode })
   );
 }
 
-export function Slider({ value, min, max, step = 1, onChange, format }: { value: number; min: number; max: number; step?: number; onChange: (v: number) => void; format?: (v: number) => string }) {
+export function Slider({ value, min, max, step = 1, onChange, format, "aria-label": label }: { value: number; min: number; max: number; step?: number; onChange: (v: number) => void; format?: (v: number) => string; "aria-label"?: string }) {
   return (
     <span className="flex items-center gap-2">
-      <input type="range" className="range" min={min} max={max} step={step} value={value} onChange={(e) => onChange(Number(e.target.value))} />
+      <input type="range" className="range" min={min} max={max} step={step} value={value} aria-label={label} onChange={(e) => onChange(Number(e.target.value))} />
       <span className="tabular w-12 shrink-0 text-right text-[11.5px] text-studio-muted">{format ? format(value) : Math.round(value * 100) / 100}</span>
     </span>
   );

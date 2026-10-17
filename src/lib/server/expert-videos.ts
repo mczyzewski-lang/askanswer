@@ -8,7 +8,7 @@ import { signedUrl } from "./storage";
  * since (or was never exported) a light preview render (720p draft) is queued and, until it is
  * ready, the newest older export — or the recording — is shown with a "rendering" note.
  */
-export const WATCHABLE = ["IN_PROGRESS", "APPROVED"];
+export const WATCHABLE = ["IN_PROGRESS", "TO_ACCEPT", "APPROVED"];
 
 export async function expertVideo(projectId: string, expertId: string, questionId: string) {
   const q = await prisma.question.findFirst({
