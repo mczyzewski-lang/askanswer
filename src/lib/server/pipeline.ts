@@ -30,6 +30,8 @@ interface Markers {
   narrationEnd?: number | null;
   /** question + prompter: the answer starts here (the prompter connected after the narration); the gap is cut */
   answerStart?: number | null;
+  /** the camera picture size as the expert saw it (orientation applied) — to catch squeezed files */
+  camera?: { w: number; h: number };
   /** front camera: flip horizontally, so the video is what the expert saw in the mirrored preview */
   mirrored?: boolean;
 }
@@ -64,7 +66,9 @@ export async function processTake(takeId: string, opts: { renormalize?: boolean 
       await step(takeId, "Ponowna normalizacja wideo");
       const old = await prisma.mediaAsset.findUniqueOrThrow({ where: { id: normalizedId } });
       const out = path.join(work, "normalized.mp4");
-      await normalizeRecording(src.path, out, undefined, duration, !!(take.markers as Markers | null)?.mirrored);
+      // "Napraw obraz" on a recording from before the camera size was saved: the phone was upright
+      const camera = (take.markers as Markers | null)?.camera ?? { w: 1080, h: 1920 };
+      await normalizeRecording(src.path, out, undefined, duration, !!(take.markers as Markers | null)?.mirrored, camera);
       const n = await probe(out);
       // a new file name, so no browser keeps showing the old picture from its cache
       const key = `projects/${take.recording.projectId}/takes/${takeId}/normalized-${Date.now()}.mp4`;
@@ -85,7 +89,7 @@ export async function processTake(takeId: string, opts: { renormalize?: boolean 
     if (!normalizedId) {
       await step(takeId, "Normalizacja wideo");
       const out = path.join(work, "normalized.mp4");
-      await normalizeRecording(src.path, out, undefined, duration, !!(take.markers as Markers | null)?.mirrored);
+      await normalizeRecording(src.path, out, undefined, duration, !!(take.markers as Markers | null)?.mirrored, (take.markers as Markers | null)?.camera);
       const n = await probe(out);
       const key = `projects/${take.recording.projectId}/takes/${takeId}/normalized.mp4`;
       const size = await putFile(key, out, "video/mp4");

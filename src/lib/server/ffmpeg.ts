@@ -143,19 +143,52 @@ export function normalizedSize(src: { width: number; height: number }, rotation 
   return { width: even(w * k), height: even(h * k) };
 }
 
-export async function normalizeRecording(input: string, output: string, onProgress?: (p: number) => void, duration = 0, mirror = false): Promise<void> {
-  // a fixed output size from the frames that make up most of the recording; frames of another size
-  // (a resolution switch of the camera) are fitted in, never stretched
-  let size: { width: number; height: number } | null = null;
-  try {
-    const dom = await dominantFrameSize(input, duration);
-    if (dom) size = normalizedSize(dom, (await probe(input)).rotation);
-  } catch {
-    size = null;
+/** Black bars around the picture (letterbox / pillarbox) found by cropdetect over a few seconds. */
+export async function detectCrop(file: string, duration = 0): Promise<{ w: number; h: number; x: number; y: number } | null> {
+  const ss = duration > 3 ? Math.min(2, duration / 3) : 0;
+  const { stderr } = await run(env.ffmpeg, ["-hide_banner", "-ss", String(ss), "-t", "4", "-i", file, "-an", "-vf", "cropdetect=limit=24:round=2:reset=0", "-f", "null", "-"]);
+  const m = [...stderr.matchAll(/crop=(\d+):(\d+):(\d+):(\d+)/g)].pop();
+  return m ? { w: Number(m[1]), h: Number(m[2]), x: Number(m[3]), y: Number(m[4]) } : null;
+}
+
+/**
+ * How to turn the file into an upright, undistorted picture.
+ * - The dominant frame size gives the output size; frames of another size (a camera resolution switch
+ *   mid-way) are fitted in, never stretched.
+ * - When the file's orientation differs from what the camera showed (`camera`, from the recorder),
+ *   the browser either boxed the picture (black bars → cropped away) or squeezed it into the wrong
+ *   shape (→ scaled back to the camera's proportions).
+ */
+export async function normalizeFilter(input: string, duration = 0, camera?: { w: number; h: number } | null): Promise<string> {
+  const dom = await dominantFrameSize(input, duration);
+  if (!dom) return "scale='if(gt(iw,ih),min(1920,iw),min(1080,iw))':-2:flags=lanczos";
+  const rotation = (await probe(input)).rotation;
+  const shown = Math.abs(rotation) % 180 === 90 ? { width: dom.height, height: dom.width } : dom;
+  const sarFix = "scale='trunc(iw*sar/2)*2':ih,setsar=1";
+  const portrait = (w: number, h: number) => h > w;
+  if (camera && portrait(camera.w, camera.h) !== portrait(shown.width, shown.height) && Math.abs(camera.w / camera.h - shown.width / shown.height) > 0.15) {
+    const crop = await detectCrop(input, duration).catch(() => null);
+    if (crop && crop.w * crop.h < shown.width * shown.height * 0.85 && portrait(crop.w, crop.h) === portrait(camera.w, camera.h)) {
+      const size = normalizedSize({ width: crop.w, height: crop.h });
+      return `${sarFix},crop=${crop.w}:${crop.h}:${crop.x}:${crop.y},scale=${size.width}:${size.height}:flags=lanczos,setsar=1`;
+    }
+    // squeezed: back to the camera's proportions at the file's resolution
+    const long = Math.max(shown.width, shown.height);
+    const k = long / Math.max(camera.w, camera.h);
+    const size = normalizedSize({ width: Math.round(camera.w * k), height: Math.round(camera.h * k) });
+    return `${sarFix},scale=${size.width}:${size.height}:flags=lanczos,setsar=1`;
   }
-  const fit = size
-    ? `scale='trunc(iw*sar/2)*2':ih,setsar=1,scale=${size.width}:${size.height}:force_original_aspect_ratio=decrease:flags=lanczos,pad=${size.width}:${size.height}:(ow-iw)/2:(oh-ih)/2:black,setsar=1`
-    : "scale='if(gt(iw,ih),min(1920,iw),min(1080,iw))':-2:flags=lanczos";
+  const size = normalizedSize(shown);
+  return `${sarFix},scale=${size.width}:${size.height}:force_original_aspect_ratio=decrease:flags=lanczos,pad=${size.width}:${size.height}:(ow-iw)/2:(oh-ih)/2:black,setsar=1`;
+}
+
+export async function normalizeRecording(input: string, output: string, onProgress?: (p: number) => void, duration = 0, mirror = false, camera?: { w: number; h: number } | null): Promise<void> {
+  let fit: string;
+  try {
+    fit = await normalizeFilter(input, duration, camera);
+  } catch {
+    fit = "scale='if(gt(iw,ih),min(1920,iw),min(1080,iw))':-2:flags=lanczos";
+  }
   await run(
     env.ffmpeg,
     [

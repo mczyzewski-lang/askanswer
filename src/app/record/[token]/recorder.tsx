@@ -709,7 +709,8 @@ function RecordScreen(props: {
         mimeType: mime,
         mode: modeRef.current,
         narrationAssetId: narration?.assetId ?? null,
-        markers: { ...markers.current, mirrored: props.mirrored },
+        // the picture as the camera delivered it at the end (the server checks the file against it)
+        markers: { ...markers.current, mirrored: props.mirrored, ...cameraSize() },
         durationSec: duration,
         blob,
         createdAt: Date.now(),
@@ -1201,7 +1202,7 @@ function CameraView({ stream, mirrored, fit = "contain" }: { stream: MediaStream
     if (stream) void v.play().catch(() => {});
   }, [stream]);
   // preview is mirrored like a mirror for the front camera; the server saves that recording mirrored too
-  return <video ref={ref} className={cn("absolute inset-0 h-full w-full bg-black", fit === "cover" ? "object-cover" : "object-contain", mirrored && "-scale-x-100")} muted playsInline autoPlay />;
+  return <video ref={ref} data-camera className={cn("absolute inset-0 h-full w-full bg-black", fit === "cover" ? "object-cover" : "object-contain", mirrored && "-scale-x-100")} muted playsInline autoPlay />;
 }
 
 /**
@@ -1290,6 +1291,12 @@ function UploadBanner({ uploads, online, onRetry }: { uploads: Record<string, Up
     );
   }
   return null;
+}
+
+/** Displayed size of the camera picture (orientation applied), as the expert saw it. */
+function cameraSize(): { camera?: { w: number; h: number } } {
+  const v = typeof document !== "undefined" ? (document.querySelector("video[data-camera]") as HTMLVideoElement | null) : null;
+  return v && v.videoWidth > 0 && v.videoHeight > 0 ? { camera: { w: v.videoWidth, h: v.videoHeight } } : {};
 }
 
 /** "Przejrzyj treści": read, fix and accept the items (count = still to accept). */
