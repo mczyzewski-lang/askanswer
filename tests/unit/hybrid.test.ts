@@ -266,6 +266,12 @@ describe("question as a phone call", () => {
     expect(frameAt(doc, 3, 135, 15)).toBeLessThan(40); // the dark pill at the top
     expect(frameAt(doc, 7.5, 135, 15)).toBe(255); // gone after the question
   });
+  it("puts the call bar where the editor moved it, at its size", () => {
+    const doc = make("bar");
+    doc.callStyle!.bar = { x: 0.5, y: 0.5, scale: 1.4 };
+    expect(frameAt(doc, 3, 135, 15)).toBe(255); // no longer at the top
+    expect(frameAt(doc, 3, 135, 240 + 18)).toBeLessThan(40); // the pill in the middle
+  });
   it("covers the screen with the call while the question is read", () => {
     const doc = make("phone");
     expect(frameAt(doc, 3, 20, 470)).toBeLessThan(60); // dark call screen instead of the video

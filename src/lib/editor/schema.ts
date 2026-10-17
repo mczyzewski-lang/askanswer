@@ -170,6 +170,7 @@ export const EditorDocumentSchema = z.object({
       avatarAssetId: z.string().max(64).nullable().optional(),
       avatarVariants: z.array(z.string().max(64)).max(24).optional(),
       bubble: z.object({ x: num.min(0).max(1), y: num.min(0).max(1), size: num.min(0.08).max(0.9), zoom: num.min(0.5).max(4).optional(), fy: num.min(0).max(1).optional() }).optional(),
+      bar: z.object({ x: num.min(0).max(1), y: num.min(0).max(1), scale: num.min(0.5).max(1.6) }).optional(),
     })
     .optional(),
   endCard: z.object({ seconds: num.min(1).max(10), url: z.string().max(200), text: z.string().max(200).nullable(), placement: z.enum(["append", "overlay"]).optional(), custom: z.boolean().optional() }).optional(),

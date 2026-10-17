@@ -290,6 +290,22 @@ test("studio: pauses, cuts, subtitles, zoom, theme, persistence and real MP4 exp
   const outAnim = (await (await request.get(`/api/admin/compositions/${compId}`)).json()).composition.document;
   expect(outAnim.overlays.find((o: { kind: string }) => o.kind === "blur").animationOut).toBe("slideDown");
 
+  // the question read by a narrator, shown as a phone call: the call bar can be resized / moved;
+  // the narrator's question gets subtitles too
+  await page.getByTestId("tab-question").click();
+  await page.getByRole("button", { name: /Dodaj lektora/ }).click();
+  await expect(page.getByText("Lektor zmieniony")).toBeVisible({ timeout: 30_000 });
+  await page.getByTestId("call-style").getByRole("button", { name: "Pasek rozmowy" }).click();
+  await page.getByLabel("Rozmiar paska rozmowy").fill("1.3");
+  await page.getByLabel("Pozycja paska w pionie").fill("0.2");
+  await waitSaved(page);
+  await expect
+    .poll(async () => {
+      const dd = (await (await request.get(`/api/admin/compositions/${compId}`)).json()).composition.document;
+      return [dd.callStyle?.mode, dd.callStyle?.bar?.scale, dd.callStyle?.bar?.y, dd.subtitles.segments.some((g: { assetId: string }) => g.assetId === dd.narration[0]?.assetId)];
+    }, { timeout: 30_000 })
+    .toEqual(["bar", 1.3, 0.2, true]);
+
   // Test 13 — real server-side MP4 export
   await page.getByRole("button", { name: "Eksportuj" }).click();
   await page.getByRole("button", { name: "Renderuj MP4" }).click();

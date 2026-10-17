@@ -6,9 +6,12 @@ import { randomCallerName } from "@/lib/call-names";
 import { detectSpeakerGender } from "@/lib/speaker-gender";
 import { cn } from "@/lib/utils";
 import { useStudio } from "./store";
-import { Row, Seg, SButton, TextField } from "./controls";
+import { Row, Seg, SButton, Slider, TextField } from "./controls";
 
 type Mode = "off" | CallStyle["mode"];
+
+/** default place of the call bar: centred, at the very top (20 px of 1920) */
+const BAR = { x: 0.5, y: 20 / 1920, scale: 1 };
 
 /**
  * "Pytanie jak rozmowa": while the narrator reads the question — a call bar at the top that flies away
@@ -91,6 +94,27 @@ export function CallStyleSection({ questionText }: { questionText?: string | nul
             ? "Na cały ekran telefon w trakcie rozmowy, ekspert w kółku; po pytaniu ekran odjeżdża."
             : "Pytanie jak rozmowa telefoniczna — w czasie, gdy lektor je czyta."}
       </p>
+      {cs?.mode === "bar" ? (
+        <div className="space-y-1.5" data-testid="call-bar-layout">
+          <Row label={`Rozmiar: ${Math.round((cs.bar?.scale ?? 1) * 100)}%`}>
+            <Slider value={cs.bar?.scale ?? 1} min={0.5} max={1.6} step={0.05} onChange={(v) => set({ bar: { ...BAR, ...cs.bar, scale: v } })} aria-label="Rozmiar paska rozmowy" format={(v) => `${Math.round(v * 100)}%`} />
+          </Row>
+          <Row label="Pozycja w pionie">
+            <Slider value={cs.bar?.y ?? BAR.y} min={0} max={0.9} step={0.005} onChange={(v) => set({ bar: { ...BAR, ...cs.bar, y: v } })} aria-label="Pozycja paska w pionie" format={(v) => `${Math.round(v * 100)}%`} />
+          </Row>
+          <Row label="Pozycja w poziomie">
+            <Slider value={cs.bar?.x ?? BAR.x} min={0.2} max={0.8} step={0.005} onChange={(v) => set({ bar: { ...BAR, ...cs.bar, x: v } })} aria-label="Pozycja paska w poziomie" format={(v) => `${Math.round(v * 100)}%`} />
+          </Row>
+          <p className="text-[11px] leading-snug text-studio-muted">
+            Pasek możesz też przeciągnąć na podglądzie (w czasie pytania).{" "}
+            {cs.bar ? (
+              <button className="underline" onClick={() => set({ bar: undefined })}>
+                Domyślnie
+              </button>
+            ) : null}
+          </p>
+        </div>
+      ) : null}
       {cs ? (
         <>
           <Row label="Rozmówca">

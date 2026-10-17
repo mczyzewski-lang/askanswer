@@ -2,7 +2,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { EditorDocument, ImageOverlay, Overlay } from "@/lib/editor/types";
 import { overlayEnd, docDuration } from "@/lib/editor/timeline";
-import { cachedSegments, layoutSubtitle, overlayRect, type Rect } from "@/lib/render/compositor";
+import { callBarRect, callWindow, cachedSegments, layoutSubtitle, overlayRect, type Rect } from "@/lib/render/compositor";
 import { segmentAt } from "@/lib/editor/timeline";
 import { useStudio } from "./store";
 import type { PlaybackEngine } from "./playback";
@@ -19,7 +19,8 @@ type Drag =
   | { mode: "resize"; id: string; handle: "nw" | "ne" | "sw" | "se" | "e" | "w"; startX: number; startY: number; orig: Overlay; rect: Rect }
   | { mode: "subs"; segId?: string; startY: number; origY: number }
   | { mode: "bubble"; id: string; startX: number; startY: number; orig: { x: number; y: number } }
-  | { mode: "bubbleSize"; id: string };
+  | { mode: "bubbleSize"; id: string }
+  | { mode: "callbar"; startX: number; startY: number; orig: { x: number; y: number } };
 
 /** Image layers showing the expert's face bubble at this moment (topmost first). */
 function bubblesAt(doc: EditorDocument, t: number) {
@@ -94,6 +95,19 @@ export function Preview({ engine }: { engine: PlaybackEngine | null }) {
     if (!cx || e.button !== 0) return;
     const p = toDoc(e);
     const st = useStudio.getState();
+    // the call bar of the question (when shown at this moment): drag to move it
+    const cs = doc.callStyle;
+    const win = cs?.mode === "bar" ? callWindow(doc) : null;
+    if (cs && win && time >= win.start && time < win.end) {
+      const R = callBarRect(doc, cs);
+      if (p.x >= R.x && p.x <= R.x + R.w && p.y >= R.y && p.y <= R.y + R.h) {
+        st.select(null);
+        st.beginGesture();
+        drag.current = { mode: "callbar", startX: p.x, startY: p.y, orig: { x: (R.x + R.w / 2) / doc.width, y: R.y / doc.height } };
+        (e.target as HTMLElement).setPointerCapture(e.pointerId);
+        return;
+      }
+    }
     // the face bubble sits on top of its image: grab it first
     const bub = bubblesAt(doc, time).find((o) => Math.hypot(p.x - o.bubble!.x * doc.width, p.y - o.bubble!.y * doc.height) <= (o.bubble!.size * doc.width) / 2);
     if (bub) {
@@ -144,6 +158,17 @@ export function Preview({ engine }: { engine: PlaybackEngine | null }) {
     const W = doc.width;
     const H = doc.height;
     const st = useStudio.getState();
+    if (d.mode === "callbar") {
+      st.updateGesture((base) => {
+        if (!base.callStyle) return base;
+        const R = callBarRect(base, base.callStyle);
+        const half = R.w / 2 / W;
+        const x = Math.min(1 - half, Math.max(half, d.orig.x + (p.x - d.startX) / W));
+        const y = Math.min(1 - R.h / H, Math.max(0, d.orig.y + (p.y - d.startY) / H));
+        return { ...base, callStyle: { ...base.callStyle, bar: { scale: base.callStyle.bar?.scale ?? 1, x, y } } };
+      });
+      return;
+    }
     if (d.mode === "bubble" || d.mode === "bubbleSize") {
       st.updateGesture((base) => ({
         ...base,

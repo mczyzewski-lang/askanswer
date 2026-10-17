@@ -1141,8 +1141,18 @@ function drawCallAvatar(ctx: Ctx, cs: CallStyle, cx: number, cy: number, r: numb
 }
 
 /** In-call pill at the top (like the iPhone's Dynamic Island); after the question it flies up and fades. */
+/** Where the call bar is (output pixels): bar.x = centre, bar.y = top edge (0–1), bar.scale = size. */
+export function callBarRect(doc: Pick<EditorDocument, "width" | "height">, cs: CallStyle): { x: number; y: number; w: number; h: number; scale: number } {
+  const u = unit(doc);
+  const scale = Math.min(1.6, Math.max(0.5, cs.bar?.scale ?? 1));
+  const w = 920 * u * scale;
+  const h = 128 * u * scale;
+  const cx = (cs.bar?.x ?? 0.5) * doc.width;
+  const top = cs.bar?.y != null ? cs.bar.y * doc.height : 20 * u;
+  return { x: cx - w / 2, y: top, w, h, scale };
+}
+
 export function drawCallBar(ctx: Ctx, doc: EditorDocument, cs: CallStyle, t: number, win: { start: number; end: number }, env: RenderEnv) {
-  const W = doc.width;
   const u = unit(doc);
   const th = doc.theme;
   const inK = Math.min(1, Math.max(0, (t - win.start) / 0.35));
@@ -1150,11 +1160,16 @@ export function drawCallBar(ctx: Ctx, doc: EditorDocument, cs: CallStyle, t: num
   const ease = (x: number) => 1 - Math.pow(1 - x, 3);
   const alpha = (env.settled ? 1 : ease(inK)) * (1 - ease(outK));
   if (alpha <= 0.001) return;
+  // drawn at its base size around (0,0), then placed and scaled where the editor put it
+  const R = callBarRect(doc, cs);
   const w = 920 * u;
   const h = 128 * u;
-  const x = (W - w) / 2;
-  const y = 20 * u - (1 - ease(inK)) * 60 * u - ease(outK) * 230 * u;
+  const x = 0;
+  const y = 0;
+  const dy = -(1 - ease(inK)) * 60 * u - ease(outK) * Math.max(230 * u, R.y + R.h + 40 * u);
   ctx.save();
+  ctx.translate(R.x, R.y + dy);
+  ctx.scale(R.scale, R.scale);
   ctx.globalAlpha = alpha;
   ctx.shadowColor = "rgba(0,0,0,0.35)";
   ctx.shadowBlur = 30 * u;

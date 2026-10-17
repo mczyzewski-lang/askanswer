@@ -292,6 +292,8 @@ export interface CallStyle {
   avatarVariants?: string[];
   /** phone mode: the expert's face circle */
   bubble?: FaceBubble;
+  /** bar mode: x = centre, y = top edge (0–1), scale = size (1 = default) */
+  bar?: { x: number; y: number; scale: number };
 }
 
 export interface EditorDocument {
