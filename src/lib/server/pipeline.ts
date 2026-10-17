@@ -27,6 +27,8 @@ async function step(takeId: string, name: string) {
 interface Markers {
   narrationStart?: number | null;
   narrationEnd?: number | null;
+  /** question + prompter: the answer starts here (the prompter connected after the narration); the gap is cut */
+  answerStart?: number | null;
   /** front camera: flip horizontally, so the video is what the expert saw in the mirrored preview */
   mirrored?: boolean;
 }
@@ -241,7 +243,7 @@ export async function refreshSilences(takeId: string) {
   if (!wf) return [];
   const markers = (take.markers ?? {}) as Markers;
   const exclude: Array<[number, number]> = [];
-  if (take.mode === "CONTINUOUS" && markers.narrationEnd) exclude.push([0, markers.narrationEnd]);
+  if (take.mode === "CONTINUOUS" && (markers.answerStart ?? markers.narrationEnd)) exclude.push([0, Math.max(markers.answerStart ?? 0, markers.narrationEnd ?? 0)]);
   const words = (take.transcript?.words ?? []).filter((w) => w.type === "word");
   const pauses = detectPauses({ waveform: wf, words, sensitivity: "standard", padding: 0.2, exclude });
   await prisma.$transaction([
@@ -276,6 +278,7 @@ export async function ensureComposition(takeId: string) {
     recording: { assetId: normalized.id, duration: normalized.durationSec ?? take.durationSec ?? 0 },
     narration: narration ? { assetId: narration.id, duration: narration.durationSec ?? 0 } : null,
     narrationWindow: take.mode === "CONTINUOUS" && markers.narrationEnd != null ? { start: markers.narrationStart ?? 0, end: markers.narrationEnd } : null,
+    answerFrom: take.mode === "CONTINUOUS" ? (markers.answerStart ?? null) : null,
     segments: buildSegments(normalized.id, words),
     pauses: take.silences.filter((s) => s.status === "PENDING").map((s) => ({ start: s.start, end: s.end, confidence: s.confidence })),
     visibility: project.questionVisibility,

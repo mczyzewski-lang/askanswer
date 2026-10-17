@@ -56,3 +56,26 @@ describe("CTA end card", () => {
     expect(docDuration(doc)).toBeCloseTo(10);
   });
 });
+
+describe("question + prompter recording", () => {
+  it("keeps the expert listening during the narration and cuts the wait for the prompter", () => {
+    const doc = buildInitialDocument({
+      questionText: "Q",
+      theme: DEFAULT_THEME,
+      mode: "CONTINUOUS",
+      recording: { assetId: "rec", duration: 30 },
+      narration: { assetId: "tts", duration: 4 },
+      narrationWindow: { start: 0.2, end: 4.3 },
+      answerFrom: 6.1,
+      segments: [],
+      pauses: [],
+      visibility: "FULL",
+      questionSeconds: 4,
+    });
+    expect(doc.clips.map((c) => [c.start, c.sourceIn, c.sourceOut, c.muted])).toEqual([
+      [0, 0, 4.3, true],
+      [4.3, 6.1, 30, false],
+    ]);
+    expect(contentDuration(doc)).toBeCloseTo(28.2);
+  });
+});

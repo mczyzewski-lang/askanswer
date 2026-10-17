@@ -13,7 +13,7 @@ const Body = z.object({
   mimeType: z.string().max(120),
   mode: z.enum(["CONTINUOUS", "ANSWER_ONLY"]),
   narrationAssetId: z.string().nullable().optional(),
-  markers: z.object({ narrationStart: z.number().nullable().optional(), narrationEnd: z.number().nullable().optional(), mirrored: z.boolean().optional() }).optional(),
+  markers: z.object({ narrationStart: z.number().nullable().optional(), narrationEnd: z.number().nullable().optional(), answerStart: z.number().nullable().optional(), mirrored: z.boolean().optional() }).optional(),
   durationSec: z.number().optional(),
 });
 

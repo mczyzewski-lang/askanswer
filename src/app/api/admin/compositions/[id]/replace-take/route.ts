@@ -26,7 +26,7 @@ export const POST = route(async (req: Request, ctx: { params: Promise<{ id: stri
   if (!take.normalizedAssetId) return json({ error: "Ujęcie jest jeszcze przetwarzane" }, 409);
   const normalized = await prisma.mediaAsset.findUniqueOrThrow({ where: { id: take.normalizedAssetId } });
   const narration = take.narrationAssetId ? await prisma.mediaAsset.findUnique({ where: { id: take.narrationAssetId } }) : null;
-  const markers = (take.markers ?? {}) as { narrationStart?: number; narrationEnd?: number };
+  const markers = (take.markers ?? {}) as { narrationStart?: number; narrationEnd?: number; answerStart?: number | null };
   const cur = document as EditorDocument;
   const fresh = buildInitialDocument({
     questionText: take.recording.question.text,
@@ -35,6 +35,7 @@ export const POST = route(async (req: Request, ctx: { params: Promise<{ id: stri
     recording: { assetId: normalized.id, duration: normalized.durationSec ?? 0 },
     narration: narration ? { assetId: narration.id, duration: narration.durationSec ?? 0 } : null,
     narrationWindow: take.mode === "CONTINUOUS" && markers.narrationEnd != null ? { start: markers.narrationStart ?? 0, end: markers.narrationEnd } : null,
+    answerFrom: take.mode === "CONTINUOUS" ? (markers.answerStart ?? null) : null,
     segments: buildSegments(normalized.id, (take.transcript?.words ?? []).filter((w) => w.type === "word")),
     pauses: take.silences.map((s) => ({ start: s.start, end: s.end, confidence: s.confidence })),
     visibility: comp.project.questionVisibility,

@@ -58,6 +58,8 @@ export interface BuildInput {
   narration?: { assetId: string; duration: number } | null;
   /** Mode A: when the narration played inside the recording (source seconds). */
   narrationWindow?: { start: number; end: number } | null;
+  /** question + prompter: source time where the answer starts (after the prompter connected) — the wait is left out */
+  answerFrom?: number | null;
   segments: SubtitleSegment[];
   pauses: Array<Omit<PauseSuggestion, "id" | "status" | "assetId">>;
   visibility: "NARRATION_ONLY" | "FIRST_SECONDS" | "FULL";
@@ -77,9 +79,11 @@ export function buildInitialDocument(input: BuildInput): EditorDocument {
     // during narration so the TTS is inserted from its own clean asset instead.
     const win = input.narrationWindow;
     const nEnd = win ? Math.min(win.end, input.recording.duration) : 0;
+    // where the answer begins in the recording (later than nEnd when the prompter had to connect first)
+    const from = (min: number) => (input.answerFrom != null && input.answerFrom > min && input.answerFrom < input.recording.duration - 0.5 ? input.answerFrom : min);
     if (win && nEnd > 0.05) {
       clips.push({ id: uid("clip"), assetId: input.recording.assetId, sourceIn: 0, sourceOut: nEnd, start: 0, volume: 1, muted: true, framing, label: "Słuchanie pytania" });
-      clips.push({ id: uid("clip"), assetId: input.recording.assetId, sourceIn: nEnd, sourceOut: input.recording.duration, start: nEnd, volume: 1, muted: false, framing, label: "Odpowiedź" });
+      clips.push({ id: uid("clip"), assetId: input.recording.assetId, sourceIn: from(nEnd), sourceOut: input.recording.duration, start: nEnd, volume: 1, muted: false, framing, label: "Odpowiedź" });
       answerStart = nEnd;
       if (input.narration) {
         narration.push({
@@ -97,7 +101,7 @@ export function buildInitialDocument(input: BuildInput): EditorDocument {
         });
       }
     } else {
-      clips.push({ id: uid("clip"), assetId: input.recording.assetId, sourceIn: 0, sourceOut: input.recording.duration, start: 0, volume: 1, muted: false, framing, label: "Odpowiedź" });
+      clips.push({ id: uid("clip"), assetId: input.recording.assetId, sourceIn: from(0), sourceOut: input.recording.duration, start: 0, volume: 1, muted: false, framing, label: "Odpowiedź" });
     }
   } else {
     // Mode B: intro card with the narration, then the answer

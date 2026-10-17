@@ -132,6 +132,12 @@ test("hybrid: question read by the narrator, answer from the prompter, CTA end c
       const comp = await (await request.get(`/api/admin/compositions/${take.compositionId}`)).json();
       const doc = comp.composition.document;
       expect(doc.narration).toHaveLength(1); // the narrator's question is in the video
+      // the expert is on camera while the narrator reads (muted), then the answer follows without a gap
+      expect(doc.meta.mode).toBe("CONTINUOUS");
+      expect(doc.clips[0]).toMatchObject({ start: 0, muted: true, label: "Słuchanie pytania" });
+      expect(doc.clips[1].start).toBeCloseTo(doc.clips[0].sourceOut, 2);
+      expect(doc.clips[1].sourceIn).toBeGreaterThanOrEqual(doc.clips[0].sourceOut);
+      expect(doc.narration[0].start).toBeLessThan(1);
       expect(doc.overlays.find((o: { role?: string }) => o.role === "question").text).toBe(QUESTION);
       const stats = await (await request.get("http://127.0.0.1:4010/__stats", { headers: { "xi-api-key": "mock-key" } })).json();
       expect(JSON.stringify(stats.tts)).toContain("moi klienci czekają na odpowiedź kilka dni");

@@ -584,7 +584,9 @@ function RecordScreen(props: {
   const recRef = useRef<MediaRecorder | null>(null);
   const chunks = useRef<Blob[]>([]);
   const clock = useRef({ acc: 0, since: 0, running: false });
-  const markers = useRef<{ narrationStart: number | null; narrationEnd: number | null }>({ narrationStart: null, narrationEnd: null });
+  const markers = useRef<{ narrationStart: number | null; narrationEnd: number | null; answerStart?: number | null }>({ narrationStart: null, narrationEnd: null });
+  /** question + prompter: the voice follower is already listening (it connects while the narrator reads) */
+  const prompterReady = useRef(false);
   const clientId = useRef<string>("");
   const modeRef = useRef<"CONTINUOUS" | "ANSWER_ONLY">(session.project.mode);
   const wakeLock = useRef<{ release: () => Promise<void> } | null>(null);
@@ -743,8 +745,20 @@ function RecordScreen(props: {
     }
   };
 
+  /** question + prompter: recording since the narration — the answer (and the prompter) start now */
+  const beginPrompterAnswer = () => {
+    markers.current.answerStart = now();
+    setPhase("recording");
+  };
+
   const onNarrationEnded = () => {
-    if (phase === "narrating" && modeRef.current === "CONTINUOUS") {
+    if (phase === "narrating" && modeRef.current === "CONTINUOUS" && isPrompter) {
+      // the camera keeps rolling; if the prompter is still connecting, that wait is cut out later
+      markers.current.narrationEnd = now();
+      setMic(true);
+      if (prompterReady.current) beginPrompterAnswer();
+      else setPhase("connecting");
+    } else if (phase === "narrating" && modeRef.current === "CONTINUOUS") {
       markers.current.narrationEnd = now();
       setMic(true);
       setPhase("recording");
@@ -785,9 +799,29 @@ function RecordScreen(props: {
     if (isPrompter) {
       modeRef.current = "ANSWER_ONLY";
       if (session.voiceFollow) primeAudio();
-      // question + prompter: the narrator reads the client's question first (not recorded)
-      if (kind === "QUESTION_PROMPTER" && narrationState === "ready" && narration && (await playNarration())) {
-        setPhase("narrating");
+      // question + prompter: like Mode A — the camera rolls while the narrator reads the client's
+      // question (the expert listening is in the video), mic muted; meanwhile the prompter connects
+      if (kind === "QUESTION_PROMPTER" && narrationState === "ready" && narration) {
+        modeRef.current = "CONTINUOUS";
+        prompterReady.current = false;
+        setTakeKey((k) => k + 1);
+        setMic(false);
+        if (!startRecorder()) {
+          setMic(true);
+          modeRef.current = "ANSWER_ONLY";
+          return;
+        }
+        const playing = playNarration();
+        markers.current.narrationStart = now();
+        if (await playing) {
+          setPhase("narrating");
+          return;
+        }
+        // playback blocked: keep recording, start the answer once the prompter listens
+        setMic(true);
+        markers.current = { narrationStart: null, narrationEnd: null };
+        setNarrationMsg("Nie udało się odtworzyć lektora — odpowiedz na pytanie widoczne na ekranie.");
+        setPhase("connecting");
         return;
       }
       connectPrompter();
@@ -830,7 +864,10 @@ function RecordScreen(props: {
   };
 
   const onPrompterReady = () => {
-    if (phase === "connecting") void runCountdown();
+    prompterReady.current = true;
+    if (phase !== "connecting") return;
+    if (modeRef.current === "CONTINUOUS" && recRef.current?.state === "recording") beginPrompterAnswer();
+    else void runCountdown();
   };
 
   const pause = () => {
@@ -872,7 +909,7 @@ function RecordScreen(props: {
   const limit = question.maxDurationSec ?? null;
   const over = limit != null && elapsed > limit;
   const up = lastClientId ? props.uploads[lastClientId] : null;
-  const recordingLike = phase === "recording" || phase === "paused" || (phase === "narrating" && modeRef.current === "CONTINUOUS");
+  const recordingLike = phase === "recording" || phase === "paused" || ((phase === "narrating" || phase === "connecting") && modeRef.current === "CONTINUOUS");
   const accent = session.theme?.accent ?? "#ffffff";
   const headerRow = (
     <div className="flex items-center justify-between pt-1">
@@ -1011,8 +1048,9 @@ function RecordScreen(props: {
               <p className="flex items-center gap-2 text-center text-[14px] text-white/85">
                 <Loader2 className="h-4 w-4 shrink-0 animate-spin" /> Łączę ze śledzeniem głosu… nagrywanie ruszy, gdy ElevenLabs zacznie słuchać.
               </p>
-              <button className="h-11 rounded-2xl bg-white/10 px-5 text-sm font-medium backdrop-blur" onClick={() => setPhase("idle")}>
-                Anuluj
+              {/* question + prompter: the camera is already rolling — stopping saves what was recorded */}
+              <button className="h-11 rounded-2xl bg-white/10 px-5 text-sm font-medium backdrop-blur" onClick={() => (recordingLike ? stop() : setPhase("idle"))}>
+                {recordingLike ? "Zatrzymaj" : "Anuluj"}
               </button>
             </div>
           ) : null}
