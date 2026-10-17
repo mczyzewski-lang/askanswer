@@ -198,3 +198,30 @@ test("hybrid project: mixed CSV (typ;kategoria;podkategoria;tytuł wideo;treść
   const qp = d.questions.find((x: { text: string }) => x.text === "Jak podnieść ceny?");
   expect(qp).toMatchObject({ kind: "QUESTION_PROMPTER", script: "Zacznij od nowych klientów.", subcategoryName: "ceny" });
 });
+
+test("bulk actions: select several (shift = range), change status, delete", async ({ page, request }) => {
+  await adminRequest(request);
+  const project = await (await request.post("/api/admin/projects", { data: { name: "Masowe akcje", preset: "pravna" } })).json();
+  await request.post(`/api/admin/projects/${project.id}/questions`, { data: { items: ["Pierwsze pytanie testowe?", "Drugie pytanie testowe?", "Trzecie pytanie testowe?", "Czwarte pytanie testowe?"].map((text) => ({ text })) } });
+  await login(page);
+  await page.goto(`/admin/projects/${project.id}`);
+  const boxes = page.getByTestId("row-select");
+  await expect(boxes).toHaveCount(4);
+  await boxes.nth(0).click();
+  await boxes.nth(2).click({ modifiers: ["Shift"] }); // 1–3
+  const bar = page.getByTestId("bulk-bar");
+  await expect(bar).toContainText("Zaznaczono 3");
+  await bar.getByLabel("Zmień status zaznaczonych").selectOption("APPROVED");
+  await expect(page.getByText("Zmieniono status: 3")).toBeVisible();
+  await expect(page.locator('[data-status="APPROVED"]')).toHaveCount(3);
+  // delete two of them
+  await boxes.nth(2).click();
+  await expect(bar).toContainText("Zaznaczono 2");
+  page.once("dialog", (d) => d.accept());
+  await bar.getByTestId("bulk-delete").click();
+  await expect(page.getByText("Usunięto: 2")).toBeVisible();
+  await expect(page.getByTestId("row-select")).toHaveCount(2);
+  await expect(page.getByTestId("bulk-bar")).toHaveCount(0);
+  const d = await (await request.get(`/api/admin/projects/${project.id}`)).json();
+  expect(d.questions.map((q: { text: string }) => q.text).sort()).toEqual(["Czwarte pytanie testowe?", "Trzecie pytanie testowe?"]);
+});

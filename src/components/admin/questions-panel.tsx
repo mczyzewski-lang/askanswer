@@ -124,6 +124,35 @@ export function QuestionsPanel({ data, refresh, toast }: PanelProps) {
     }
   }, [items, filter, statusFilter, sort]);
   const counts = useMemo(() => Object.fromEntries(Object.keys(STATUS).map((k) => [k, items.filter((q) => q.status === k).length])), [items]);
+
+  // multi-select for bulk actions (shift-click selects a range in the visible order)
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const lastClicked = useRef<string | null>(null);
+  const liveSelected = useMemo(() => new Set([...selected].filter((id) => items.some((q) => q.id === id))), [selected, items]);
+  const toggle = (id: string, range: boolean) => {
+    // read the anchor now: the state updater runs later, after it has moved
+    const from = range && lastClicked.current ? visible.findIndex((q) => q.id === lastClicked.current) : -1;
+    const to = visible.findIndex((q) => q.id === id);
+    setSelected((prev) => {
+      const next = new Set(prev);
+      const on = !next.has(id);
+      if (range && from >= 0 && to >= 0) for (const q of visible.slice(Math.min(from, to), Math.max(from, to) + 1)) on ? next.add(q.id) : next.delete(q.id);
+      else on ? next.add(id) : next.delete(id);
+      return next;
+    });
+    lastClicked.current = id;
+  };
+  const allVisibleSelected = visible.length > 0 && visible.every((q) => liveSelected.has(q.id));
+  const runBulk = async (body: Record<string, unknown>, msg: (n: number) => string) => {
+    try {
+      const r = await api<{ count: number }>(`/api/admin/projects/${data.project.id}/questions/bulk`, { method: "POST", json: { ...body, ids: [...liveSelected] } });
+      toast(msg(r.count));
+      if (body.action === "delete") setSelected(new Set());
+      refresh();
+    } catch (err) {
+      toast((err as Error).message, "err");
+    }
+  };
   const [catsOpen, setCatsOpen] = useState(false);
 
   const onDragEnd = async (e: DragEndEvent) => {
@@ -274,6 +303,16 @@ export function QuestionsPanel({ data, refresh, toast }: PanelProps) {
         ))}
       </div>
 
+      <label className="mt-3 inline-flex cursor-pointer items-center gap-2 text-xs text-muted" data-testid="select-all">
+        <input
+          type="checkbox"
+          className="h-4 w-4 accent-black"
+          checked={allVisibleSelected}
+          onChange={() => setSelected((prev) => (allVisibleSelected ? new Set([...prev].filter((id) => !visible.some((q) => q.id === id))) : new Set([...prev, ...visible.map((q) => q.id)])))}
+        />
+        Zaznacz wszystkie widoczne ({visible.length})
+      </label>
+
       <UnassignedBanner data={data} refresh={refresh} toast={toast} />
       <FailedBanner data={data} refresh={refresh} toast={toast} />
 
@@ -292,7 +331,7 @@ export function QuestionsPanel({ data, refresh, toast }: PanelProps) {
                         {STATUS[q.status]?.label} <span className="tabular font-normal">{counts[q.status]}</span>
                       </p>
                     ) : null}
-                    <QuestionRow q={q} index={items.indexOf(q)} draggable={sort === "manual" && statusFilter === "all"} data={data} refresh={refresh} toast={toast} onEdit={() => setEditing(q)} onPreview={() => setPreview(q)} />
+                    <QuestionRow q={q} index={items.indexOf(q)} selected={liveSelected.has(q.id)} onToggle={(range) => toggle(q.id, range)} draggable={sort === "manual" && statusFilter === "all"} data={data} refresh={refresh} toast={toast} onEdit={() => setEditing(q)} onPreview={() => setPreview(q)} />
                   </div>
                 ))}
               </div>
@@ -300,6 +339,68 @@ export function QuestionsPanel({ data, refresh, toast }: PanelProps) {
           </DndContext>
         )}
       </div>
+
+      {liveSelected.size ? (
+        <div className="sticky bottom-3 z-20 mt-4 flex flex-wrap items-center gap-2 rounded-2xl border border-line bg-white/95 p-3 shadow-xl backdrop-blur" data-testid="bulk-bar">
+          <span className="text-sm font-medium">
+            Zaznaczono {liveSelected.size} {plural(liveSelected.size, T.one, T.few, T.many)}
+          </span>
+          <NativeSelect className="h-8 w-40 text-xs" value="" aria-label="Zmień status zaznaczonych" onChange={(e) => e.target.value && runBulk({ action: "status", status: e.target.value }, (n) => `Zmieniono status: ${n}`)}>
+            <option value="">Zmień status…</option>
+            {Object.entries(STATUS).map(([k, v]) => (
+              <option key={k} value={k}>
+                {v.label}
+              </option>
+            ))}
+          </NativeSelect>
+          <NativeSelect className="h-8 w-44 text-xs" value="" aria-label="Przypisz eksperta zaznaczonym" onChange={(e) => e.target.value && runBulk({ action: "expert", expertId: e.target.value === "__none" ? null : e.target.value }, (n) => `Przypisano eksperta: ${n}`)}>
+            <option value="">Przypisz eksperta…</option>
+            {data.experts.map((x) => (
+              <option key={x.id} value={x.id}>
+                {x.name}
+              </option>
+            ))}
+            <option value="__none">— bez eksperta —</option>
+          </NativeSelect>
+          <NativeSelect className="h-8 w-44 text-xs" value="" aria-label="Przenieś zaznaczone do kategorii" onChange={(e) => e.target.value && runBulk({ action: "category", categoryId: e.target.value === "__none" ? null : e.target.value }, (n) => `Przeniesiono: ${n}`)}>
+            <option value="">Przenieś do kategorii…</option>
+            {data.categories.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+            <option value="__none">— bez kategorii —</option>
+          </NativeSelect>
+          {T.hybrid ? (
+            <NativeSelect className="h-8 w-44 text-xs" value="" aria-label="Zmień typ zaznaczonych" onChange={(e) => e.target.value && runBulk({ action: "kind", kind: e.target.value }, (n) => `Zmieniono typ: ${n}`)}>
+              <option value="">Zmień typ…</option>
+              {QUESTION_KINDS.map((k) => (
+                <option key={k} value={k}>
+                  {KIND_LABELS[k].name}
+                </option>
+              ))}
+            </NativeSelect>
+          ) : null}
+          <div className="ml-auto flex gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              className="border-red-200 text-red-700 hover:bg-red-50"
+              data-testid="bulk-delete"
+              onClick={() => {
+                const withTakes = items.filter((q) => liveSelected.has(q.id) && q.takes.length).length;
+                if (!confirm(`Usunąć ${liveSelected.size} ${plural(liveSelected.size, T.one, T.few, T.many)}${withTakes ? ` (w tym ${withTakes} z nagraniami — pliki nagrań też zostaną usunięte)` : ""}? Tego nie można cofnąć.`)) return;
+                void runBulk({ action: "delete" }, (n) => `Usunięto: ${n}`);
+              }}
+            >
+              <Trash2 /> Usuń
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
+              Odznacz
+            </Button>
+          </div>
+        </div>
+      ) : null}
 
       <QuestionDialog open={editing !== null} question={editing === "new" ? null : editing} data={data} onClose={() => setEditing(null)} refresh={refresh} toast={toast} />
       <BulkDialog open={bulk} onClose={() => setBulk(false)} data={data} refresh={refresh} toast={toast} />
@@ -393,7 +494,18 @@ function UnassignedBanner({ data, refresh, toast }: PanelProps) {
   );
 }
 
-function QuestionRow({ q, index, draggable = true, data, refresh, toast, onEdit, onPreview }: { q: Q; index: number; draggable?: boolean; onEdit: () => void; onPreview: () => void } & PanelProps) {
+function QuestionRow({
+  q,
+  index,
+  draggable = true,
+  selected = false,
+  onToggle,
+  data,
+  refresh,
+  toast,
+  onEdit,
+  onPreview,
+}: { q: Q; index: number; draggable?: boolean; selected?: boolean; onToggle?: (range: boolean) => void; onEdit: () => void; onPreview: () => void } & PanelProps) {
   const router = useRouter();
   const T = terms(data.project.format);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: q.id, disabled: !draggable });
@@ -428,7 +540,7 @@ function QuestionRow({ q, index, draggable = true, data, refresh, toast, onEdit,
 
   return (
     <div ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition }} className={cn(isDragging && "relative z-10 opacity-80")}>
-      <Card className={cn("overflow-hidden border-l-4", STATUS_LOOK[q.status]?.bar, isDragging && "shadow-xl")} data-status={q.status}>
+      <Card className={cn("overflow-hidden border-l-4", STATUS_LOOK[q.status]?.bar, selected && "ring-2 ring-ink/70", isDragging && "shadow-xl")} data-status={q.status}>
         <div className="flex items-start gap-2 p-3 sm:p-4">
           <button
             {...attributes}
@@ -440,6 +552,18 @@ function QuestionRow({ q, index, draggable = true, data, refresh, toast, onEdit,
           >
             <GripVertical className="h-4 w-4" />
           </button>
+          <input
+            type="checkbox"
+            className="mt-1.5 h-4 w-4 shrink-0 cursor-pointer accent-black"
+            checked={selected}
+            onClick={(e) => {
+              e.preventDefault();
+              onToggle?.(e.shiftKey);
+            }}
+            onChange={() => {}}
+            aria-label={`Zaznacz: ${q.text}`}
+            data-testid="row-select"
+          />
           <span className="tabular mt-0.5 w-6 shrink-0 text-sm text-muted">{index + 1}.</span>
           <div className="min-w-0 flex-1">
             <p className="font-medium leading-snug">{q.text}</p>

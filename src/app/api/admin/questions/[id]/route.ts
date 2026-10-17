@@ -3,6 +3,7 @@ import { requireAdmin } from "@/lib/server/auth";
 import { json, route } from "@/lib/server/http";
 import { QuestionInput } from "@/lib/server/schemas";
 import { ensureProjectExpert } from "@/lib/server/project-experts";
+import { deleteQuestions } from "@/lib/server/question-delete";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -32,6 +33,7 @@ export const PATCH = route(async (req: Request, ctx: Ctx) => {
 export const DELETE = route(async (_req: Request, ctx: Ctx) => {
   await requireAdmin();
   const { id } = await ctx.params;
-  await prisma.question.delete({ where: { id } });
+  const q = await prisma.question.findUniqueOrThrow({ where: { id }, select: { projectId: true } });
+  await deleteQuestions(q.projectId, [id]);
   return json({ ok: true });
 });
