@@ -155,6 +155,16 @@ export interface ShapeOverlay extends OverlayBase {
   radius: number;
 }
 
+/** "Blur behind": draws nothing itself, only blurs what lies under it (video and the layers below). */
+export interface BlurOverlay extends OverlayBase {
+  kind: "blur";
+  shape: "rect" | "circle";
+  /** 0–100 */
+  strength: number;
+  /** rounded corners of the rectangle (px at 1080 wide) */
+  radius: number;
+}
+
 export interface CalloutOverlay extends OverlayBase {
   kind: "callout" | "lowerThird";
   title: string;
@@ -202,7 +212,7 @@ export interface VideoOverlay extends OverlayBase {
   radius: number;
 }
 
-export type Overlay = TextOverlay | ShapeOverlay | CalloutOverlay | ImageOverlay | VideoOverlay;
+export type Overlay = TextOverlay | ShapeOverlay | CalloutOverlay | ImageOverlay | VideoOverlay | BlurOverlay;
 
 export interface SubWord {
   id: string;

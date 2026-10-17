@@ -106,6 +106,7 @@ const overlay = z.discriminatedUnion("kind", [
     fit: z.enum(["contain", "cover"]),
     bubble: z.object({ x: num.min(0).max(1), y: num.min(0).max(1), size: num.min(0.08).max(0.9), zoom: num.min(0.5).max(4).optional(), fy: num.min(0).max(1).optional() }).optional(),
   }),
+  z.object({ ...overlayBase, kind: z.literal("blur"), shape: z.enum(["rect", "circle"]), strength: num.min(0).max(100), radius: num.min(0).max(500) }),
   z.object({ ...overlayBase, kind: z.literal("video"), assetId: z.string().max(64), fit: z.enum(["contain", "cover"]), sourceIn: num.min(0), loop: z.boolean(), volume: num.min(0).max(2), radius: num.min(0).max(500) }),
 ]);
 

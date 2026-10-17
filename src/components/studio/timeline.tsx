@@ -286,7 +286,7 @@ export function Timeline({ engine }: { engine: PlaybackEngine | null }) {
               top={rowTop.overlays + 5 + o.lane * 24}
               height={20}
               selected={isSel("overlay", o.id)}
-              color={o.kind === "text" ? (o.role === "question" ? "bg-violet-500/80" : "bg-indigo-500/70") : o.kind === "video" ? "bg-rose-500/70" : "bg-teal-500/70"}
+              color={o.kind === "text" ? (o.role === "question" ? "bg-violet-500/80" : "bg-indigo-500/70") : o.kind === "video" ? "bg-rose-500/70" : o.kind === "blur" ? "bg-slate-400/60 ring-1 ring-inset ring-white/40" : "bg-teal-500/70"}
               label={overlayLabel(o)}
               onDown={(e, part) => begin(e, { kind: "overlay", id: o.id, part }, { start: o.start, end: o.end })}
             />

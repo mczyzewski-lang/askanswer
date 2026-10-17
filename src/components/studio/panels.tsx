@@ -978,6 +978,7 @@ export function GraphicsPanel({ onUpload, meta }: { onUpload: (f: File) => Promi
   const items: Array<[string, () => Overlay]> = [
     ["Prostokąt", () => ({ ...baseOverlay("Prostokąt", time), kind: "rect", x: 0.2, y: 0.4, w: 0.6, h: 0.12, fill: "$primary", stroke: null, strokeWidth: 0, radius: 24 })],
     ["Elipsa", () => ({ ...baseOverlay("Elipsa", time), kind: "ellipse", x: 0.35, y: 0.4, w: 0.3, h: 0.17, fill: null, stroke: "$accent", strokeWidth: 8, radius: 0 })],
+    ["Blur behind", () => ({ ...baseOverlay("Blur behind", time), kind: "blur", end: time + 3, animation: "fade", x: 0.3, y: 0.38, w: 0.4, h: 0.2, shape: "rect", strength: 60, radius: 24 })],
     ["Wyróżnienie", () => ({ ...baseOverlay("Wyróżnienie", time), kind: "highlight", x: 0.15, y: 0.42, w: 0.7, h: 0.1, fill: "$accent", stroke: "$accent", strokeWidth: 5, radius: 18 })],
     ["Dymek / callout", () => ({ ...baseOverlay("Callout", time), kind: "callout", x: 0.08, y: 0.32, w: 0.84, h: 0.11, title: "Pamiętaj!", subtitle: "Ochrona trwa 10 lat i można ją przedłużać.", fill: "$primary", accent: "$accent", textColor: "$text", fontFamily: "$label", animation: "pop" })],
     ["Belka (lower third)", () => ({ ...baseOverlay("Belka", time), kind: "lowerThird", end: time + 5, x: 0.06, y: 0.6, w: 0.66, h: 0.08, title: "Imię Nazwisko", subtitle: meta.project.name, fill: "$primary", accent: "$accent", textColor: "$text", fontFamily: "$label", animation: "slide" })],

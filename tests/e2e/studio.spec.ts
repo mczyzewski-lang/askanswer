@@ -278,6 +278,14 @@ test("studio: pauses, cuts, subtitles, zoom, theme, persistence and real MP4 exp
   const lib = await (await request.get(`/api/admin/compositions/${compId}/background`)).json();
   expect(lib.assets.length).toBeGreaterThanOrEqual(3);
 
+  // "Blur behind": blurs what is under it, then fades away — also in the export below
+  await page.getByTestId("tab-graphics").click();
+  await page.getByRole("button", { name: "Blur behind", exact: true }).click();
+  await page.getByRole("button", { name: "Koło", exact: true }).click();
+  await waitSaved(page);
+  const withBlur = (await (await request.get(`/api/admin/compositions/${compId}`)).json()).composition.document;
+  expect(withBlur.overlays.find((o: { kind: string }) => o.kind === "blur")).toMatchObject({ shape: "circle", strength: 60 });
+
   // Test 13 — real server-side MP4 export
   await page.getByRole("button", { name: "Eksportuj" }).click();
   await page.getByRole("button", { name: "Renderuj MP4" }).click();

@@ -7,7 +7,7 @@
  * which is what gives preview/export parity. Editor-only UI (selection handles,
  * safe-area guides) is never drawn here.
  */
-import type { CalloutOverlay, ColorRef, EditorDocument, FaceBubble, FontRef, ImageOverlay, Overlay, ShapeOverlay, TextOverlay, ThemeTokens, VideoOverlay } from "../editor/types";
+import type { BlurOverlay, CalloutOverlay, ColorRef, EditorDocument, FaceBubble, FontRef, ImageOverlay, Overlay, ShapeOverlay, TextOverlay, ThemeTokens, VideoOverlay } from "../editor/types";
 import { DEFAULT_BUBBLE } from "../editor/types";
 import { clipAt, docDuration, endCardStart, overlayEnd, segmentAt, timedSegments, type TimedSegment } from "../editor/timeline";
 import { zoomAt } from "../editor/zoom";
@@ -454,6 +454,11 @@ export function drawFaceBubble(ctx: Ctx, doc: EditorDocument, b: FaceBubble, mai
 export function drawOverlay(ctx: Ctx, doc: EditorDocument, o: Overlay, t: number, env: RenderEnv, duration: number, main?: MainVideo | null) {
   const a = animState(o, t, duration, env.settled);
   if (a.alpha <= 0.001) return;
+  if (o.kind === "blur") {
+    // stays in place (no slide / pop); appears and disappears by fading the blur
+    drawBlurBehind(ctx, doc, o, Math.max(0, Math.min(1, o.opacity)) * a.alpha, env);
+    return;
+  }
   ctx.save();
   ctx.globalAlpha = Math.max(0, Math.min(1, o.opacity)) * a.alpha;
   if (a.scale !== 1 || a.dy !== 0 || a.dx !== 0) {
@@ -486,6 +491,67 @@ export function drawOverlay(ctx: Ctx, doc: EditorDocument, o: Overlay, t: number
       drawVideoOverlay(ctx, doc, o, t, env);
       break;
   }
+  ctx.restore();
+}
+
+/**
+ * Blur behind: the pixels already drawn under the shape are read back, blurred (downscale + box blur,
+ * the same in the browser and the export) and drawn back inside the rectangle / circle.
+ */
+function drawBlurBehind(ctx: Ctx, doc: EditorDocument, o: BlurOverlay, alpha: number, env: RenderEnv) {
+  if (alpha <= 0.001 || o.strength <= 0 || !env.scratch) return;
+  const r = overlayRect(ctx, doc, o);
+  // device pixels (thumbnails draw scaled)
+  const m = typeof ctx.getTransform === "function" ? ctx.getTransform() : null;
+  const sx = m ? m.a : 1;
+  const sy = m ? m.d : 1;
+  const ox = m ? m.e : 0;
+  const oy = m ? m.f : 0;
+  const cw = (ctx.canvas as { width?: number } | undefined)?.width ?? doc.width;
+  const ch = (ctx.canvas as { height?: number } | undefined)?.height ?? doc.height;
+  const x0 = Math.max(0, Math.floor(r.x * sx + ox));
+  const y0 = Math.max(0, Math.floor(r.y * sy + oy));
+  const x1 = Math.min(cw, Math.ceil((r.x + r.w) * sx + ox));
+  const y1 = Math.min(ch, Math.ceil((r.y + r.h) * sy + oy));
+  const w = x1 - x0;
+  const h = y1 - y0;
+  if (w < 2 || h < 2) return;
+  const src = ctx.getImageData(x0, y0, w, h);
+  const full = env.scratch(`blurbehind-full:${o.id}`, w, h);
+  full.ctx.putImageData(src, 0, 0);
+  const f = 3 + (Math.min(100, o.strength) / 100) * 27; // 3..30 × smaller
+  const smW = Math.max(2, Math.round(w / f));
+  const smH = Math.max(2, Math.round(h / f));
+  const sm = env.scratch(`blurbehind-sm:${o.id}`, smW, smH);
+  sm.ctx.imageSmoothingEnabled = true;
+  sm.ctx.clearRect(0, 0, smW, smH);
+  sm.ctx.drawImage(full.canvas, 0, 0, smW, smH);
+  const d = sm.ctx.getImageData(0, 0, smW, smH);
+  boxBlur(d.data, smW, smH, 1);
+  boxBlur(d.data, smW, smH, 1);
+  sm.ctx.putImageData(d, 0, 0);
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalAlpha = alpha;
+  ctx.beginPath();
+  const rx = r.x * sx + ox;
+  const ry = r.y * sy + oy;
+  const rw = r.w * sx;
+  const rh = r.h * sy;
+  if (o.shape === "circle") ctx.ellipse(rx + rw / 2, ry + rh / 2, rw / 2, rh / 2, 0, 0, Math.PI * 2);
+  else {
+    const rad = Math.min(rw / 2, rh / 2, o.radius * unit(doc) * sx);
+    ctx.moveTo(rx + rad, ry);
+    ctx.arcTo(rx + rw, ry, rx + rw, ry + rh, rad);
+    ctx.arcTo(rx + rw, ry + rh, rx, ry + rh, rad);
+    ctx.arcTo(rx, ry + rh, rx, ry, rad);
+    ctx.arcTo(rx, ry, rx + rw, ry, rad);
+    ctx.closePath();
+  }
+  ctx.clip();
+  ctx.imageSmoothingEnabled = true;
+  (ctx as unknown as { imageSmoothingQuality: string }).imageSmoothingQuality = "high";
+  ctx.drawImage(sm.canvas, x0, y0, w, h);
   ctx.restore();
 }
 

@@ -131,3 +131,43 @@ describe("face bubble", () => {
     expect([px[0], px[1]]).toEqual([255, 0]);
   });
 });
+
+describe("blur behind", () => {
+  it("blurs only what is under its shape and draws nothing of its own", () => {
+    const doc = buildInitialDocument({ questionText: "Q", theme: DEFAULT_THEME, mode: "ANSWER_ONLY", recording: { assetId: "rec", duration: 10 }, segments: [], pauses: [], visibility: "FULL", questionSeconds: 4 });
+    doc.width = 200;
+    doc.height = 200;
+    doc.subtitles.enabled = false;
+    // a hard black/white edge under the blur, another one outside it
+    const img = createCanvas(200, 200);
+    const ic = img.getContext("2d");
+    ic.fillStyle = "#000";
+    ic.fillRect(0, 0, 200, 200);
+    ic.fillStyle = "#fff";
+    ic.fillRect(0, 0, 100, 200);
+    doc.overlays = [
+      { id: "img", name: "img", kind: "image", assetId: "a", fit: "cover", start: 0, end: null, x: 0, y: 0, w: 1, h: 1, opacity: 1, animation: "none" },
+      { id: "b", name: "b", kind: "blur", shape: "rect", strength: 80, radius: 0, start: 0, end: null, x: 0.25, y: 0, w: 0.5, h: 0.5, opacity: 1, animation: "none" },
+    ];
+    const scratch = new Map<string, import("@napi-rs/canvas").Canvas>();
+    const env = {
+      getFrame: () => null,
+      getImage: () => ({ image: img as never, width: 200, height: 200 }),
+      scratch: (k: string, w: number, h: number) => {
+        let c = scratch.get(k);
+        if (!c || c.width !== w || c.height !== h) scratch.set(k, (c = createCanvas(w, h)));
+        return { canvas: c as never, ctx: c.getContext("2d") as unknown as Ctx };
+      },
+    };
+    const out = createCanvas(200, 200);
+    const ctx = out.getContext("2d");
+    drawFrame(ctx as unknown as Ctx, doc, 1, env as never);
+    const at = (x: number, y: number) => ctx.getImageData(x, y, 1, 1).data[0];
+    // inside the blur, next to the edge: grey instead of pure white / black
+    expect(at(97, 50)).toBeLessThan(250);
+    expect(at(103, 50)).toBeGreaterThan(5);
+    // below the blur the edge stays sharp
+    expect(at(97, 150)).toBe(255);
+    expect(at(103, 150)).toBe(0);
+  });
+});

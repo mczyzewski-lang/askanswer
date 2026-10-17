@@ -1,7 +1,7 @@
 "use client";
 import { useRef } from "react";
 import { Trash2 } from "lucide-react";
-import { DEFAULT_BUBBLE, type AudioClip, type AVClip, type CalloutOverlay, type EditorDocument, type FaceBubble, type ImageOverlay, type Overlay, type ShapeOverlay, type TextOverlay, type VideoOverlay, type ZoomEffect } from "@/lib/editor/types";
+import { DEFAULT_BUBBLE, type AudioClip, type BlurOverlay, type AVClip, type CalloutOverlay, type EditorDocument, type FaceBubble, type ImageOverlay, type Overlay, type ShapeOverlay, type TextOverlay, type VideoOverlay, type ZoomEffect } from "@/lib/editor/types";
 import { NarrationVoiceChanger } from "./narration";
 import { VariantPicker } from "./ai-panel";
 import { clipEnd, deleteClip, docDuration } from "@/lib/editor/timeline";
@@ -164,6 +164,7 @@ function OverlayProps({ o, doc }: { o: Overlay; doc: EditorDocument }) {
         {o.kind === "callout" || o.kind === "lowerThird" ? <CalloutProps o={o} doc={doc} /> : null}
         {o.kind === "image" || o.kind === "logo" ? <ImageProps o={o} /> : null}
         {o.kind === "video" ? <VideoProps o={o} /> : null}
+        {o.kind === "blur" ? <BlurProps o={o} /> : null}
       </Section>
       <Section title="Pozycja i rozmiar">
         <PositionFields o={o} />
@@ -234,6 +235,25 @@ function TextProps({ o, doc }: { o: TextOverlay; doc: EditorDocument }) {
       <Row label="Cień">
         <Slider value={st.shadow} min={0} max={60} onChange={(v) => ps({ shadow: v })} />
       </Row>
+    </>
+  );
+}
+
+function BlurProps({ o }: { o: BlurOverlay }) {
+  return (
+    <>
+      <p className="text-[12px] text-studio-muted">Sam nic nie rysuje — rozmywa to, co jest pod nim (wideo i niższe warstwy). Po czasie „Koniec” łagodnie znika i widać, co było pod spodem.</p>
+      <Row label="Kształt">
+        <Seg value={o.shape} onChange={(v) => patchOverlay<BlurOverlay>(o.id, { shape: v })} options={[["rect", "Kwadrat"], ["circle", "Koło"]]} />
+      </Row>
+      <Row label={`Siła rozmycia: ${o.strength}`}>
+        <Slider value={o.strength} min={5} max={100} step={5} onChange={(v) => patchOverlay<BlurOverlay>(o.id, { strength: v })} aria-label="Siła blur behind" />
+      </Row>
+      {o.shape === "rect" ? (
+        <Row label="Zaokrąglenie">
+          <Slider value={o.radius} min={0} max={120} onChange={(v) => patchOverlay<BlurOverlay>(o.id, { radius: v })} />
+        </Row>
+      ) : null}
     </>
   );
 }
