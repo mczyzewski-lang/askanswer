@@ -66,6 +66,8 @@ export function Recorder({ token }: { token: string }) {
   const [screen, setScreen] = useState<Screen>("loading");
   const [videosOpen, setVideosOpen] = useState(false);
   const [reviewOpen, setReviewOpen] = useState(false);
+  // list: only the items whose content the expert has already accepted
+  const [onlyApproved, setOnlyApproved] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [support, setSupport] = useState<RecorderSupport | null>(null);
@@ -377,9 +379,11 @@ export function Recorder({ token }: { token: string }) {
 
   if (screen === "list") {
     // what is still to record first, what is done below (the category is shown on each card)
+    const approvedIds = new Set((session.review ?? []).filter((r) => r.approved).map((r) => r.id));
+    const shown = onlyApproved ? questions.filter((q) => approvedIds.has(q.id)) : questions;
     const groups = new Map<string, Question[]>([
-      ["Do nagrania", questions.filter((q) => !isRecorded(q))],
-      ["Nagrane", questions.filter((q) => isRecorded(q))],
+      ["Do nagrania", shown.filter((q) => !isRecorded(q))],
+      ["Nagrane", shown.filter((q) => isRecorded(q))],
     ]);
     for (const [k, v] of groups) if (!v.length) groups.delete(k);
     const done = questions.filter(isRecorded).length;
@@ -415,7 +419,30 @@ export function Recorder({ token }: { token: string }) {
             <div className="mt-3 h-1 overflow-hidden rounded-full bg-white/10">
               <div className="h-full rounded-full bg-emerald-400 transition-all" style={{ width: `${(done / Math.max(1, questions.length)) * 100}%` }} />
             </div>
+            {session.review?.length ? (
+              <label className="mt-3 flex items-center justify-between gap-3 text-[13.5px] text-white/75">
+                <span>
+                  Zatwierdzone <span className="text-white/40">· tylko treści już zaakceptowane</span>
+                </span>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={onlyApproved}
+                  aria-label="Pokaż tylko zatwierdzone"
+                  data-testid="only-approved"
+                  onClick={() => setOnlyApproved((v) => !v)}
+                  className={cn("relative h-7 w-12 shrink-0 rounded-full transition", onlyApproved ? "bg-emerald-400" : "bg-white/15")}
+                >
+                  <span className={cn("absolute top-0.5 h-6 w-6 rounded-full bg-white shadow transition-all", onlyApproved ? "left-[22px]" : "left-0.5")} />
+                </button>
+              </label>
+            ) : null}
           </div>
+          {onlyApproved && !shown.length ? (
+            <p className="mt-8 text-center text-[14px] text-white/55" data-testid="no-approved">
+              Nie masz jeszcze zatwierdzonych treści — przejrzyj je przyciskiem „Treści” u góry.
+            </p>
+          ) : null}
           <UploadBanner uploads={uploads} online={online} onRetry={retryFailed} />
           {[...groups.entries()].map(([cat, qs]) => (
             <section key={cat} className="mt-6" data-testid={cat === "Nagrane" ? "list-recorded" : "list-todo"}>

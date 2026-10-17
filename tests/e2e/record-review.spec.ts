@@ -22,26 +22,7 @@ test("expert reviews and accepts content (phone swipe + desktop table)", async (
   const ids: string[] = q.items.map((x: { id: string }) => x.id);
   const { url, token } = await newInvitation(request, project.id, expert.id);
   const approved = async () => {
-    // long content: a real finger scrolls it vertically and still swipes the card sideways
-  const cdp = await page.context().newCDPSession(page);
-  const touch = async (from: [number, number], to: [number, number]) => {
-    await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: from[0], y: from[1] }] });
-    for (let i = 1; i <= 10; i++)
-      await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: from[0] + ((to[0] - from[0]) * i) / 10, y: from[1] + ((to[1] - from[1]) * i) / 10 }] });
-    await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
-  };
-  const body = page.getByTestId("review-card-body");
-  expect(await body.evaluate((el) => el.scrollHeight > el.clientHeight + 100)).toBe(true);
-  const cb = (await card.boundingBox())!;
-  const mid: [number, number] = [cb.x + cb.width / 2, cb.y + cb.height * 0.7];
-  await touch(mid, [mid[0], mid[1] - 200]);
-  await expect.poll(() => body.evaluate((el) => el.scrollTop)).toBeGreaterThan(50);
-  await touch(mid, [mid[0] - 220, mid[1] + 10]);
-  await expect(page.getByTestId("review-edit-sheet")).toBeVisible();
-  await page.getByRole("button", { name: "Anuluj edycję" }).click();
-  await expect(card).toContainText("Drugi hook");
-
-  const s = await (await request.get(`/api/record/${token}`)).json();
+    const s = await (await request.get(`/api/record/${token}`)).json();
     return s.review.filter((r: { approved: boolean }) => r.approved).map((r: { id: string }) => r.id).sort();
   };
 
@@ -72,8 +53,40 @@ test("expert reviews and accepts content (phone swipe + desktop table)", async (
   // the skipped one came back
   await expect(card).toContainText("Drugi hook");
   await expect.poll(approved).toEqual([ids[0], ids[2]].sort());
+  // long content: a real finger scrolls it vertically and still swipes the card sideways
+  const cdp = await page.context().newCDPSession(page);
+  const touch = async (from: [number, number], to: [number, number]) => {
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: from[0], y: from[1] }] });
+    for (let i = 1; i <= 10; i++)
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: from[0] + ((to[0] - from[0]) * i) / 10, y: from[1] + ((to[1] - from[1]) * i) / 10 }] });
+    await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  };
+  const body = page.getByTestId("review-card-body");
+  expect(await body.evaluate((el) => el.scrollHeight > el.clientHeight + 100)).toBe(true);
+  const cb = (await card.boundingBox())!;
+  const mid: [number, number] = [cb.x + cb.width / 2, cb.y + cb.height * 0.7];
+  await touch(mid, [mid[0], mid[1] - 200]);
+  await expect.poll(() => body.evaluate((el) => el.scrollTop)).toBeGreaterThan(50);
+  await touch(mid, [mid[0] - 220, mid[1] + 10]);
+  await expect(page.getByTestId("review-edit-sheet")).toBeVisible();
+  await page.getByRole("button", { name: "Anuluj edycję" }).click();
+  await expect(card).toContainText("Drugi hook");
+
   const s = await (await request.get(`/api/record/${token}`)).json();
   expect(s.review.find((r: { id: string }) => r.id === ids[2]).spokenText).toBe("Lektor czyta poprawione trzecie");
+
+  // the list can show only the accepted contents (off by default)
+  await page.getByTestId("review-screen").getByRole("button", { name: "Wróć" }).click();
+  await page.getByRole("checkbox").check();
+  await page.getByRole("button", { name: "Rozpocznij nagrywanie" }).click();
+  await page.getByRole("button", { name: /Gotowe/ }).click();
+  const toggle = page.getByTestId("only-approved");
+  await expect(toggle).toHaveAttribute("aria-checked", "false");
+  await expect(page.getByText("Drugi hook")).toBeVisible();
+  await toggle.click();
+  await expect(page.getByText("Drugi hook")).toHaveCount(0);
+  await expect(page.getByText("Pierwsze pytanie do akceptacji")).toBeVisible();
+  await expect(page.getByText("Trzecie pytanie")).toBeVisible();
 
   // another expert's item cannot be touched
   const other = await request.patch(`/api/record/${token}/questions/not-a-real-id`, { data: { approve: true } });
