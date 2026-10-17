@@ -581,6 +581,11 @@ function QuestionRow({
                 </span>
               ) : null}
               <span>{q.expertName ?? "Brak eksperta"}</span>
+              {q.contentApproved ? (
+                <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-800" data-testid="content-approved" title="Ekspert przejrzał i zatwierdził treść. Zmiana treści przez admina cofa akceptację.">
+                  ✓ Treść zatwierdzona
+                </span>
+              ) : null}
               {q.status === "IN_PROGRESS" || q.status === "APPROVED" ? (
                 q.takes.some((t) => t.status === "READY") ? (
                   <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-800" data-testid="expert-sees-video">

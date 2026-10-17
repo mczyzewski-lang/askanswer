@@ -237,6 +237,8 @@ model Question {
   kind           String?
   /// what the narrator reads when it differs from the video title (text); null = the title
   spokenText     String?
+  /// the expert accepted the content (title / question / script) in "Przejrzyj treści"
+  contentApprovedAt DateTime?
   expertId       String?
   expert         Expert?            @relation(fields: [expertId], references: [id], onDelete: SetNull)
   text           String

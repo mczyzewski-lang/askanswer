@@ -59,6 +59,18 @@ export async function recordSession(token: string) {
       kind: effectiveKind(q.kind, inv.project.format),
       takes: q.recording?.takes ?? [],
     })),
+    // "Przejrzyj treści": every item of the expert (not only today's list), to read, edit and accept
+    review: questions.map((q) => ({
+      id: q.id,
+      kind: effectiveKind(q.kind, inv.project.format),
+      category: q.category?.name ?? "Ogólne",
+      subcategory: q.subcategory?.name ?? null,
+      text: q.text,
+      spokenText: q.spokenText,
+      script: q.script,
+      approved: !!q.contentApprovedAt,
+      recorded: (q.recording?.takes ?? []).length > 0,
+    })),
     // films in editing / approved (watched on demand: GET /api/record/[token]/videos/[questionId])
     videos: questions
       .filter((q) => (q.status === "IN_PROGRESS" || q.status === "APPROVED") && (q.recording?.takes ?? []).some((t) => t.status === "READY"))

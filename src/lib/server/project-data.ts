@@ -70,6 +70,7 @@ export async function projectData(id: string) {
       script: q.script,
       kind: q.kind,
       spokenText: q.spokenText,
+      contentApproved: !!q.contentApprovedAt,
       instructions: q.instructions,
       maxDurationSec: q.maxDurationSec,
       order: q.order,

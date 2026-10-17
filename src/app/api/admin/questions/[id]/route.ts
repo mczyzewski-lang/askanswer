@@ -27,6 +27,9 @@ export const PATCH = route(async (req: Request, ctx: Ctx) => {
     if (!ok) data.subcategoryId = null;
   }
   if (data.expertId) await ensureProjectExpert(current.projectId, data.expertId);
+  // the expert accepted another version of the content: ask again
+  const changed = (["text", "spokenText", "script"] as const).some((k) => data[k] !== undefined && (data[k] ?? null) !== (current[k] ?? null));
+  if (changed) (data as Record<string, unknown>).contentApprovedAt = null;
   return json(await prisma.question.update({ where: { id }, data }));
 });
 

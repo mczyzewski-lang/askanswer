@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { terms } from "@/lib/project-terms";
 import { primeAudio, Prompter } from "./prompter";
+import { ReviewScreen, type ReviewItem } from "./review";
 import { AlertTriangle, Camera, Expand, Shrink, ZoomIn, Check, CheckCircle2, ChevronLeft, ChevronRight, CloudUpload, Loader2, Mic, Pause, Play, RefreshCw, RotateCcw, Square, SwitchCamera, Volume2, WifiOff } from "lucide-react";
 import { cn, formatDuration, plural } from "@/lib/utils";
 import { cameraErrorMessage, detectSupport, openCamera, requestWakeLock, setZoom, stopStream, zoomRange, type Facing, type RecorderSupport } from "@/lib/client/media";
@@ -36,6 +37,8 @@ interface Session {
   questions: Question[];
   /** films being edited / approved, to watch */
   videos?: ExpertVideo[];
+  /** content review: every item of the expert, to read / fix / accept */
+  review?: ReviewItem[];
 }
 
 interface ExpertVideo {
@@ -60,6 +63,7 @@ const DEFAULT_ANSWER_SEC = 90;
 export function Recorder({ token }: { token: string }) {
   const [screen, setScreen] = useState<Screen>("loading");
   const [videosOpen, setVideosOpen] = useState(false);
+  const [reviewOpen, setReviewOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [support, setSupport] = useState<RecorderSupport | null>(null);
@@ -241,11 +245,25 @@ export function Recorder({ token }: { token: string }) {
     return (
       <Shell>
         {videosOpen ? <VideosSheet token={token} videos={session.videos ?? []} onClose={() => setVideosOpen(false)} /> : null}
+        {reviewOpen ? (
+          <ReviewScreen
+            token={token}
+            items={session.review ?? []}
+            onClose={() => setReviewOpen(false)}
+            onChange={(items) => {
+              const byId = new Map(items.map((i) => [i.id, i]));
+              setSession((s) => (s ? { ...s, review: items, questions: s.questions.map((q) => (byId.has(q.id) ? { ...q, text: byId.get(q.id)!.text, script: byId.get(q.id)!.script } : q)) } : s));
+            }}
+          />
+        ) : null}
         <div className="mx-auto flex min-h-dvh max-w-md flex-col px-6 safe-top safe-bottom">
           <div className="pt-10">
             <div className="flex items-center justify-between gap-3">
               <p className="text-sm font-medium uppercase tracking-[0.18em] text-white/50">{session.project.name}</p>
-              <VideosButton count={session.videos?.length ?? 0} onClick={() => setVideosOpen(true)} />
+              <div className="flex shrink-0 items-center gap-2">
+                <ReviewButton items={session.review ?? []} onClick={() => setReviewOpen(true)} />
+                <VideosButton count={session.videos?.length ?? 0} onClick={() => setVideosOpen(true)} />
+              </div>
             </div>
             <h1 className="mt-6 font-display text-[34px] font-semibold leading-[1.1]">
               Dzień dobry{session.expert.name ? `, ${session.expert.name.split(" ")[0]}` : ""}!
@@ -366,11 +384,25 @@ export function Recorder({ token }: { token: string }) {
     return (
       <Shell>
         {videosOpen ? <VideosSheet token={token} videos={session.videos ?? []} onClose={() => setVideosOpen(false)} /> : null}
+        {reviewOpen ? (
+          <ReviewScreen
+            token={token}
+            items={session.review ?? []}
+            onClose={() => setReviewOpen(false)}
+            onChange={(items) => {
+              const byId = new Map(items.map((i) => [i.id, i]));
+              setSession((s) => (s ? { ...s, review: items, questions: s.questions.map((q) => (byId.has(q.id) ? { ...q, text: byId.get(q.id)!.text, script: byId.get(q.id)!.script } : q)) } : s));
+            }}
+          />
+        ) : null}
         <div className="mx-auto min-h-dvh max-w-md px-5 pb-32 safe-top">
           <div className="sticky top-0 z-10 -mx-5 bg-[#0c0d10]/90 px-5 pb-3 pt-4 backdrop-blur">
             <div className="flex items-center justify-between gap-3">
               <p className="text-xs font-medium uppercase tracking-[0.18em] text-white/45">{session.project.name}</p>
-              <VideosButton count={session.videos?.length ?? 0} onClick={() => setVideosOpen(true)} />
+              <div className="flex shrink-0 items-center gap-2">
+                <ReviewButton items={session.review ?? []} onClick={() => setReviewOpen(true)} />
+                <VideosButton count={session.videos?.length ?? 0} onClick={() => setVideosOpen(true)} />
+              </div>
             </div>
             <div className="mt-1 flex items-end justify-between">
               <h1 className="font-display text-2xl font-semibold">{T.prompter ? "Twoje skrypty" : "Twoje pytania"}</h1>
@@ -1220,6 +1252,17 @@ function UploadBanner({ uploads, online, onRetry }: { uploads: Record<string, Up
     );
   }
   return null;
+}
+
+/** "Przejrzyj treści": read, fix and accept the items (count = still to accept). */
+function ReviewButton({ items, onClick }: { items: ReviewItem[]; onClick: () => void }) {
+  if (!items.length) return null;
+  const left = items.filter((i) => !i.approved).length;
+  return (
+    <button onClick={onClick} className={cn("flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-[13px] font-medium active:scale-[.97]", left ? "bg-amber-400/90 text-black" : "bg-white/10 text-white")} data-testid="review-button">
+      <Check className="h-3.5 w-3.5" /> Treści {left ? <span className="tabular rounded-full bg-black/15 px-1.5 text-[11px]">{left}</span> : null}
+    </button>
+  );
 }
 
 /** Top-right: the expert's films in editing / approved (shown only when there are some). */
