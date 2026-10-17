@@ -6,7 +6,7 @@ import type { AudioClip } from "@/lib/editor/types";
 import { VoicePicker } from "@/components/voice-picker";
 import { useStudio } from "./store";
 import { Row, Select, SButton, Slider } from "./controls";
-import { retimeNarration } from "@/lib/editor/timeline";
+import { retimeNarration, withNarrationSubtitles } from "@/lib/editor/timeline";
 
 /**
  * Change the ElevenLabs narrator of this video: pick a voice (collections / all / own ID),
@@ -131,4 +131,30 @@ export function NarrationSpeed({ clipId }: { clipId?: string }) {
       {err ? <p className="text-[12px] text-red-300">{err}</p> : null}
     </div>
   );
+}
+
+/**
+ * The narrator's question in the subtitles: added once per narration file (also for videos made
+ * before this existed, and after a voice change). Deleted question subtitles stay deleted.
+ */
+export function useNarrationSubtitles() {
+  const compositionId = useStudio((s) => s.compositionId);
+  const n = useStudio((s) => s.doc?.narration[0]);
+  const done = useStudio((s) => s.doc?.meta.narrationSubs ?? null);
+  const base = n && !n.muted ? (n.baseAssetId ?? n.assetId) : null;
+  const asked = useRef<string | null>(null);
+  useEffect(() => {
+    if (!base || base === done || asked.current === base) return;
+    asked.current = base;
+    void (async () => {
+      const res = await fetch(`/api/admin/compositions/${compositionId}/narration-subtitles`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ assetId: base }) }).catch(() => null);
+      const data = res?.ok ? await res.json().catch(() => null) : null;
+      if (!data?.segments?.length) return;
+      const st = useStudio.getState();
+      // the narration may have changed meanwhile
+      const cur = st.doc?.narration[0];
+      if (!cur || (cur.baseAssetId ?? cur.assetId) !== data.baseAssetId) return;
+      st.apply((d) => withNarrationSubtitles(d, data.baseAssetId, data.segments), "narration-subs");
+    })();
+  }, [base, done, compositionId]);
 }

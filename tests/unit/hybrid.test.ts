@@ -272,3 +272,29 @@ describe("question as a phone call", () => {
     expect(frameAt(doc, 8, 20, 470)).toBe(255); // the expert's video after the question
   });
 });
+
+describe("subtitles of the narrator's question", () => {
+  it("are timed on the narration and follow its tempo", async () => {
+    const { withNarrationSubtitles } = await import("../../src/lib/editor/timeline");
+    const { buildSegments } = await import("../../src/lib/editor/subtitles");
+    const { evenWords } = await import("../../src/lib/server/narration");
+    let doc = buildInitialDocument({ questionText: "Q", theme: DEFAULT_THEME, mode: "ANSWER_ONLY", recording: { assetId: "rec", duration: 10 }, narration: { assetId: "tts", duration: 4 }, segments: buildSegments("rec", [{ text: "Odpowiedź", start: 1, end: 1.5 }]), pauses: [], visibility: "FULL", questionSeconds: 4 });
+    const words = evenWords("Dzień dobry, mam pytanie o kredyt", 4);
+    expect(words).toHaveLength(6);
+    doc = withNarrationSubtitles(doc, "tts", buildSegments("tts", words));
+    expect(doc.meta.narrationSubs).toBe("tts");
+    let segs = timedSegments(doc);
+    const q0 = segs.find((s) => s.seg.assetId === "tts")!;
+    expect(q0.t0).toBeCloseTo(doc.narration[0].start + words[0].start, 2);
+    expect(segs.some((s) => s.seg.assetId === "rec")).toBe(true); // the expert's subtitles stay
+    // × 1.25: the question's words come sooner
+    doc = retimeNarration(doc, doc.narration[0].id, { assetId: "tts-125", duration: 3.2, baseAssetId: "tts", speed: 1.25 });
+    segs = timedSegments(doc);
+    const lastQ = segs.filter((s) => s.seg.assetId === "tts").at(-1)!;
+    expect(lastQ.words.at(-1)!.t1).toBeLessThan(doc.narration[0].start + 3.25);
+    // another voice replaces the question's subtitles, the expert's stay
+    doc = withNarrationSubtitles(doc, "tts2", buildSegments("tts2", evenWords("Inne pytanie", 2)));
+    expect(doc.subtitles.segments.some((s) => s.assetId === "tts")).toBe(false);
+    expect(doc.subtitles.segments.some((s) => s.assetId === "rec")).toBe(true);
+  });
+});

@@ -1,7 +1,7 @@
 import { prisma } from "./db";
 import { sha256 } from "./crypto";
 import { env } from "./env";
-import { listVoices, synthesize, ttsCacheKey } from "./elevenlabs";
+import { listVoices, synthesize, transcribe, ttsCacheKey } from "./elevenlabs";
 import { putBuffer, putFile, makeTempDir, toLocalFile } from "./storage";
 import { changeTempo, probe } from "./ffmpeg";
 import fsp from "node:fs/promises";
@@ -88,6 +88,50 @@ export async function narrationAtSpeed(baseAssetId: string, speed: number): Prom
     await src.cleanup();
     await fsp.rm(dir, { recursive: true, force: true });
   }
+}
+
+export type NarrationWord = { text: string; start: number; end: number };
+
+/** Words spread over the duration by their length — when no transcription is possible. */
+export function evenWords(text: string, duration: number): NarrationWord[] {
+  const parts = text.split(/\s+/).filter(Boolean);
+  const total = parts.reduce((n, w) => n + w.length + 1, 0) || 1;
+  const lead = Math.min(0.15, duration * 0.05);
+  const span = Math.max(0.1, duration - lead * 2);
+  let t = lead;
+  return parts.map((w) => {
+    const d = (span * (w.length + 1)) / total;
+    const word = { text: w, start: t, end: t + d * 0.92 };
+    t += d;
+    return word;
+  });
+}
+
+/**
+ * Word timestamps of a narration file (for the question's subtitles), in the time of the ORIGINAL
+ * generated file (a re-timed copy maps back through its base). Transcribed once and kept on the asset.
+ */
+export async function narrationWords(assetId: string): Promise<{ baseAssetId: string; words: NarrationWord[] }> {
+  let a = await prisma.mediaAsset.findUniqueOrThrow({ where: { id: assetId } });
+  const baseId = (a.meta as { baseAssetId?: string } | null)?.baseAssetId;
+  if (baseId) a = await prisma.mediaAsset.findUniqueOrThrow({ where: { id: baseId } });
+  const meta = (a.meta ?? {}) as { words?: NarrationWord[]; text?: string };
+  if (Array.isArray(meta.words) && meta.words.length) return { baseAssetId: a.id, words: meta.words };
+  let words: NarrationWord[] = [];
+  if (elevenLabsConfigured()) {
+    const f = await toLocalFile(a.storageKey);
+    try {
+      const r = await transcribe(f.path, { language: "pol" });
+      words = r.words.filter((w) => (w.type ?? "word") === "word" && w.text.trim()).map((w) => ({ text: w.text.trim(), start: w.start, end: w.end }));
+    } catch {
+      words = [];
+    } finally {
+      await f.cleanup();
+    }
+  }
+  if (!words.length && meta.text) words = evenWords(meta.text, a.durationSec ?? 3);
+  if (words.length) await prisma.mediaAsset.update({ where: { id: a.id }, data: { meta: { ...meta, words } } });
+  return { baseAssetId: a.id, words };
 }
 
 interface NarrationProject {

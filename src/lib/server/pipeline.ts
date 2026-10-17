@@ -15,6 +15,8 @@ import { deleteAssets } from "./assets";
 import { computeWaveform, detectPauses } from "../editor/silence";
 import { buildSegments } from "../editor/subtitles";
 import { buildInitialDocument } from "../editor/factory";
+import { withNarrationSubtitles } from "../editor/timeline";
+import { narrationWords } from "./narration";
 import { themeFromRow, DEFAULT_THEME } from "../themes";
 import type { EditorDocument, Waveform } from "../editor/types";
 import { ElevenLabsError, transcribe } from "./elevenlabs";
@@ -316,6 +318,15 @@ export async function ensureComposition(takeId: string) {
     questionSeconds: project.questionSeconds,
     logo: !!project.theme?.logoAssetId,
   });
+  // the narrator's question gets subtitles too (word timings of the narration file)
+  if (narration) {
+    try {
+      const { baseAssetId, words } = await narrationWords(narration.id);
+      if (words.length) Object.assign(doc, withNarrationSubtitles(doc, baseAssetId, buildSegments(baseAssetId, words)));
+    } catch {
+      /* subtitles of the question are optional — the Studio adds them later */
+    }
+  }
   return prisma.videoComposition.create({
     data: {
       projectId: project.id,

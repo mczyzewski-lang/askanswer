@@ -138,6 +138,9 @@ test("hybrid: question read by the narrator, answer from the prompter, CTA end c
       expect(doc.clips[1].start).toBeCloseTo(doc.clips[0].sourceOut, 2);
       expect(doc.clips[1].sourceIn).toBeGreaterThanOrEqual(doc.clips[0].sourceOut);
       expect(doc.narration[0].start).toBeLessThan(1);
+      // the narrator's question has subtitles too, timed on the narration file
+      expect(doc.meta.narrationSubs).toBe(doc.narration[0].assetId);
+      expect(doc.subtitles.segments.some((g: { assetId: string }) => g.assetId === doc.narration[0].assetId)).toBe(true);
       expect(doc.overlays.find((o: { role?: string }) => o.role === "question").text).toBe(QUESTION);
       const stats = await (await request.get("http://127.0.0.1:4010/__stats", { headers: { "xi-api-key": "mock-key" } })).json();
       expect(JSON.stringify(stats.tts)).toContain("moi klienci czekają na odpowiedź kilka dni");

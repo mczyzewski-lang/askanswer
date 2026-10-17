@@ -219,5 +219,6 @@ export const EditorDocumentSchema = z.object({
     autoVisuals: z.string().max(20).optional(),
     autoPolish: z.string().max(20).optional(),
     bgVariants: z.array(z.string().max(64)).max(24).optional(),
+    narrationSubs: z.string().max(64).nullable().optional(),
   }),
 });

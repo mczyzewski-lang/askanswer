@@ -90,6 +90,15 @@ export function sourceRangeToTimeline(doc: EditorDocument, assetId: string, a: n
     const e = Math.min(b, c.sourceOut);
     if (e - s > EPS) out.push([c.start + (s - c.sourceIn), c.start + (e - c.sourceIn)]);
   }
+  // the narrator's question: its subtitles are timed on the generated file; a faster / slower
+  // copy (speed) maps back through its base, so the subtitles follow the tempo
+  for (const c of doc.narration) {
+    if ((c.baseAssetId ?? c.assetId) !== assetId || c.muted) continue;
+    const k = c.speed ?? 1;
+    const s = Math.max(a / k, c.sourceIn);
+    const e = Math.min(b / k, c.sourceOut);
+    if (e - s > EPS) out.push([c.start + (s - c.sourceIn), c.start + (e - c.sourceIn)]);
+  }
   return out.sort((x, y) => x[0] - y[0]);
 }
 
@@ -640,4 +649,14 @@ export function retimeNarration(doc: EditorDocument, clipId: string, next: { ass
     out = { ...grown, narration: [...grown.narration, updated].sort((a, b) => a.start - b.start) };
   }
   return out;
+}
+
+/**
+ * Put the narrator's question into the subtitles: replaces the subtitles of an earlier narration
+ * (another voice) with these; the expert's own subtitles are kept.
+ */
+export function withNarrationSubtitles(doc: EditorDocument, baseAssetId: string, segments: SubtitleSegment[]): EditorDocument {
+  const recordings = new Set(doc.clips.map((c) => c.assetId));
+  const kept = doc.subtitles.segments.filter((s) => recordings.has(s.assetId));
+  return { ...doc, subtitles: { ...doc.subtitles, segments: [...segments, ...kept] }, meta: { ...doc.meta, narrationSubs: baseAssetId } };
 }

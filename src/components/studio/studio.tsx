@@ -46,6 +46,7 @@ import { Properties } from "./properties";
 import { AudioPanel, GraphicsPanel, PausesPanel, QuestionPanel, SubtitlesPanel, TakesPanel, TemplatesPanel, TextPanel, ZoomPanel, type StudioMeta } from "./panels";
 import { Row, Section, Seg, Select, SButton } from "./controls";
 import { QUESTION_POSITIONS, QUESTION_STYLES, syncTheme } from "@/lib/question-styles";
+import { useNarrationSubtitles } from "./narration";
 import { AiPanel, useBrollJobs, type AiConfig, type AutoVisualsJob } from "./ai-panel";
 import { automaticChanged, mergeAutomatic, mergeAutoPolish, mergeAutoVisuals } from "@/lib/editor/ai-overlays";
 
@@ -90,6 +91,7 @@ export function Studio({ id }: { id: string }) {
   const [engine, setEngine] = useState<PlaybackEngine | null>(null);
   // AI clips keep generating in the background and land on the timeline when ready
   useBrollJobs();
+  useNarrationSubtitles();
   const [tab, setTab] = useState<TabKey>("subs");
   const [exportOpen, setExportOpen] = useState(false);
   const [notice, setNotice] = useState<{ text: string; tone: "ok" | "err" } | null>(null);

@@ -328,6 +328,8 @@ export interface EditorDocument {
     autoPolish?: string;
     /** AI background plates generated for this video (to switch between) */
     bgVariants?: string[];
+    /** narration file whose words are already in the subtitles (the question read by the narrator) */
+    narrationSubs?: string | null;
   };
 }
 
