@@ -86,7 +86,42 @@ function ReviewCards({ items, save }: { items: ReviewItem[]; save: (id: string, 
   const [dx, setDx] = useState(0);
   const [leaving, setLeaving] = useState<"left" | "right" | null>(null);
   const [editing, setEditing] = useState<ReviewItem | null>(null);
-  const start = useRef<{ x: number; y: number } | null>(null);
+  // the gesture: locked to one axis after a few px — sideways swipes, vertical scrolls the content
+  const start = useRef<{ x: number; y: number; axis: "x" | "y" | null } | null>(null);
+  const dxRef = useRef(0);
+  const [dragging, setDragging] = useState(false);
+  const setDrag = (v: number) => {
+    dxRef.current = v;
+    setDx(v);
+  };
+  const down = (x: number, y: number) => {
+    start.current = { x, y, axis: null };
+    dxRef.current = 0;
+  };
+  const move = (x: number, y: number) => {
+    const g = start.current;
+    if (!g) return;
+    const ddx = x - g.x;
+    const ddy = y - g.y;
+    if (!g.axis && Math.hypot(ddx, ddy) > 8) {
+      g.axis = Math.abs(ddx) > Math.abs(ddy) ? "x" : "y";
+      if (g.axis === "x") setDragging(true);
+    }
+    if (g.axis === "x") setDrag(ddx);
+  };
+  const cancel = () => {
+    start.current = null;
+    setDragging(false);
+    setDrag(0);
+  };
+  const up = () => {
+    const d = dxRef.current;
+    start.current = null;
+    setDragging(false);
+    if (d > 90 && current) return void accept(current); // flies out from where it was dropped
+    setDrag(0);
+    if (d < -90 && current) setEditing(current);
+  };
 
   const accept = async (it: ReviewItem) => {
     setLeaving("right");
@@ -118,29 +153,24 @@ function ReviewCards({ items, save }: { items: ReviewItem[]; save: (id: string, 
         {queue[1] ? <div className="absolute inset-x-3 top-3 bottom-0 rounded-3xl bg-white/[.05]" aria-hidden /> : null}
         <div
           key={current.id}
-          className={cn("absolute inset-0 flex touch-none select-none flex-col overflow-hidden rounded-3xl bg-[#191b21] p-5 shadow-2xl", !start.current && "transition-transform duration-200")}
+          // pan-y: long content scrolls vertically inside the card, a sideways drag swipes it
+          className={cn("absolute inset-0 flex select-none flex-col overflow-hidden rounded-3xl bg-[#191b21] p-5 shadow-2xl [touch-action:pan-y]", !dragging && "transition-transform duration-200")}
           style={{ transform: `translateX(${x}px) rotate(${rot}deg)` }}
           data-testid="review-card"
+          // touch: touch events keep coming while the content scrolls (pointer events would be cancelled)
+          onTouchStart={(e) => down(e.touches[0].clientX, e.touches[0].clientY)}
+          onTouchMove={(e) => move(e.touches[0].clientX, e.touches[0].clientY)}
+          onTouchEnd={up}
+          onTouchCancel={cancel}
+          // mouse / pen
           onPointerDown={(e) => {
-            start.current = { x: e.clientX, y: e.clientY };
-            (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
+            if (e.pointerType === "touch") return;
+            down(e.clientX, e.clientY);
+            e.currentTarget.setPointerCapture?.(e.pointerId);
           }}
-          onPointerMove={(e) => {
-            if (start.current) setDx(e.clientX - start.current.x);
-          }}
-          onPointerUp={() => {
-            const d = dx;
-            start.current = null;
-            if (d > 110) void accept(current);
-            else if (d < -110) {
-              setDx(0);
-              setEditing(current);
-            } else setDx(0);
-          }}
-          onPointerCancel={() => {
-            start.current = null;
-            setDx(0);
-          }}
+          onPointerMove={(e) => e.pointerType !== "touch" && move(e.clientX, e.clientY)}
+          onPointerUp={(e) => e.pointerType !== "touch" && up()}
+          onPointerCancel={(e) => e.pointerType !== "touch" && cancel()}
         >
           {dx > 40 ? <span className="absolute right-5 top-5 rounded-lg border-2 border-emerald-400 px-2 py-0.5 text-sm font-bold text-emerald-300">ZATWIERDŹ</span> : null}
           {dx < -40 ? <span className="absolute left-5 top-5 rounded-lg border-2 border-sky-400 px-2 py-0.5 text-sm font-bold text-sky-300">EDYTUJ</span> : null}
@@ -180,7 +210,7 @@ function ReviewCards({ items, save }: { items: ReviewItem[]; save: (id: string, 
 
 function ItemBody({ it }: { it: ReviewItem }) {
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain" data-testid="review-card-body">
       <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-white/45">
         {KIND[it.kind]} · {[it.category, it.subcategory].filter(Boolean).join(" · ")}
       </p>
@@ -195,7 +225,7 @@ function ItemBody({ it }: { it: ReviewItem }) {
       {hasScript(it.kind) && it.script ? (
         <>
           <p className="mt-4 text-[11px] uppercase tracking-[0.1em] text-white/40">{it.kind === "QUESTION_PROMPTER" ? "Twoja odpowiedź (prompter)" : "Treść (prompter)"}</p>
-          <div className="min-h-0 flex-1 overflow-y-auto whitespace-pre-line text-[15px] leading-relaxed text-white/85">{it.script}</div>
+          <div className="whitespace-pre-line pb-2 text-[15px] leading-relaxed text-white/85">{it.script}</div>
         </>
       ) : null}
     </div>
