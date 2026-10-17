@@ -28,6 +28,7 @@ import { useStudio } from "./store";
 import { Row, Section, Seg, Select, SButton, Slider, TextField } from "./controls";
 import type { PlaybackEngine } from "./playback";
 import { NarrationSpeed, NarrationVoiceChanger } from "./narration";
+import { CallStyleSection } from "./call-style";
 
 export interface StudioMeta {
   compositionId: string;
@@ -88,6 +89,11 @@ export function QuestionPanel({ meta }: { meta: StudioMeta }) {
         )}
         <p className="text-[11.5px] text-studio-muted">Pytanie to edytowalna warstwa tekstowa — nigdy nie jest wypalane w oryginalnym nagraniu.</p>
       </Section>
+      {meta.elevenLabs ? (
+        <Section title="Pytanie jak rozmowa">
+          <CallStyleSection questionText={meta.question?.spokenText || meta.question?.text || doc.meta.questionText} />
+        </Section>
+      ) : null}
       {meta.elevenLabs ? (
         <Section title="Lektor pytania (ElevenLabs)">
           <NarrationSpeed />
@@ -979,7 +985,12 @@ export function GraphicsPanel({ onUpload, meta }: { onUpload: (f: File) => Promi
   const items: Array<[string, () => Overlay]> = [
     ["Prostokąt", () => ({ ...baseOverlay("Prostokąt", time), kind: "rect", x: 0.2, y: 0.4, w: 0.6, h: 0.12, fill: "$primary", stroke: null, strokeWidth: 0, radius: 24 })],
     ["Elipsa", () => ({ ...baseOverlay("Elipsa", time), kind: "ellipse", x: 0.35, y: 0.4, w: 0.3, h: 0.17, fill: null, stroke: "$accent", strokeWidth: 8, radius: 0 })],
-    ["Blur behind", () => ({ ...baseOverlay("Blur behind", time), kind: "blur", end: time + 3, animation: "fade", x: 0.3, y: 0.38, w: 0.4, h: 0.2, shape: "rect", strength: 60, radius: 24 })],
+    ["Blur behind", () => {
+      // over a graphic: starts together with it, so its element is hidden from the first frame
+      const under = [...doc.overlays].reverse().find((o) => (o.kind === "image" || o.kind === "video") && o.start <= time + 0.01 && (o.end == null || o.end > time));
+      const start = under ? under.start : Math.max(0, time);
+      return { ...baseOverlay("Blur behind", start), kind: "blur", start, end: Math.max(start, time) + 3, animation: "none", animationOut: "fade", x: 0.3, y: 0.38, w: 0.4, h: 0.2, shape: "rect", strength: 60, radius: 24 };
+    }],
     ["Wyróżnienie", () => ({ ...baseOverlay("Wyróżnienie", time), kind: "highlight", x: 0.15, y: 0.42, w: 0.7, h: 0.1, fill: "$accent", stroke: "$accent", strokeWidth: 5, radius: 18 })],
     ["Dymek / callout", () => ({ ...baseOverlay("Callout", time), kind: "callout", x: 0.08, y: 0.32, w: 0.84, h: 0.11, title: "Pamiętaj!", subtitle: "Ochrona trwa 10 lat i można ją przedłużać.", fill: "$primary", accent: "$accent", textColor: "$text", fontFamily: "$label", animation: "pop" })],
     ["Belka (lower third)", () => ({ ...baseOverlay("Belka", time), kind: "lowerThird", end: time + 5, x: 0.06, y: 0.6, w: 0.66, h: 0.08, title: "Imię Nazwisko", subtitle: meta.project.name, fill: "$primary", accent: "$accent", textColor: "$text", fontFamily: "$label", animation: "slide" })],

@@ -148,6 +148,17 @@ test("hybrid: question read by the narrator, answer from the prompter, CTA end c
       expect(fast.id).not.toBe(nAsset.id);
       expect(fast.durationSec).toBeGreaterThan(nAsset.durationSec / 1.15 - 0.2);
       expect(fast.durationSec).toBeLessThan(nAsset.durationSec / 1.15 + 0.2);
+      // question as a phone call: a natural phone "selfie" of the caller from OpenAI (mock), in variants
+      const av = await (await request.post(`/api/admin/compositions/${take.compositionId}/call-avatar`, { data: { gender: "female", name: "Katarzyna" } })).json();
+      let avJob: { status: string; result?: { variantIds?: string[] } } | null = null;
+      for (let i = 0; i < 60 && avJob?.status !== "SUCCEEDED"; i++) {
+        await page.waitForTimeout(1500);
+        avJob = await (await request.get(`/api/admin/jobs/${av.jobId}`)).json();
+        if (avJob?.status === "FAILED") throw new Error("avatar failed");
+      }
+      expect(avJob?.result?.variantIds?.length).toBe(3);
+      const avStats = await (await request.get("http://127.0.0.1:4010/__stats", { headers: { "xi-api-key": "mock-key" } })).json();
+      expect(JSON.stringify(avStats.openai)).toContain("iPhone front camera");
       return;
     }
     await page.waitForTimeout(2000);

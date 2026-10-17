@@ -524,3 +524,37 @@ export async function generateBackground(jobId: string, p: { compositionId: stri
     await fsp.rm(dir, { recursive: true, force: true });
   }
 }
+
+/** A believable phone selfie of the caller: not a studio portrait — arm's length, ordinary light and room. */
+export function callerAvatarPrompt(p: { gender: "female" | "male"; name: string }) {
+  const who = p.gender === "female" ? "a Polish woman" : "a Polish man";
+  return [
+    `Casual selfie photo of ${who} (around 30–55 years old, an ordinary person named ${p.name}), taken by themselves with an iPhone front camera at arm's length.`,
+    "Medium angle slightly above eye level, head and shoulders, relaxed natural expression, looking at the phone.",
+    "Average indoor light (a window or a ceiling lamp), an ordinary home or car interior slightly out of focus behind.",
+    "Natural skin with real texture, everyday clothes, no makeup emphasis; typical smartphone photo quality — not a professional or studio photo, no retouching.",
+    "Square crop. No text, no logos, no watermarks, no filters.",
+  ].join("\n");
+}
+
+export async function generateCallerAvatar(jobId: string, p: { compositionId: string; gender: "female" | "male"; name: string }) {
+  void jobId;
+  const comp = await prisma.videoComposition.findUniqueOrThrow({ where: { id: p.compositionId }, select: { projectId: true } });
+  if (!openaiConfigured()) throw new OpenAIImageError(`Zdjęcie rozmówcy wymaga klucza OpenAI. ${openaiKeyDiagnostics()}`, false);
+  const dir = await makeTempDir("avatar");
+  try {
+    const n = env.illustrationVariants;
+    const raws = Array.from({ length: n }, (_, i) => path.join(dir, `av-src-${i}.png`));
+    const got = await generateOpenAIImage(callerAvatarPrompt(p), { width: 1024, height: 1024, out: raws, quality: "low" });
+    const variantIds: string[] = [];
+    for (let i = 0; i < got; i++) {
+      const file = path.join(dir, `av-${i}.png`);
+      await coverTo(raws[i], file, 512, 512);
+      const v = await storeInfographic(comp.projectId, file, 512, 512, p.name, { engine: "caller-avatar", variant: String(i + 1) }, null, "Rozmówca");
+      variantIds.push(v.assetId);
+    }
+    return { assetId: variantIds[0], variantIds };
+  } finally {
+    await fsp.rm(dir, { recursive: true, force: true });
+  }
+}

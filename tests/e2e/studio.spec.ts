@@ -284,7 +284,11 @@ test("studio: pauses, cuts, subtitles, zoom, theme, persistence and real MP4 exp
   await page.getByRole("button", { name: "Koło", exact: true }).click();
   await waitSaved(page);
   const withBlur = (await (await request.get(`/api/admin/compositions/${compId}`)).json()).composition.document;
-  expect(withBlur.overlays.find((o: { kind: string }) => o.kind === "blur")).toMatchObject({ shape: "circle", strength: 60 });
+  expect(withBlur.overlays.find((o: { kind: string }) => o.kind === "blur")).toMatchObject({ shape: "circle", strength: 60, animation: "none", animationOut: "fade" });
+  await page.getByLabel("Animacja wyjścia").selectOption("slideDown");
+  await waitSaved(page);
+  const outAnim = (await (await request.get(`/api/admin/compositions/${compId}`)).json()).composition.document;
+  expect(outAnim.overlays.find((o: { kind: string }) => o.kind === "blur").animationOut).toBe("slideDown");
 
   // Test 13 — real server-side MP4 export
   await page.getByRole("button", { name: "Eksportuj" }).click();

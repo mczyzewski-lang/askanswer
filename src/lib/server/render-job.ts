@@ -52,6 +52,7 @@ export function referencedAssetIds(doc: EditorDocument): string[] {
     if (c.background?.imageAssetId) ids.add(c.background.imageAssetId);
   }
   if (doc.endCard && doc.theme.logoAssetId) ids.add(doc.theme.logoAssetId);
+  if (doc.callStyle?.avatarAssetId) ids.add(doc.callStyle.avatarAssetId);
   for (const c of doc.narration) ids.add(c.assetId);
   for (const c of doc.music) ids.add(c.assetId);
   for (const o of doc.overlays) {

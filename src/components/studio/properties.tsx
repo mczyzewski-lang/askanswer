@@ -3,6 +3,7 @@ import { useRef } from "react";
 import { Trash2 } from "lucide-react";
 import { DEFAULT_BUBBLE, type AudioClip, type BlurOverlay, type AVClip, type CalloutOverlay, type EditorDocument, type FaceBubble, type ImageOverlay, type Overlay, type ShapeOverlay, type TextOverlay, type VideoOverlay, type ZoomEffect } from "@/lib/editor/types";
 import { NarrationSpeed, NarrationVoiceChanger } from "./narration";
+import { CallStyleSection } from "./call-style";
 import { VariantPicker } from "./ai-panel";
 import { clipEnd, deleteClip, docDuration } from "@/lib/editor/timeline";
 import { ZOOM_PRESETS } from "@/lib/editor/zoom";
@@ -96,7 +97,7 @@ function TimingFields({ o, doc }: { o: Overlay; doc: EditorDocument }) {
           </SButton>
         </span>
       </Row>
-      <Row label="Animacja">
+      <Row label="Animacja wejścia">
         <Select value={o.animation} onChange={(v) => patchOverlay(o.id, { animation: v as Overlay["animation"] })}>
           <option value="none">Brak</option>
           <option value="fade">Pojawienie</option>
@@ -105,6 +106,18 @@ function TimingFields({ o, doc }: { o: Overlay; doc: EditorDocument }) {
           <option value="slideDown">Wjazd z góry</option>
           <option value="slideLeft">Wjazd z boku</option>
           <option value="zoom">Najazd (zoom)</option>
+        </Select>
+      </Row>
+      <Row label="Animacja wyjścia">
+        <Select value={o.animationOut ?? "same"} onChange={(v) => patchOverlay(o.id, { animationOut: v === "same" ? undefined : (v as Overlay["animation"]) })} aria-label="Animacja wyjścia">
+          <option value="same">Jak wejście (odwrotnie)</option>
+          <option value="none">Brak</option>
+          <option value="fade">Wygaszenie</option>
+          <option value="pop">Pop (zmniejszenie)</option>
+          <option value="slide">Wyjazd w dół</option>
+          <option value="slideDown">Wyjazd w górę</option>
+          <option value="slideLeft">Wyjazd w bok</option>
+          <option value="zoom">Odjazd (zoom)</option>
         </Select>
       </Row>
       <Row label="Krycie">
@@ -413,6 +426,12 @@ function ClipProps({ c }: { c: AVClip }) {
       <Section title="Klip wideo + głos eksperta">
         {/* the expert listening to the question: its length follows the narrator's tempo */}
         {c.muted && c.label === "Słuchanie pytania" ? <NarrationSpeed /> : null}
+        {c.muted && c.label === "Słuchanie pytania" ? (
+          <div className="border-t border-studio-line pt-3">
+            <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-studio-muted">Pytanie jak rozmowa</p>
+            <CallStyleSection questionText={useStudio.getState().doc?.meta.questionText} />
+          </div>
+        ) : null}
         <p className="text-[12px] text-studio-muted">
           Źródło: {c.sourceIn.toFixed(2)}–{c.sourceOut.toFixed(2)} s · na osi od {c.start.toFixed(2)} s. Wideo i dźwięk są połączone — cięcia zawsze zachowują synchronizację.
         </p>

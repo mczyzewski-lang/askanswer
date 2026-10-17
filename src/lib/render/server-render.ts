@@ -230,6 +230,7 @@ export async function renderVideoSegment(job: SegmentJob, onFrame?: (done: numbe
     // replacement backgrounds behind the expert, and the logo on the CTA end card
     ...doc.clips.map((c) => c.background?.imageAssetId ?? null),
     doc.endCard ? (doc.theme.logoAssetId ?? null) : null,
+    doc.callStyle?.avatarAssetId ?? null,
   ];
   for (const id of imageIds) if (id && assets.has(id) && !images.has(id)) images.set(id, await loadImage(await fsp.readFile(assets.get(id)!.path)));
   // background blur: person masks, decoded frame by frame (one cached frame per recording)

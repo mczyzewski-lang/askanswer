@@ -76,6 +76,7 @@ const overlayBase = {
   h: num.min(0).max(3),
   opacity: num.min(0).max(1),
   animation: z.enum(["none", "fade", "pop", "slide", "slideDown", "slideLeft", "zoom"]),
+  animationOut: z.enum(["none", "fade", "pop", "slide", "slideDown", "slideLeft", "zoom"]).optional(),
   hidden: z.boolean().optional(),
 };
 
@@ -161,6 +162,16 @@ export const EditorDocumentSchema = z.object({
   pauses: z
     .array(z.object({ id: z.string().max(64), assetId: z.string().max(64), start: num, end: num, confidence: num, status: z.enum(["pending", "accepted", "rejected", "applied"]) }))
     .max(5000),
+  callStyle: z
+    .object({
+      mode: z.enum(["bar", "phone"]),
+      name: z.string().max(60),
+      gender: z.enum(["female", "male"]),
+      avatarAssetId: z.string().max(64).nullable().optional(),
+      avatarVariants: z.array(z.string().max(64)).max(24).optional(),
+      bubble: z.object({ x: num.min(0).max(1), y: num.min(0).max(1), size: num.min(0.08).max(0.9), zoom: num.min(0.5).max(4).optional(), fy: num.min(0).max(1).optional() }).optional(),
+    })
+    .optional(),
   endCard: z.object({ seconds: num.min(1).max(10), url: z.string().max(200), text: z.string().max(200).nullable(), placement: z.enum(["append", "overlay"]).optional(), custom: z.boolean().optional() }).optional(),
   meta: z.object({
     questionText: z.string().max(2000),

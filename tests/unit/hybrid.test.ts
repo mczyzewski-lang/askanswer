@@ -214,3 +214,61 @@ describe("narration tempo", () => {
     expect(next.clips[0].sourceOut - next.clips[0].sourceIn).toBeCloseTo(10);
   });
 });
+
+describe("exit animation", () => {
+  it("fades out with its own exit while the entrance is none", () => {
+    const doc = buildInitialDocument({ questionText: "Q", theme: DEFAULT_THEME, mode: "ANSWER_ONLY", recording: { assetId: "rec", duration: 10 }, segments: [], pauses: [], visibility: "FULL", questionSeconds: 4 });
+    doc.width = 100;
+    doc.height = 100;
+    doc.subtitles.enabled = false;
+    doc.background = "#000000";
+    doc.overlays = [{ id: "r", name: "r", kind: "rect", fill: "#ffffff", stroke: null, strokeWidth: 0, radius: 0, start: 1, end: 3, x: 0, y: 0, w: 1, h: 1, opacity: 1, animation: "none", animationOut: "fade" }];
+    const px = (t: number) => {
+      const c = createCanvas(100, 100);
+      drawFrame(c.getContext("2d") as unknown as Ctx, doc, t, { getFrame: () => null, getImage: () => null });
+      return c.getContext("2d").getImageData(50, 50, 1, 1).data[0];
+    };
+    expect(px(1.01)).toBe(255); // no entrance animation
+    expect(px(2.75)).toBeGreaterThan(80); // fading
+    expect(px(2.75)).toBeLessThan(200);
+  });
+});
+
+describe("question as a phone call", () => {
+  const make = (mode: "bar" | "phone") => {
+    const doc = buildInitialDocument({ questionText: "Q", theme: DEFAULT_THEME, mode: "CONTINUOUS", recording: { assetId: "rec", duration: 30 }, narration: { assetId: "tts", duration: 6 }, narrationWindow: { start: 0.2, end: 6.3 }, segments: [], pauses: [], visibility: "NARRATION_ONLY", questionSeconds: 4 });
+    doc.width = 270;
+    doc.height = 480;
+    doc.subtitles.enabled = false;
+    doc.overlays = [];
+    doc.callStyle = { mode, name: "Katarzyna", gender: "female", avatarAssetId: null };
+    return doc;
+  };
+  const white = createCanvas(270, 480);
+  white.getContext("2d").fillStyle = "#ffffff";
+  white.getContext("2d").fillRect(0, 0, 270, 480);
+  const frameAt = (doc: ReturnType<typeof make>, t: number, x: number, y: number) => {
+    const c = createCanvas(270, 480);
+    const scratch = new Map<string, import("@napi-rs/canvas").Canvas>();
+    drawFrame(c.getContext("2d") as unknown as Ctx, doc, t, {
+      getFrame: () => ({ image: white as never, width: 270, height: 480 }),
+      getImage: () => null,
+      scratch: (k: string, w: number, h: number) => {
+        let s = scratch.get(k);
+        if (!s || s.width !== w || s.height !== h) scratch.set(k, (s = createCanvas(w, h)));
+        return { canvas: s as never, ctx: s.getContext("2d") as unknown as Ctx };
+      },
+    } as never);
+    return c.getContext("2d").getImageData(x, y, 1, 1).data[0];
+  };
+  it("shows the call bar during the question and lets it fly away after", () => {
+    const doc = make("bar");
+    expect(frameAt(doc, 3, 135, 15)).toBeLessThan(40); // the dark pill at the top
+    expect(frameAt(doc, 7.5, 135, 15)).toBe(255); // gone after the question
+  });
+  it("covers the screen with the call while the question is read", () => {
+    const doc = make("phone");
+    expect(frameAt(doc, 3, 20, 470)).toBeLessThan(60); // dark call screen instead of the video
+    expect(frameAt(doc, 8, 20, 470)).toBe(255); // the expert's video after the question
+  });
+});

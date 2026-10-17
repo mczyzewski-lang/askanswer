@@ -59,9 +59,9 @@ export function TextField(props: React.InputHTMLAttributes<HTMLInputElement>) {
   return <input {...props} className={cn("h-8 w-full rounded-lg border border-studio-line bg-studio-3 px-2 text-[12.5px] text-studio-text outline-none focus:border-white/30", props.className)} />;
 }
 
-export function Select({ value, onChange, children, className }: { value: string | number; onChange: (v: string) => void; children: ReactNode; className?: string }) {
+export function Select({ value, onChange, children, className, "aria-label": label }: { value: string | number; onChange: (v: string) => void; children: ReactNode; className?: string; "aria-label"?: string }) {
   return (
-    <select value={value} onChange={(e) => onChange(e.target.value)} className={cn("h-8 w-full rounded-lg border border-studio-line bg-studio-3 px-2 text-[12.5px] text-studio-text outline-none", className)}>
+    <select value={value} aria-label={label} onChange={(e) => onChange(e.target.value)} className={cn("h-8 w-full rounded-lg border border-studio-line bg-studio-3 px-2 text-[12.5px] text-studio-text outline-none", className)}>
       {children}
     </select>
   );

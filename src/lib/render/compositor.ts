@@ -7,9 +7,9 @@
  * which is what gives preview/export parity. Editor-only UI (selection handles,
  * safe-area guides) is never drawn here.
  */
-import type { BlurOverlay, CalloutOverlay, ColorRef, EditorDocument, FaceBubble, FontRef, ImageOverlay, Overlay, ShapeOverlay, TextOverlay, ThemeTokens, VideoOverlay } from "../editor/types";
+import type { BlurOverlay, CallStyle, CalloutOverlay, ColorRef, EditorDocument, FaceBubble, FontRef, ImageOverlay, Overlay, ShapeOverlay, TextOverlay, ThemeTokens, VideoOverlay } from "../editor/types";
 import { DEFAULT_BUBBLE } from "../editor/types";
-import { clipAt, docDuration, endCardStart, overlayEnd, segmentAt, timedSegments, type TimedSegment } from "../editor/timeline";
+import { clipAt, clipEnd, docDuration, endCardStart, overlayEnd, segmentAt, timedSegments, type TimedSegment } from "../editor/timeline";
 import { zoomAt } from "../editor/zoom";
 
 // Minimal structural type satisfied by both DOM and @napi-rs/canvas contexts.
@@ -199,14 +199,24 @@ export function overlayRect(ctx: Ctx, doc: EditorDocument, o: Overlay): Rect {
   return { x: o.x * doc.width, y: o.y * doc.height, w: o.w * doc.width, h: o.h * doc.height };
 }
 
-function animState(o: Overlay, t: number, duration: number, settled = false): { alpha: number; scale: number; dx: number; dy: number } {
+type AnimState = { alpha: number; scale: number; dx: number; dy: number };
+
+function animState(o: Overlay, t: number, duration: number, settled = false): AnimState {
   const end = overlayEnd(o, duration);
   const inP = settled ? 1 : Math.min(1, Math.max(0, (t - o.start) / ENTRANCE));
-  const outP = o.end == null || settled ? 1 : Math.min(1, Math.max(0, (end - t) / 0.3));
-  const p = Math.min(inP, outP);
+  const outKind = o.animationOut ?? o.animation;
+  // a fade-out takes a little longer than the other exits
+  const outP = o.end == null || settled ? 1 : Math.min(1, Math.max(0, (end - t) / (outKind === "fade" ? 0.5 : 0.3)));
+  const a = animAt(o.animation, inP);
+  if (outP >= 1) return a;
+  const b = animAt(outKind, outP);
+  return { alpha: a.alpha * b.alpha, scale: a.scale * b.scale, dx: a.dx + b.dx, dy: a.dy + b.dy };
+}
+
+function animAt(kind: Overlay["animation"], p: number): AnimState {
   const k = 1 - Math.pow(1 - p, 3); // ease-out cubic
   const back = p >= 1 ? 1 : 1 + 2.2 * Math.pow(p - 1, 3) + 1.2 * Math.pow(p - 1, 2); // ease-out-back (slight overshoot)
-  switch (o.animation) {
+  switch (kind) {
     case "fade":
       return { alpha: p, scale: 1, dx: 0, dy: 0 };
     case "pop":
@@ -1047,14 +1057,282 @@ export function drawFrame(ctx: Ctx, doc: EditorDocument, t: number, env: RenderE
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, W, H);
   }
+  // the question as a phone call: the call screen sits on the video, under the question card
+  const call = callWindow(doc);
+  if (call && doc.callStyle!.mode === "phone" && t >= call.start && t < call.end + CALL_EXIT) drawCallScreen(ctx, doc, doc.callStyle!, t, call, env, main);
   for (const o of doc.overlays) {
     if (o.hidden || env.hideOverlayIds?.has(o.id)) continue;
     if (t < o.start || t >= overlayEnd(o, duration)) continue;
     drawOverlay(ctx, doc, o, t, env, duration, main);
   }
+  if (call && doc.callStyle!.mode === "bar" && t >= call.start && t < call.end + CALL_EXIT) drawCallBar(ctx, doc, doc.callStyle!, t, call, env);
   drawSubtitles(ctx, doc, t);
   // CTA end card after the last frame of the content
   const c0 = endCardStart(doc);
   if (c0 != null && t >= c0) drawEndCard(ctx, doc, t - c0, env);
   ctx.restore();
 }
+
+// ---------------------------------------------------------------------------
+// Question as a phone call
+// ---------------------------------------------------------------------------
+
+const CALL_EXIT = 0.5;
+
+/** While the narrator reads the question (until the answer starts). */
+export function callWindow(doc: EditorDocument): { start: number; end: number } | null {
+  const n = doc.narration[0];
+  if (!doc.callStyle || !n || n.muted) return null;
+  const nEnd = clipEnd(n);
+  const listen = doc.clips.find((c) => c.muted && c.start <= n.start + 0.05 && Math.abs(clipEnd(c) - nEnd) < 1.5);
+  return { start: Math.max(0, n.start - 0.25), end: listen ? Math.max(nEnd, clipEnd(listen)) : nEnd + 0.15 };
+}
+
+/** "Ongoing" call time: starts at a stable odd value per name, so it looks like the call is in progress. */
+function callClock(cs: CallStyle, t: number, start: number): string {
+  let h = 0;
+  for (const ch of cs.name) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  const sec = Math.floor(17 + (h % 140) + (t - start));
+  return `${String(Math.floor(sec / 60)).padStart(2, "0")}:${String(sec % 60).padStart(2, "0")}`;
+}
+
+function drawHandset(ctx: Ctx, cx: number, cy: number, s: number, color: string, rot = 0) {
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(rot);
+  ctx.strokeStyle = color;
+  ctx.fillStyle = color;
+  ctx.lineCap = "round";
+  ctx.lineWidth = s * 0.26;
+  ctx.beginPath();
+  ctx.arc(0, s * 0.62, s * 0.78, Math.PI * 1.22, Math.PI * 1.78);
+  ctx.stroke();
+  for (const sx of [-1, 1]) {
+    ctx.beginPath();
+    ctx.ellipse(sx * s * 0.5, s * 0.08, s * 0.2, s * 0.14, sx * 0.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+/** Round avatar: the generated photo, or the system one (grey circle with the initial). */
+function drawCallAvatar(ctx: Ctx, cs: CallStyle, cx: number, cy: number, r: number, env: RenderEnv, th: ThemeTokens) {
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.clip();
+  const img = cs.avatarAssetId ? env.getImage(cs.avatarAssetId) : null;
+  if (img) {
+    const k = Math.max((2 * r) / img.width, (2 * r) / img.height);
+    ctx.drawImage(img.image, cx - (img.width * k) / 2, cy - (img.height * k) / 2, img.width * k, img.height * k);
+  } else {
+    const g = ctx.createLinearGradient(cx, cy - r, cx, cy + r);
+    g.addColorStop(0, "#a3a8b4");
+    g.addColorStop(1, "#7d838f");
+    ctx.fillStyle = g;
+    ctx.fillRect(cx - r, cy - r, 2 * r, 2 * r);
+    ctx.fillStyle = "#ffffff";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.font = fontString(600, r * 0.95, resolveFont("$label", th));
+    ctx.fillText((cs.name.trim()[0] ?? "?").toUpperCase(), cx, cy + r * 0.04);
+  }
+  ctx.restore();
+}
+
+/** In-call pill at the top (like the iPhone's Dynamic Island); after the question it flies up and fades. */
+export function drawCallBar(ctx: Ctx, doc: EditorDocument, cs: CallStyle, t: number, win: { start: number; end: number }, env: RenderEnv) {
+  const W = doc.width;
+  const u = unit(doc);
+  const th = doc.theme;
+  const inK = Math.min(1, Math.max(0, (t - win.start) / 0.35));
+  const outK = t <= win.end ? 0 : Math.min(1, (t - win.end) / CALL_EXIT);
+  const ease = (x: number) => 1 - Math.pow(1 - x, 3);
+  const alpha = (env.settled ? 1 : ease(inK)) * (1 - ease(outK));
+  if (alpha <= 0.001) return;
+  const w = 920 * u;
+  const h = 128 * u;
+  const x = (W - w) / 2;
+  const y = 20 * u - (1 - ease(inK)) * 60 * u - ease(outK) * 230 * u;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.shadowColor = "rgba(0,0,0,0.35)";
+  ctx.shadowBlur = 30 * u;
+  ctx.fillStyle = "rgba(10,10,12,0.96)";
+  roundRect(ctx, x, y, w, h, h / 2);
+  ctx.fill();
+  ctx.shadowColor = "transparent";
+  const ar = 46 * u;
+  const acx = x + 22 * u + ar;
+  const acy = y + h / 2;
+  drawCallAvatar(ctx, cs, acx, acy, ar, env, th);
+  // green call badge on the avatar
+  ctx.fillStyle = "#30d158";
+  ctx.beginPath();
+  ctx.arc(acx + ar * 0.72, acy + ar * 0.72, 21 * u, 0, Math.PI * 2);
+  ctx.fill();
+  drawHandset(ctx, acx + ar * 0.72, acy + ar * 0.72, 17 * u, "#ffffff");
+  ctx.textAlign = "left";
+  ctx.textBaseline = "alphabetic";
+  ctx.fillStyle = "#ffffff";
+  ctx.font = fontString(600, 40 * u, resolveFont("$label", th));
+  const tx = acx + ar + 30 * u;
+  ctx.fillText(cs.name, tx, y + h * 0.47);
+  ctx.fillStyle = "rgba(235,235,245,0.6)";
+  ctx.font = fontString(500, 31 * u, resolveFont("$label", th));
+  ctx.fillText(callClock(cs, t, win.start), tx, y + h * 0.8);
+  // the caller is speaking: a small live waveform on the right
+  const bars = 5;
+  const bw = 9 * u;
+  const gap = 9 * u;
+  const bx = x + w - 60 * u - bars * (bw + gap);
+  for (let i = 0; i < bars; i++) {
+    const a = t <= win.end ? 0.35 + 0.65 * Math.abs(Math.sin(t * 7.3 + i * 1.7) * Math.cos(t * 3.1 + i)) : 0.2;
+    const bh = (14 + 46 * a) * u;
+    ctx.fillStyle = "#30d158";
+    roundRect(ctx, bx + i * (bw + gap), y + (h - bh) / 2, bw, bh, bw / 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+const CALL_BUTTONS: Array<[string, (ctx: Ctx, cx: number, cy: number, s: number) => void]> = [
+  ["wycisz", (c, x, y, s) => {
+    roundRect(c, x - s * 0.16, y - s * 0.42, s * 0.32, s * 0.55, s * 0.16);
+    c.fill();
+    c.beginPath();
+    c.arc(x, y - s * 0.05, s * 0.3, 0.15 * Math.PI, 0.85 * Math.PI);
+    c.stroke();
+    c.beginPath();
+    c.moveTo(x, y + s * 0.25);
+    c.lineTo(x, y + s * 0.42);
+    c.moveTo(x - s * 0.42, y - s * 0.5);
+    c.lineTo(x + s * 0.42, y + s * 0.42);
+    c.stroke();
+  }],
+  ["klawiatura", (c, x, y, s) => {
+    for (let i = -1; i <= 1; i++)
+      for (let j = -1; j <= 1; j++) {
+        c.beginPath();
+        c.arc(x + i * s * 0.32, y + j * s * 0.32, s * 0.1, 0, Math.PI * 2);
+        c.fill();
+      }
+  }],
+  ["głośnik", (c, x, y, s) => {
+    c.beginPath();
+    c.moveTo(x - s * 0.45, y - s * 0.14);
+    c.lineTo(x - s * 0.25, y - s * 0.14);
+    c.lineTo(x - s * 0.02, y - s * 0.36);
+    c.lineTo(x - s * 0.02, y + s * 0.36);
+    c.lineTo(x - s * 0.25, y + s * 0.14);
+    c.lineTo(x - s * 0.45, y + s * 0.14);
+    c.closePath();
+    c.fill();
+    for (const r of [0.2, 0.36]) {
+      c.beginPath();
+      c.arc(x + s * 0.02, y, s * r, -0.3 * Math.PI, 0.3 * Math.PI);
+      c.stroke();
+    }
+  }],
+  ["dodaj", (c, x, y, s) => {
+    c.beginPath();
+    c.moveTo(x - s * 0.36, y);
+    c.lineTo(x + s * 0.36, y);
+    c.moveTo(x, y - s * 0.36);
+    c.lineTo(x, y + s * 0.36);
+    c.stroke();
+  }],
+  ["FaceTime", (c, x, y, s) => {
+    roundRect(c, x - s * 0.44, y - s * 0.24, s * 0.58, s * 0.48, s * 0.1);
+    c.fill();
+    c.beginPath();
+    c.moveTo(x + s * 0.18, y - s * 0.06);
+    c.lineTo(x + s * 0.44, y - s * 0.24);
+    c.lineTo(x + s * 0.44, y + s * 0.24);
+    c.lineTo(x + s * 0.18, y + s * 0.06);
+    c.closePath();
+    c.fill();
+  }],
+  ["kontakty", (c, x, y, s) => {
+    c.beginPath();
+    c.arc(x, y, s * 0.44, 0, Math.PI * 2);
+    c.stroke();
+    c.beginPath();
+    c.arc(x, y - s * 0.1, s * 0.15, 0, Math.PI * 2);
+    c.fill();
+    c.beginPath();
+    c.arc(x, y + s * 0.34, s * 0.26, Math.PI * 1.15, Math.PI * 1.85);
+    c.stroke();
+  }],
+];
+
+/** Full-screen phone call while the question is read; the expert's face in a circle; it slides away after. */
+export function drawCallScreen(ctx: Ctx, doc: EditorDocument, cs: CallStyle, t: number, win: { start: number; end: number }, env: RenderEnv, main: MainVideo | null) {
+  const W = doc.width;
+  const H = doc.height;
+  const u = unit(doc);
+  const th = doc.theme;
+  const inK = Math.min(1, Math.max(0, (t - win.start) / 0.3));
+  const outK = t <= win.end ? 0 : Math.min(1, (t - win.end) / CALL_EXIT);
+  const ease = (x: number) => 1 - Math.pow(1 - x, 3);
+  const alpha = (env.settled ? 1 : ease(inK)) * (1 - ease(outK));
+  if (alpha <= 0.001) return;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.translate(0, -ease(outK) * H * 0.25);
+  // background: the caller's photo heavily blurred and darkened, or a dark gradient
+  const img = cs.avatarAssetId ? env.getImage(cs.avatarAssetId) : null;
+  if (img && env.scratch) ctx.drawImage(blurredPlate(img, 100, W, H, env.scratch), 0, 0, W, H);
+  else {
+    const g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, "#3a3f47");
+    g.addColorStop(0.55, "#1f2329");
+    g.addColorStop(1, "#13161b");
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, H);
+  }
+  ctx.fillStyle = "rgba(0,0,0,0.38)";
+  ctx.fillRect(0, 0, W, H);
+  ctx.textAlign = "center";
+  ctx.textBaseline = "alphabetic";
+  ctx.fillStyle = "#ffffff";
+  ctx.font = fontString(500, 86 * u, resolveFont("$label", th));
+  // below the question card at the top
+  ctx.fillText(cs.name, W / 2, H * 0.245);
+  ctx.fillStyle = "rgba(235,235,245,0.7)";
+  ctx.font = fontString(500, 40 * u, resolveFont("$label", th));
+  ctx.fillText(callClock(cs, t, win.start), W / 2, H * 0.245 + 66 * u);
+  // the buttons
+  const r = 96 * u;
+  CALL_BUTTONS.forEach(([label, icon], i) => {
+    const cx = W / 2 + ((i % 3) - 1) * 300 * u;
+    const cy = H * (i < 3 ? 0.585 : 0.735);
+    ctx.fillStyle = "rgba(255,255,255,0.2)";
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#ffffff";
+    ctx.strokeStyle = "#ffffff";
+    ctx.lineWidth = 7 * u;
+    ctx.lineCap = "round";
+    icon(ctx, cx, cy, 90 * u);
+    ctx.font = fontString(500, 32 * u, resolveFont("$label", th));
+    ctx.fillText(label, cx, cy + r + 46 * u);
+  });
+  // end call
+  ctx.fillStyle = "#ff3b30";
+  ctx.beginPath();
+  ctx.arc(W / 2, H * 0.88, 100 * u, 0, Math.PI * 2);
+  ctx.fill();
+  drawHandset(ctx, W / 2, H * 0.88 + 6 * u, 70 * u, "#ffffff", Math.PI * 0.75);
+  ctx.restore();
+  // the expert's face, like a picture-in-picture during the call
+  if (main) {
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    drawFaceBubble(ctx, doc, cs.bubble ?? CALL_BUBBLE, main);
+    ctx.restore();
+  }
+}
+
+export const CALL_BUBBLE = { x: 0.5, y: 0.415, size: 0.28, zoom: DEFAULT_BUBBLE.zoom, fy: DEFAULT_BUBBLE.fy };

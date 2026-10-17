@@ -138,6 +138,8 @@ interface OverlayBase {
   h: number; // height, normalized (ignored for text, which grows with its content)
   opacity: number;
   animation: OverlayAnimation;
+  /** how it leaves (absent = the entrance played backwards) */
+  animationOut?: OverlayAnimation;
   hidden?: boolean;
 }
 
@@ -279,6 +281,19 @@ export interface EndCard {
   custom?: boolean;
 }
 
+export interface CallStyle {
+  /** bar = a call pill at the top that flies away after the question; phone = full-screen call screen */
+  mode: "bar" | "phone";
+  name: string;
+  gender: "female" | "male";
+  /** null = the system avatar (initial); else a generated "selfie" of the caller */
+  avatarAssetId?: string | null;
+  /** generated photos to pick from */
+  avatarVariants?: string[];
+  /** phone mode: the expert's face circle */
+  bubble?: FaceBubble;
+}
+
 export interface EditorDocument {
   version: number;
   width: number;
@@ -295,6 +310,8 @@ export interface EditorDocument {
   pauses: PauseSuggestion[];
   /** CTA end card after the last frame (project setting, synced on load / export) */
   endCard?: EndCard;
+  /** the question shown as a phone call while the narrator reads it */
+  callStyle?: CallStyle;
   meta: {
     questionText: string;
     mode: "CONTINUOUS" | "ANSWER_ONLY";
