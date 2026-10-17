@@ -84,6 +84,9 @@ export interface AudioClip {
   fadeIn: number;
   fadeOut: number;
   label?: string;
+  /** narration tempo (1 = as generated); assetId is then the re-timed file made from baseAssetId */
+  speed?: number;
+  baseAssetId?: string;
 }
 
 export type ZoomType = "smooth-in" | "smooth-out" | "jump-in" | "jump-out" | "push-in";

@@ -2,8 +2,8 @@ import { prisma } from "./db";
 import { sha256 } from "./crypto";
 import { env } from "./env";
 import { listVoices, synthesize, ttsCacheKey } from "./elevenlabs";
-import { putBuffer, makeTempDir } from "./storage";
-import { probe } from "./ffmpeg";
+import { putBuffer, putFile, makeTempDir, toLocalFile } from "./storage";
+import { changeTempo, probe } from "./ffmpeg";
 import fsp from "node:fs/promises";
 import path from "node:path";
 import { stablePick, withFillers } from "../fillers";
@@ -59,6 +59,34 @@ export async function ensureNarration(text: string, opts: { voiceId?: string | n
     return await p;
   } finally {
     inflight.delete(hash);
+  }
+}
+
+/** The narration at another tempo (same voice and pitch), cached per source asset and speed. */
+export async function narrationAtSpeed(baseAssetId: string, speed: number): Promise<string> {
+  const sp = Math.round(Math.min(1.6, Math.max(0.8, speed)) * 100) / 100;
+  if (Math.abs(sp - 1) < 0.005) return baseAssetId;
+  const base = await prisma.mediaAsset.findUniqueOrThrow({ where: { id: baseAssetId } });
+  const hash = sha256(`tempo:${base.id}:${sp}`);
+  const cached = await prisma.mediaAsset.findUnique({ where: { contentHash: hash } });
+  if (cached) return cached.id;
+  const src = await toLocalFile(base.storageKey);
+  const dir = await makeTempDir("tempo");
+  try {
+    const out = path.join(dir, "a.mp3");
+    await changeTempo(src.path, out, sp);
+    const key = `narration/${hash.slice(0, 2)}/${hash}.mp3`;
+    const size = await putFile(key, out, "audio/mpeg");
+    const duration = (await probe(out)).duration;
+    const asset = await prisma.mediaAsset.upsert({
+      where: { contentHash: hash },
+      create: { kind: "NARRATION", projectId: base.projectId, storageKey: key, mimeType: "audio/mpeg", sizeBytes: size, durationSec: duration, hasAudio: true, contentHash: hash, meta: { ...((base.meta as object | null) ?? {}), baseAssetId: base.id, speed: sp } },
+      update: {},
+    });
+    return asset.id;
+  } finally {
+    await src.cleanup();
+    await fsp.rm(dir, { recursive: true, force: true });
   }
 }
 

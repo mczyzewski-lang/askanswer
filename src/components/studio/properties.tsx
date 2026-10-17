@@ -2,7 +2,7 @@
 import { useRef } from "react";
 import { Trash2 } from "lucide-react";
 import { DEFAULT_BUBBLE, type AudioClip, type BlurOverlay, type AVClip, type CalloutOverlay, type EditorDocument, type FaceBubble, type ImageOverlay, type Overlay, type ShapeOverlay, type TextOverlay, type VideoOverlay, type ZoomEffect } from "@/lib/editor/types";
-import { NarrationVoiceChanger } from "./narration";
+import { NarrationSpeed, NarrationVoiceChanger } from "./narration";
 import { VariantPicker } from "./ai-panel";
 import { clipEnd, deleteClip, docDuration } from "@/lib/editor/timeline";
 import { ZOOM_PRESETS } from "@/lib/editor/zoom";
@@ -411,6 +411,8 @@ function ClipProps({ c }: { c: AVClip }) {
   return (
     <div>
       <Section title="Klip wideo + głos eksperta">
+        {/* the expert listening to the question: its length follows the narrator's tempo */}
+        {c.muted && c.label === "Słuchanie pytania" ? <NarrationSpeed /> : null}
         <p className="text-[12px] text-studio-muted">
           Źródło: {c.sourceIn.toFixed(2)}–{c.sourceOut.toFixed(2)} s · na osi od {c.start.toFixed(2)} s. Wideo i dźwięk są połączone — cięcia zawsze zachowują synchronizację.
         </p>
@@ -472,6 +474,7 @@ function AudioProps({ c, kind }: { c: AudioClip; kind: "narration" | "music" }) 
       <p className="text-[11.5px] text-studio-muted">
         Na osi: {c.start.toFixed(2)}–{clipEnd(c).toFixed(2)} s. Przeciągnij krawędzie na osi czasu, aby przyciąć.
       </p>
+      {kind === "narration" ? <NarrationSpeed clipId={c.id} /> : null}
       {kind === "narration" ? (
         <div className="border-t border-studio-line pt-3">
           <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-studio-muted">Zmień lektora</p>

@@ -4,7 +4,7 @@ import { parseHybridCsv } from "../../src/lib/csv-import";
 import { effectiveKind, kindFromCsv } from "../../src/lib/question-kinds";
 import { buildInitialDocument } from "../../src/lib/editor/factory";
 import { DEFAULT_THEME } from "../../src/lib/themes";
-import { contentDuration, docDuration, endCardStart, timedSegments } from "../../src/lib/editor/timeline";
+import { contentDuration, docDuration, endCardStart, retimeNarration, timedSegments } from "../../src/lib/editor/timeline";
 import { applyEndCard } from "../../src/lib/end-card";
 import { drawFaceBubble, drawFrame, layoutSubtitle, type Ctx } from "../../src/lib/render/compositor";
 
@@ -169,5 +169,48 @@ describe("blur behind", () => {
     // below the blur the edge stays sharp
     expect(at(97, 150)).toBe(255);
     expect(at(103, 150)).toBe(0);
+  });
+});
+
+describe("narration tempo", () => {
+  const modeA = () =>
+    buildInitialDocument({
+      questionText: "Q",
+      theme: DEFAULT_THEME,
+      mode: "CONTINUOUS",
+      recording: { assetId: "rec", duration: 30 },
+      narration: { assetId: "tts", duration: 6.9 },
+      narrationWindow: { start: 0.2, end: 7.1 },
+      segments: [],
+      pauses: [],
+      visibility: "FULL",
+      questionSeconds: 4,
+    });
+  it("× 1.15 shortens the listening part and moves the answer up", () => {
+    const doc = modeA();
+    const n = doc.narration[0];
+    const len0 = n.sourceOut - n.sourceIn;
+    const next = retimeNarration(doc, n.id, { assetId: "tts-115", duration: 6.9 / 1.15, baseAssetId: "tts", speed: 1.15 });
+    const n2 = next.narration[0];
+    expect(n2).toMatchObject({ assetId: "tts-115", baseAssetId: "tts", speed: 1.15 });
+    const newLen = n2.sourceOut - n2.sourceIn;
+    expect(newLen).toBeCloseTo(len0 / 1.15, 1);
+    const listen = next.clips.find((c) => c.muted)!;
+    const answer = next.clips.find((c) => !c.muted)!;
+    expect(listen.sourceOut - listen.sourceIn).toBeCloseTo(7.1 - (len0 - newLen), 1);
+    expect(answer.start).toBeCloseTo(listen.start + listen.sourceOut - listen.sourceIn, 2);
+    expect(answer.sourceIn).toBeCloseTo(7.1, 2); // the answer itself is untouched
+    expect(contentDuration(next)).toBeCloseTo(contentDuration(doc) - (len0 - newLen), 1);
+    // back to 1.0: the time comes back
+    const back = retimeNarration(next, n2.id, { assetId: "tts", duration: 6.9, baseAssetId: "tts", speed: 1 });
+    expect(contentDuration(back)).toBeCloseTo(contentDuration(doc), 1);
+    expect(back.clips.find((c) => !c.muted)!.start).toBeCloseTo(doc.clips.find((c) => !c.muted)!.start, 1);
+  });
+  it("mode B: the intro gets shorter", () => {
+    const doc = buildInitialDocument({ questionText: "Q", theme: DEFAULT_THEME, mode: "ANSWER_ONLY", recording: { assetId: "rec", duration: 10 }, narration: { assetId: "tts", duration: 6 }, segments: [], pauses: [], visibility: "FULL", questionSeconds: 4 });
+    const start0 = doc.clips[0].start;
+    const next = retimeNarration(doc, doc.narration[0].id, { assetId: "t2", duration: 5, baseAssetId: "tts", speed: 1.2 });
+    expect(next.clips[0].start).toBeCloseTo(start0 - 1, 1);
+    expect(next.clips[0].sourceOut - next.clips[0].sourceIn).toBeCloseTo(10);
   });
 });

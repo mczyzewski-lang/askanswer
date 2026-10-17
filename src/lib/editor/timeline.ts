@@ -587,3 +587,57 @@ export function formatShort(t: number): string {
   const s = t - m * 60;
   return `${String(m).padStart(2, "0")}:${s.toFixed(1).padStart(4, "0").replace(".", ",")}`;
 }
+
+/**
+ * Open a gap of d seconds at timeline time p: everything starting at / after p moves right, and the
+ * clip ending at p (the expert listening to the question) is lengthened from its source when it can.
+ */
+function insertTime(doc: EditorDocument, p: number, d: number, srcDuration: (assetId: string) => number): EditorDocument {
+  const after = (t: number) => (t >= p - EPS ? t + d : t);
+  return {
+    ...doc,
+    clips: doc.clips.map((c) => {
+      if (c.start >= p - EPS) return { ...c, start: c.start + d };
+      if (Math.abs(clipEnd(c) - p) < 0.05) return { ...c, sourceOut: Math.min(srcDuration(c.assetId), c.sourceOut + d) };
+      return c;
+    }),
+    narration: doc.narration.map((c) => (c.start >= p - EPS ? { ...c, start: c.start + d } : c)),
+    zooms: doc.zooms.map((z) => (z.start >= p - EPS ? { ...z, start: z.start + d, end: z.end + d } : z)),
+    overlays: doc.overlays.map((o) => ({ ...o, start: after(o.start), end: o.end == null ? null : after(o.end) })),
+  };
+}
+
+/**
+ * The question narration at another tempo: the clip gets the re-timed file and the timeline follows —
+ * the time saved is cut from the expert "listening" (or from the intro card), so the answer starts
+ * right after the question; slowing down again opens the time back up.
+ */
+export function retimeNarration(doc: EditorDocument, clipId: string, next: { assetId: string; duration: number; baseAssetId: string; speed: number }, srcDuration: (assetId: string) => number = () => Infinity): EditorDocument {
+  const c = doc.narration.find((x) => x.id === clipId);
+  if (!c) return doc;
+  const oldSpeed = c.speed ?? 1;
+  const oldLen = c.sourceOut - c.sourceIn;
+  const baseIn = c.sourceIn * oldSpeed;
+  const baseLen = oldLen * oldSpeed;
+  const sourceIn = baseIn / next.speed;
+  const newLen = Math.max(0.1, Math.min(baseLen / next.speed, next.duration - sourceIn));
+  const end0 = c.start + oldLen;
+  const delta = snapToFrame(oldLen - newLen, doc.fps);
+  const updated: AudioClip = { ...c, assetId: next.assetId, baseAssetId: next.baseAssetId, speed: next.speed, sourceIn, sourceOut: sourceIn + newLen };
+  let out: EditorDocument = { ...doc, narration: doc.narration.map((x) => (x.id === clipId ? updated : x)) };
+  if (Math.abs(delta) < EPS) return out;
+  // the cut / the gap sits at the end of the listening clip when there is one (mode A), else after the question
+  const listen = doc.clips.find((v) => v.muted && v.start <= c.start + EPS && Math.abs(clipEnd(v) - end0) < 0.8);
+  const at = listen ? clipEnd(listen) : end0;
+  if (delta > 0) {
+    // keep the shortened narration itself out of the cut
+    const others = { ...out, narration: out.narration.filter((x) => x.id !== clipId) };
+    const cut = deleteRange(others, at - delta, at, true);
+    out = { ...cut, narration: [...cut.narration, updated].sort((a, b) => a.start - b.start) };
+  } else {
+    const others = { ...out, narration: out.narration.filter((x) => x.id !== clipId) };
+    const grown = insertTime(others, at, -delta, srcDuration);
+    out = { ...grown, narration: [...grown.narration, updated].sort((a, b) => a.start - b.start) };
+  }
+  return out;
+}

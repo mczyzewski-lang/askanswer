@@ -27,7 +27,7 @@ import { MASK_VERSION } from "@/lib/render/mask-format";
 import { useStudio } from "./store";
 import { Row, Section, Seg, Select, SButton, Slider, TextField } from "./controls";
 import type { PlaybackEngine } from "./playback";
-import { NarrationVoiceChanger } from "./narration";
+import { NarrationSpeed, NarrationVoiceChanger } from "./narration";
 
 export interface StudioMeta {
   compositionId: string;
@@ -90,6 +90,7 @@ export function QuestionPanel({ meta }: { meta: StudioMeta }) {
       </Section>
       {meta.elevenLabs ? (
         <Section title="Lektor pytania (ElevenLabs)">
+          <NarrationSpeed />
           <NarrationVoiceChanger questionText={meta.question?.spokenText || meta.question?.text || doc.meta.questionText} initialVoiceId={doc.narration.length ? null : meta.project.voiceId} />
         </Section>
       ) : null}

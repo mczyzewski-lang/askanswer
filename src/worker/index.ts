@@ -85,13 +85,17 @@ async function loop(lane: "media" | "ai") {
     try {
       const result = await handle(job);
       stopBeat();
-      await completeJob(job.id, result ?? undefined);
+      // the job row may be gone meanwhile (its question / project deleted) — never let that stop the lane
+      await completeJob(job.id, result ?? undefined).catch((e) => console.error(`[worker] could not mark ${job.id} done: ${(e as Error).message}`));
       console.log(`[worker] ✓ ${job.type} ${job.id} in ${((Date.now() - t0) / 1000).toFixed(1)}s`);
     } catch (e) {
       stopBeat();
       const err = e as Error;
       const retryable = !(err instanceof PermanentError) && !(err instanceof ElevenLabsError && !err.retryable) && !(err instanceof HiggsfieldError && !err.retryable) && !(err instanceof OpenAIImageError && !err.retryable);
-      const gaveUp = await failJob(job.id, err.message, retryable);
+      const gaveUp = await failJob(job.id, err.message, retryable).catch((fe) => {
+        console.error(`[worker] could not mark ${job.id} failed: ${(fe as Error).message}`);
+        return false;
+      });
       console.error(`[worker] ✗ ${job.type} ${job.id}: ${err.message}${gaveUp ? " (giving up)" : " (will retry)"}`);
       if (gaveUp && job.type === "render") {
         const rid = (job.payload as Record<string, string>).renderJobId;

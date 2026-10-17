@@ -48,6 +48,8 @@ const audioClip = z.object({
   fadeIn: num.min(0).max(30),
   fadeOut: num.min(0).max(30),
   label: z.string().max(120).optional(),
+  speed: num.min(0.5).max(2).optional(),
+  baseAssetId: z.string().max(64).optional(),
 });
 
 const zoom = z.object({

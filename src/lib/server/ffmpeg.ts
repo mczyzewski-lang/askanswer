@@ -265,3 +265,8 @@ export async function ffmpegSilences(input: string, noiseDb = -35, minDur = 0.6)
   }
   return out;
 }
+
+/** Faster / slower speech without changing the pitch (atempo), e.g. a slow narrator × 1.15. */
+export async function changeTempo(input: string, output: string, speed: number): Promise<void> {
+  await run(env.ffmpeg, ["-hide_banner", "-y", "-i", input, "-vn", "-filter:a", `atempo=${Math.min(2, Math.max(0.5, speed)).toFixed(3)}`, "-c:a", "libmp3lame", "-b:a", "192k", output]);
+}

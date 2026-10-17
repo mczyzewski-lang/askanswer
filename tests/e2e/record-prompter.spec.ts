@@ -142,6 +142,12 @@ test("hybrid: question read by the narrator, answer from the prompter, CTA end c
       const stats = await (await request.get("http://127.0.0.1:4010/__stats", { headers: { "xi-api-key": "mock-key" } })).json();
       expect(JSON.stringify(stats.tts)).toContain("moi klienci czekają na odpowiedź kilka dni");
       expect(doc.endCard).toMatchObject({ url: "kancelaria.pl", text: "Umów konsultację", seconds: 3 });
+      // a slow narrator × 1.15: re-timed file (pitch kept), shorter by the same factor
+      const nAsset = comp.assets.find((x: { id: string }) => x.id === doc.narration[0].assetId);
+      const fast = await (await request.post(`/api/admin/compositions/${take.compositionId}/narration-speed`, { data: { baseAssetId: nAsset.id, speed: 1.15 } })).json();
+      expect(fast.id).not.toBe(nAsset.id);
+      expect(fast.durationSec).toBeGreaterThan(nAsset.durationSec / 1.15 - 0.2);
+      expect(fast.durationSec).toBeLessThan(nAsset.durationSec / 1.15 + 0.2);
       return;
     }
     await page.waitForTimeout(2000);
