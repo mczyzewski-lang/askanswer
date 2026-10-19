@@ -7,6 +7,7 @@ import { api, cn } from "@/lib/utils";
 import type { PanelProps } from "./project-view";
 import { VoicePicker } from "@/components/voice-picker";
 import { ProjectExpertsCard } from "./project-experts-card";
+import { AiPromptsCard } from "./ai-prompts-card";
 import { FORMAT_LABELS, type ProjectFormat } from "@/lib/project-terms";
 import { DEFAULT_TTS_MODEL, TTS_MODELS } from "@/lib/tts-models";
 
@@ -217,6 +218,7 @@ export function SettingsPanel({ data, refresh, toast }: PanelProps) {
       </Card>
       <div className="space-y-6">
         <ProjectExpertsCard data={data} refresh={refresh} toast={toast} />
+        <AiPromptsCard projectId={p.id} />
         {form.format !== "PROMPTER" ? (
         <Card className="space-y-4 p-5">
           <p className="font-medium">Lektor ElevenLabs</p>

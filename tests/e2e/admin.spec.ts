@@ -236,3 +236,18 @@ test("bulk actions: select several (shift = range), change status, delete", asyn
   const d = await (await request.get(`/api/admin/projects/${project.id}`)).json();
   expect(d.questions.map((q: { text: string }) => q.text).sort()).toEqual(["Czwarte pytanie testowe?", "Trzecie pytanie testowe?"]);
 });
+
+test("project settings show the AI image prompts with the theme colours", async ({ page, request }) => {
+  await adminRequest(request);
+  const project = await (await request.post("/api/admin/projects", { data: { name: "Prompty AI", preset: "pravna" } })).json();
+  await login(page);
+  await page.goto(`/admin/projects/${project.id}`);
+  await page.getByRole("tab", { name: "Ustawienia" }).click();
+  await page.getByTestId("ai-prompts").getByRole("button", { name: /Prompty AI do grafik/ }).click();
+  const illu = page.getByTestId("ai-prompt-illustration");
+  await expect(illu).toContainText("Full-screen vertical 9:16 illustration");
+  await expect(illu).toContainText(/#[0-9A-Fa-f]{6}/);
+  await expect(illu).toContainText("bottom 30% of the image must stay completely free of lettering");
+  await expect(page.getByTestId("ai-prompt-background")).toContainText("background plate");
+  await expect(page.getByTestId("ai-prompt-caller")).toContainText("iPhone front camera");
+});
