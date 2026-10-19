@@ -36,6 +36,8 @@ export function SettingsPanel({ data, refresh, toast }: PanelProps) {
     naturalFillers: p.naturalFillers,
     autoInfographics: p.autoInfographics,
     autoBlur: p.autoBlur,
+    blurStrength: p.blurStrength ?? 45,
+    narrationSpeed: p.narrationSpeed ?? 1,
     autoVoice: p.autoVoice,
     autoZooms: p.autoZooms,
     autoImageEnhance: p.autoImageEnhance,
@@ -173,6 +175,22 @@ export function SettingsPanel({ data, refresh, toast }: PanelProps) {
               <Switch checked={form[k]} onCheckedChange={(v) => set(k, v)} aria-label={label} />
             </label>
           ))}
+          {form.autoBlur ? (
+            <label className="flex items-center justify-between gap-4 text-sm">
+              <span>
+                Siła rozmycia: {form.blurStrength}
+                <span className="block text-xs text-muted">Rozmycie jest włączane w każdym filmie projektu — także w już nagranych, jeśli nie zmieniono go w Studio.</span>
+              </span>
+              <input type="range" min={5} max={100} step={5} value={form.blurStrength} onChange={(e) => set("blurStrength", Number(e.target.value))} aria-label="Siła rozmycia" className="w-40" />
+            </label>
+          ) : null}
+          <label className="flex items-center justify-between gap-4 text-sm">
+            <span>
+              Tempo lektora pytania: {form.narrationSpeed.toFixed(2).replace(".", ",")}×
+              <span className="block text-xs text-muted">Przyspiesza czytane pytanie (wysokość głosu bez zmian), a „Słuchanie pytania” skraca się samo. W Studio można zmienić dla filmu.</span>
+            </span>
+            <input type="range" min={0.9} max={1.4} step={0.05} value={form.narrationSpeed} onChange={(e) => set("narrationSpeed", Number(e.target.value))} aria-label="Tempo lektora pytania" className="w-40" />
+          </label>
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="s-daily">Pytań na dziś na liście eksperta</Label>

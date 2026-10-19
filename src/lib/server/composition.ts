@@ -3,6 +3,7 @@ import { assetInfo } from "./assets";
 import { themeFromRow } from "../themes";
 import { syncTheme } from "../question-styles";
 import { applyEndCard } from "../end-card";
+import { applyProjectDefaults } from "./project-defaults";
 import { referencedAssetIds } from "./render-job";
 import type { EditorDocument } from "../editor/types";
 import { signedUrl } from "./storage";
@@ -11,6 +12,7 @@ import { VIDEO_MODELS, videoModel } from "./higgsfield";
 
 /** Everything the Studio needs to open a composition. */
 export async function loadStudio(id: string) {
+  await applyProjectDefaults(id).catch((e) => console.error("[defaults]", (e as Error).message));
   const comp = await prisma.videoComposition.findUniqueOrThrow({
     where: { id },
     include: { project: { include: { theme: true } }, question: true, take: { include: { transcript: { select: { id: true, model: true, languageCode: true } } } } },

@@ -70,7 +70,7 @@ export async function autoPolish(compositionId: string): Promise<AutoPolishResul
     if (doc.meta.autoPolish) return { done: [], warnings, skipped: "already done" };
     const clips = doc.clips.map((c) => ({
       ...c,
-      ...(masked && !c.background ? { background: { blur: BLUR_DEFAULT } } : {}),
+      ...(masked && !c.background && !doc.meta.defaults?.blur ? { background: { blur: p.blurStrength || BLUR_DEFAULT } } : {}),
       ...(voice?.[c.assetId] && !c.audioAssetId ? { audioAssetId: voice[c.assetId] } : {}),
       ...(looks[c.assetId] && !c.look ? { look: looks[c.assetId] } : {}),
     }));

@@ -30,6 +30,8 @@ export const ProjectInput = z.object({
   naturalFillers: z.boolean().optional(),
   autoInfographics: z.boolean().optional(),
   autoBlur: z.boolean().optional(),
+  blurStrength: z.number().int().min(5).max(100).optional(),
+  narrationSpeed: z.number().min(0.9).max(1.4).optional(),
   autoVoice: z.boolean().optional(),
   autoZooms: z.boolean().optional(),
   autoImageEnhance: z.boolean().optional(),

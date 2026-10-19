@@ -94,7 +94,7 @@ test("hybrid: question read by the narrator, answer from the prompter, CTA end c
   // what the narrator reads differs from the title on the video
   const SPOKEN = "Dzień dobry, moi klienci czekają na odpowiedź kilka dni. Jak to przyspieszyć?";
   const project = await (await request.post("/api/admin/projects", { data: { name: "Hybryda — rolki", format: "HYBRID", preset: "pravna" } })).json();
-  const cta = await request.patch(`/api/admin/projects/${project.id}`, { data: { ctaEnabled: true, ctaUrl: "kancelaria.pl", ctaText: "Umów konsultację", ctaSeconds: 3 } });
+  const cta = await request.patch(`/api/admin/projects/${project.id}`, { data: { ctaEnabled: true, ctaUrl: "kancelaria.pl", ctaText: "Umów konsultację", ctaSeconds: 3, narrationSpeed: 1.2, blurStrength: 60 } });
   expect(cta.ok()).toBeTruthy();
   const expert = (await (await request.post(`/api/admin/projects/${project.id}/experts`, { data: { name: "Ewa Hybryda" } })).json()).expert;
   const q = await (
@@ -141,8 +141,12 @@ test("hybrid: question read by the narrator, answer from the prompter, CTA end c
       expect(doc.clips[1].sourceIn).toBeGreaterThanOrEqual(doc.clips[0].sourceOut);
       expect(doc.narration[0].start).toBeLessThan(1);
       // the narrator's question has subtitles too, timed on the narration file
-      expect(doc.meta.narrationSubs).toBe(doc.narration[0].assetId);
-      expect(doc.subtitles.segments.some((g: { assetId: string }) => g.assetId === doc.narration[0].assetId)).toBe(true);
+      const nBase = doc.narration[0].baseAssetId ?? doc.narration[0].assetId;
+      expect(doc.meta.narrationSubs).toBe(nBase);
+      expect(doc.subtitles.segments.some((g: { assetId: string }) => g.assetId === nBase)).toBe(true);
+      // the project's defaults: narrator × 1.2, blurred background at the project strength
+      expect(doc.narration[0].speed).toBe(1.2);
+      expect(doc.clips.every((c: { background?: { blur: number } }) => c.background?.blur === 60)).toBe(true);
       expect(doc.overlays.find((o: { role?: string }) => o.role === "question").text).toBe(QUESTION);
       const stats = await (await request.get("http://127.0.0.1:4010/__stats", { headers: { "xi-api-key": "mock-key" } })).json();
       expect(JSON.stringify(stats.tts)).toContain("moi klienci czekają na odpowiedź kilka dni");

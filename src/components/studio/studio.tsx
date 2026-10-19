@@ -92,6 +92,7 @@ export function Studio({ id }: { id: string }) {
   // AI clips keep generating in the background and land on the timeline when ready
   useBrollJobs();
   useNarrationSubtitles();
+  useBackgroundMasks();
   const [tab, setTab] = useState<TabKey>("subs");
   const [exportOpen, setExportOpen] = useState(false);
   const [notice, setNotice] = useState<{ text: string; tone: "ok" | "err" } | null>(null);
@@ -887,4 +888,28 @@ function StatusSwitch({ questionId, initial }: { questionId: string; initial: st
       </select>
     </label>
   );
+}
+
+/**
+ * Blurred / replaced background set before the person mask existed (project default, a fresh video):
+ * fetch the masks as soon as the worker has made them, so the preview shows the effect without a reload.
+ */
+function useBackgroundMasks() {
+  const compositionId = useStudio((s) => s.compositionId);
+  const missing = useStudio((s) => !!s.doc && s.doc.clips.some((c) => (c.background?.blur || c.background?.imageAssetId) && s.assets[c.assetId] && !s.assets[c.assetId]?.maskUrl));
+  useEffect(() => {
+    if (!missing) return;
+    let stop = false;
+    const tick = async () => {
+      const res = await fetch(`/api/admin/compositions/${compositionId}/segment`, { method: "POST" }).catch(() => null);
+      const data = res ? await res.json().catch(() => null) : null;
+      if (stop) return;
+      if (data?.assets?.length) useStudio.getState().addAssets(data.assets);
+      if (data?.jobs?.length) setTimeout(tick, 4000);
+    };
+    void tick();
+    return () => {
+      stop = true;
+    };
+  }, [missing, compositionId]);
 }

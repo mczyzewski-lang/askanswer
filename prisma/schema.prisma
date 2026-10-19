@@ -164,6 +164,10 @@ model Project {
   autoInfographics   Boolean            @default(true)
   /// right after processing: blur the background behind the expert
   autoBlur           Boolean            @default(true)
+  /// default blur strength (0–100) for every video of the project
+  blurStrength       Int                @default(45)
+  /// default narrator tempo for the question (1 = as generated)
+  narrationSpeed     Float              @default(1)
   /// right after processing: voice "podcast + ElevenLabs" (voice isolation + mastering)
   autoVoice          Boolean            @default(true)
   /// right after processing: dynamic zooms on sentence boundaries

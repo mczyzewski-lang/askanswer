@@ -183,6 +183,11 @@ export async function processTake(takeId: string, opts: { renormalize?: boolean 
     // 9–15. composition
     await step(takeId, "Tworzenie kompozycji");
     const composition = await ensureComposition(takeId);
+    // the project's defaults (blurred background, narrator tempo) right away
+    if (!opts.renormalize) {
+      const { applyProjectDefaults } = await import("./project-defaults");
+      await applyProjectDefaults(composition.id).catch(() => {});
+    }
     // automatic infographics need to know what the expert says
     if (await prisma.transcript.findUnique({ where: { takeId }, select: { id: true } })) await queueAutoVisuals(composition.id);
     // blur / voice / picture don't need the transcript (zooms just stay empty without it)

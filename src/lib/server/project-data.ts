@@ -130,6 +130,8 @@ export async function projectData(id: string) {
       naturalFillers: p.naturalFillers,
       autoInfographics: p.autoInfographics,
       autoBlur: p.autoBlur,
+      blurStrength: p.blurStrength,
+      narrationSpeed: p.narrationSpeed,
       autoVoice: p.autoVoice,
       autoZooms: p.autoZooms,
       autoImageEnhance: p.autoImageEnhance,

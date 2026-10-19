@@ -304,3 +304,13 @@ describe("subtitles of the narrator's question", () => {
     expect(doc.subtitles.segments.some((s) => s.assetId === "rec")).toBe(true);
   });
 });
+
+describe("export masks", () => {
+  it("loads the person mask for an AI background too, not only for blur", async () => {
+    const { maskedAssetIds } = await import("../../src/lib/server/render-job");
+    const doc = buildInitialDocument({ questionText: "Q", theme: DEFAULT_THEME, mode: "ANSWER_ONLY", recording: { assetId: "rec", duration: 10 }, segments: [], pauses: [], visibility: "FULL", questionSeconds: 4 });
+    expect(maskedAssetIds(doc).size).toBe(0);
+    doc.clips[0].background = { blur: 0, imageAssetId: "plate" };
+    expect([...maskedAssetIds(doc)]).toEqual(["rec"]);
+  });
+});

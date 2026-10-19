@@ -10,6 +10,7 @@ import { EXPORT_FORMATS, type ExportFormat } from "../editor/factory";
 import { themeFromRow } from "../themes";
 import { syncTheme } from "../question-styles";
 import { applyEndCard } from "../end-card";
+import { applyProjectDefaults } from "./project-defaults";
 import { probe } from "./ffmpeg";
 
 export interface RenderSettings {
@@ -65,8 +66,14 @@ export function referencedAssetIds(doc: EditorDocument): string[] {
   return [...ids];
 }
 
+/** Recordings whose person mask the export needs: a blurred room or a replacement (AI) background. */
+export function maskedAssetIds(doc: EditorDocument): Set<string> {
+  return new Set(doc.clips.filter((c) => (c.background?.blur ?? 0) > 0 || !!c.background?.imageAssetId).map((c) => c.assetId));
+}
+
 /** Load a composition document with the project's current theme applied (themes are global per project). */
 export async function loadDocForRender(compositionId: string): Promise<{ doc: EditorDocument; name: string; projectId: string }> {
+  await applyProjectDefaults(compositionId).catch((e) => console.error("[defaults]", (e as Error).message));
   const comp = await prisma.videoComposition.findUniqueOrThrow({ where: { id: compositionId }, include: { project: { include: { theme: true } } } });
   const doc = comp.document as unknown as EditorDocument;
   if (comp.project.theme) syncTheme(doc, themeFromRow(comp.project.theme));
@@ -85,8 +92,8 @@ async function renderOne(doc: EditorDocument, out: string, settings: RenderSetti
       locals.push(f);
       assets.set(r.id, { id: r.id, path: f.path, width: r.width, height: r.height, hasAudio: r.hasAudio, hasVideo: r.hasVideo, kind: r.kind, durationSec: r.durationSec });
     }
-    // background blur: the person masks of recordings whose clips use it
-    const blurred = new Set(doc.clips.filter((c) => (c.background?.blur ?? 0) > 0).map((c) => c.assetId));
+    // background blur or an AI background behind the expert: the person masks of those recordings
+    const blurred = maskedAssetIds(doc);
     for (const r of rows) {
       const maskId = (r.meta as { maskAssetId?: string } | null)?.maskAssetId;
       if (!blurred.has(r.id) || !maskId) continue;
