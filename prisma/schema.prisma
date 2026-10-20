@@ -134,6 +134,8 @@ enum ProjectFormat {
   PROMPTER
   /// each item has its own kind: question, prompter script, or question + prompter answer
   HYBRID
+  /// Ads Studio: raw footage + a script file → reels cut from the transcripts
+  ADS
 }
 
 /// experts taking part in a project (shown in "Eksperci i linki", offered when assigning questions)
@@ -149,6 +151,8 @@ model ProjectExpert {
 
 model Project {
   id                 String             @id @default(cuid())
+  adFootage          AdFootage[]
+  adReels            AdReel[]
   name               String
   description        String?
   themeId            String?
@@ -469,4 +473,47 @@ model VoiceCollectionItem {
   createdAt    DateTime        @default(now())
 
   @@unique([collectionId, voiceId])
+}
+
+/// Ads Studio: one raw footage file (the expert reading hooks, bodies, CTAs), transcribed with word times
+model AdFootage {
+  id              String   @id @default(cuid())
+  projectId       String
+  project         Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name            String
+  /// UPLOADING | PROCESSING | READY | FAILED
+  status          String   @default("UPLOADING")
+  step            String?
+  error           String?
+  sizeBytes       BigInt   @default(0)
+  receivedChunks  Int[]    @default([])
+  originalAssetId String?
+  assetId         String?
+  durationSec     Float?
+  /// [{ text, start, end }] from ElevenLabs STT
+  words           Json?
+  order           Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([projectId])
+}
+
+/// Ads Studio: one reel of the script and where its parts were found in the footage
+model AdReel {
+  id            String   @id @default(cuid())
+  projectId     String
+  project       Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  code          String
+  title         String?
+  /// [{ role, text }]
+  parts         Json
+  order         Int      @default(0)
+  compositionId String?
+  /// [{ role, footageId, start, end, score, extra[] } | { role, missing: true }]
+  matches       Json?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([projectId, code])
 }

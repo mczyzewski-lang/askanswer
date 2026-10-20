@@ -69,6 +69,9 @@ export function SettingsPanel({ data, refresh, toast }: PanelProps) {
           <Label htmlFor="s-desc">Opis</Label>
           <Textarea id="s-desc" value={form.description} onChange={(e) => set("description", e.target.value)} />
         </div>
+        {(form.format as string) === "ADS" ? (
+          <p className="rounded-lg bg-black/[.04] px-3 py-2 text-sm">Kampania Ads Studio — scenariusze i nagrania wgrywasz w <a className="underline" href={`/admin/ads/${p.id}`}>Ads Studio</a>.</p>
+        ) : (
         <div className="space-y-1.5">
           <Label htmlFor="s-format">Format projektu</Label>
           <NativeSelect id="s-format" value={form.format} onChange={(e) => set("format", e.target.value as typeof form.format)}>
@@ -82,6 +85,7 @@ export function SettingsPanel({ data, refresh, toast }: PanelProps) {
             W formacie Prompter zamiast pytań są pozycje „Hook + Treść”, a ekspert czyta je z promptera (bez lektora). Hybryda łączy w jednym projekcie pytania z lektorem, skrypty z promptera i pytania z lektorem + odpowiedź z promptera — typ wybierasz przy każdej pozycji albo w kolumnie „Typ” pliku CSV.
           </p>
         </div>
+        )}
         {form.format !== "PROMPTER" ? (
         <div className="space-y-1.5">
           <Label htmlFor="s-mode">Tryb nagrywania</Label>
@@ -314,7 +318,7 @@ export function SettingsPanel({ data, refresh, toast }: PanelProps) {
               try {
                 await api(`/api/admin/projects/${p.id}`, {
                   method: "PATCH",
-                  json: { ...form, description: form.description || null, voiceId: form.voiceId || null, ttsModel: form.ttsModel || null, voiceCollectionId: voiceSource === "collection" ? form.voiceCollectionId || null : null, ctaUrl: form.ctaUrl.trim() || null, ctaText: form.ctaText.trim() || null },
+                  json: { ...form, ...((form.format as string) === "ADS" ? { format: undefined } : {}), description: form.description || null, voiceId: form.voiceId || null, ttsModel: form.ttsModel || null, voiceCollectionId: voiceSource === "collection" ? form.voiceCollectionId || null : null, ctaUrl: form.ctaUrl.trim() || null, ctaText: form.ctaText.trim() || null },
                 });
                 toast("Zapisano ustawienia");
                 refresh();

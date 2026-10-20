@@ -5,6 +5,8 @@ import { elevenLabsConfigured } from "./env";
 
 export async function dashboardData() {
   const projects = await prisma.project.findMany({
+    // ad campaigns live in the Ads Studio
+    where: { format: { not: "ADS" } },
     orderBy: { updatedAt: "desc" },
     include: {
       questions: { select: { id: true, status: true, updatedAt: true, expert: { select: { name: true } }, recording: { select: { updatedAt: true, _count: { select: { takes: true } } } } } },

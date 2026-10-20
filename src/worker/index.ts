@@ -42,6 +42,14 @@ async function handle(job: { id: string; type: string; payload: unknown }) {
       const { segmentAsset } = await import("../lib/server/segment");
       return segmentAsset(p.assetId);
     }
+    case "ads-footage": {
+      const { processFootage } = await import("../lib/server/ads");
+      return processFootage(p.footageId);
+    }
+    case "ads-build": {
+      const { buildReels } = await import("../lib/server/ads");
+      return buildReels(p.projectId, job.payload as { reelIds?: string[]; rebuild?: boolean });
+    }
     case "generate-avatar": {
       const { generateCallerAvatar } = await import("../lib/server/broll");
       return generateCallerAvatar(job.id, job.payload as Parameters<typeof generateCallerAvatar>[1]);

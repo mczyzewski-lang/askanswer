@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 
 const items = [
   { href: "/admin", label: "Projekty", match: (p: string) => p === "/admin" || p.startsWith("/admin/projects") },
+  { href: "/admin/ads", label: "Ads Studio", match: (p: string) => p.startsWith("/admin/ads") },
   { href: "/admin/experts", label: "Eksperci", match: (p: string) => p.startsWith("/admin/experts") },
   { href: "/admin/voices", label: "Głosy", match: (p: string) => p.startsWith("/admin/voices") },
   { href: "/admin/themes", label: "Motywy", match: (p: string) => p.startsWith("/admin/themes") },

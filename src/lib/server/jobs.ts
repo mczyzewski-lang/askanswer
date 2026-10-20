@@ -6,7 +6,7 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "./db";
 
-export type JobType = "process-take" | "transcribe-take" | "render" | "enhance-audio" | "generate-broll" | "generate-infographic" | "segment-asset" | "auto-visuals" | "auto-polish" | "generate-background" | "generate-avatar";
+export type JobType = "process-take" | "transcribe-take" | "render" | "enhance-audio" | "generate-broll" | "generate-infographic" | "segment-asset" | "auto-visuals" | "auto-polish" | "generate-background" | "generate-avatar" | "ads-footage" | "ads-build";
 
 export async function enqueue(type: JobType, payload: Record<string, unknown>, opts: { idempotencyKey?: string; maxAttempts?: number; runAt?: Date } = {}) {
   if (opts.idempotencyKey) {
