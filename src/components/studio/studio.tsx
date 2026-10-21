@@ -31,7 +31,7 @@ import {
   ZoomIn,
 } from "lucide-react";
 import type { AssetInfo, EditorDocument, ThemeTokens } from "@/lib/editor/types";
-import { clipEnd, deleteClip, deleteRange, docDuration, formatTimecode, splitAt } from "@/lib/editor/timeline";
+import { clipEnd, deleteClip, deleteRange, docDuration, formatTimecode, splitAt, switchHook } from "@/lib/editor/timeline";
 import { EXPORT_FORMATS } from "@/lib/editor/factory";
 import { FONT_FAMILIES } from "@/lib/themes";
 import { ensureFontsLoaded } from "@/lib/client/fonts";
@@ -458,6 +458,7 @@ export function Studio({ id }: { id: string }) {
             {clean ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
           </button>
         </Tip>
+        <HookSwitcher />
         {payload.question ? <StatusSwitch questionId={payload.question.id} initial={payload.question.status ?? "RECORDED"} /> : null}
         <SButton variant="primary" onClick={() => setExportOpen(true)}>
           <Download /> Eksportuj
@@ -783,6 +784,7 @@ function ExportDialog({
             {busy || running ? <Loader2 className="animate-spin" /> : <Download />} {running ? "Renderowanie…" : "Renderuj MP4"}
           </SButton>
           {err ? <p className="text-sm text-red-300">{err}</p> : null}
+          <HookVersionsExport compositionId={compositionId} save={save} format={format} quality={quality} />
           {job ? (
             <div className="rounded-xl border border-studio-line p-3" data-testid="render-status">
               <div className="mb-2 flex justify-between text-[12.5px]">
@@ -912,4 +914,104 @@ function useBackgroundMasks() {
       stop = true;
     };
   }, [missing, compositionId]);
+}
+
+/**
+ * Ads Studio: reels that differ only in the hook are one edit — pick the hook version here; the
+ * body, CTA and everything else stay as edited, the version's hook clip and title are swapped in.
+ */
+function HookSwitcher() {
+  const hooks = useStudio((s) => s.doc?.hooks);
+  const apply = useStudio((s) => s.apply);
+  // ?hook=N opens that version (links from the Ads Studio list)
+  useEffect(() => {
+    const n = Number(new URLSearchParams(window.location.search).get("hook"));
+    const st = useStudio.getState();
+    if (Number.isInteger(n) && st.doc?.hooks && n !== st.doc.hooks.active && st.doc.hooks.variants[n]) st.apply((d) => switchHook(d, n), "hook-version");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [!!hooks]);
+  if (!hooks || hooks.variants.length < 2) return null;
+  const go = (i: number) => apply((d) => switchHook(d, (i + hooks.variants.length) % hooks.variants.length), "hook-version");
+  return (
+    <span className="flex items-center gap-1 rounded-lg border border-studio-line bg-studio-2 px-1 py-0.5 text-[12.5px]" title="Wersja hooka — reszta montażu jest wspólna dla wszystkich wersji">
+      <button className="rounded px-1.5 py-0.5 text-studio-muted hover:bg-studio-3 hover:text-studio-text" onClick={() => go(hooks.active - 1)} aria-label="Poprzedni hook">
+        ‹
+      </button>
+      <select value={hooks.active} onChange={(e) => go(Number(e.target.value))} aria-label="Wersja hooka" data-testid="hook-version" className="max-w-[240px] bg-transparent text-studio-text outline-none">
+        {hooks.variants.map((v, i) => (
+          <option key={v.id} value={i} className="bg-studio-2">
+            Hook {i + 1}/{hooks.variants.length} · {v.code}
+            {v.title ? ` — ${v.title}` : ""}
+          </option>
+        ))}
+      </select>
+      <button className="rounded px-1.5 py-0.5 text-studio-muted hover:bg-studio-3 hover:text-studio-text" onClick={() => go(hooks.active + 1)} aria-label="Następny hook">
+        ›
+      </button>
+    </span>
+  );
+}
+
+/** Export every hook version as its own MP4 (one render job each). */
+function HookVersionsExport({ compositionId, save, format, quality }: { compositionId: string; save: () => Promise<void>; format: string; quality: string }) {
+  const hooks = useStudio((s) => s.doc?.hooks);
+  const [jobs, setJobs] = useState<Array<{ id: string; code: string; status: string; progress: number; downloadUrl: string | null }>>([]);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (!jobs.some((j) => j.status === "QUEUED" || j.status === "RUNNING")) return;
+    const t = setInterval(async () => {
+      const next = await Promise.all(
+        jobs.map(async (j) => {
+          if (j.status === "SUCCEEDED" || j.status === "FAILED") return j;
+          const r = await fetch(`/api/admin/render-jobs/${j.id}`, { cache: "no-store" }).then((x) => (x.ok ? x.json() : null)).catch(() => null);
+          return r ? { ...j, status: r.status, progress: r.progress ?? 0, downloadUrl: r.downloadUrl ?? null } : j;
+        }),
+      );
+      setJobs(next);
+    }, 2000);
+    return () => clearInterval(t);
+  }, [jobs]);
+  if (!hooks || hooks.variants.length < 2) return null;
+  const all = async () => {
+    setBusy(true);
+    try {
+      await save();
+      if (useStudio.getState().dirty) await save();
+      const res = await fetch(`/api/admin/compositions/${compositionId}/render`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ format, quality, allHooks: true }) });
+      const data = await res.json().catch(() => ({}));
+      const out = ((data.jobs ?? []) as Array<{ id: string; code: string }>).map((j) => ({ ...j, status: "QUEUED", progress: 0, downloadUrl: null as string | null }));
+      setJobs(out);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const done = jobs.filter((j) => j.status === "SUCCEEDED").length;
+  return (
+    <div className="space-y-2 rounded-xl border border-studio-line p-3" data-testid="hook-versions-export">
+      <SButton className="w-full" onClick={all} disabled={busy || jobs.some((j) => j.status === "QUEUED" || j.status === "RUNNING")}>
+        {busy ? <Loader2 className="animate-spin" /> : <Download />} Renderuj wszystkie wersje hooka ({hooks.variants.length})
+      </SButton>
+      {jobs.length ? (
+        <>
+          <p className="text-[12px] text-studio-muted">
+            Gotowe {done}/{jobs.length}
+          </p>
+          <ul className="max-h-48 space-y-1 overflow-y-auto text-[12.5px]">
+            {jobs.map((j) => (
+              <li key={j.id} className="flex items-center justify-between gap-2">
+                <span>{j.code}</span>
+                {j.status === "SUCCEEDED" && j.downloadUrl ? (
+                  <a href={j.downloadUrl} className="text-sky-300 hover:underline" data-testid="hook-version-download">
+                    Pobierz MP4
+                  </a>
+                ) : (
+                  <span className="tabular text-studio-muted">{j.status === "FAILED" ? "błąd" : `${Math.round(j.progress * 100)}%`}</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : null}
+    </div>
+  );
 }

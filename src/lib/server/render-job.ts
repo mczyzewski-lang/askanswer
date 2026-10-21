@@ -11,11 +11,14 @@ import { themeFromRow } from "../themes";
 import { syncTheme } from "../question-styles";
 import { applyEndCard } from "../end-card";
 import { applyProjectDefaults } from "./project-defaults";
+import { switchHook } from "../editor/timeline";
 import { probe } from "./ffmpeg";
 
 export interface RenderSettings {
   format: ExportFormat;
   quality: "draft" | "standard" | "high";
+  /** Ads Studio: which hook version to render */
+  hook?: number | null;
 }
 
 /** Container memory limit in bytes (cgroup v2/v1), falling back to total RAM. */
@@ -144,9 +147,16 @@ export async function runRender(renderJobId: string): Promise<void> {
       await concatRenders(parts, out);
       name = "wywiad-polaczony";
     } else {
-      const { doc, name: n } = await loadDocForRender(job.compositionId!);
+      const loaded = await loadDocForRender(job.compositionId!);
+      let doc = loaded.doc;
+      name = loaded.name;
+      // one hook version of an Ads Studio edit: its reel's file name
+      if (settings.hook != null && doc.hooks?.variants[settings.hook]) {
+        const v = doc.hooks.variants[settings.hook];
+        doc = switchHook(doc, settings.hook);
+        name = v.title ? `${v.code} ${v.title}` : v.code;
+      }
       await renderOne(doc, out, settings, progress(0, 0.99));
-      name = n;
     }
     const info = await probe(out);
     if (!info.hasVideo || info.duration <= 0) throw new Error("Render nie wygenerował poprawnego pliku MP4");

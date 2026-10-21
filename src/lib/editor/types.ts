@@ -281,6 +281,23 @@ export interface EndCard {
   custom?: boolean;
 }
 
+export interface HookVariant {
+  id: string;
+  /** reel id from the script (R001…) */
+  code: string;
+  /** the title shown at the top of this version */
+  title: string | null;
+  /** the hook clip of this version (its trim is kept per version) */
+  clip: Omit<AVClip, "id" | "start">;
+}
+
+export interface HookVariants {
+  /** the hook clip on the timeline */
+  clipId: string;
+  active: number;
+  variants: HookVariant[];
+}
+
 export interface CallStyle {
   /** bar = a call pill at the top that flies away after the question; phone = full-screen call screen */
   mode: "bar" | "phone";
@@ -314,6 +331,8 @@ export interface EditorDocument {
   endCard?: EndCard;
   /** the question shown as a phone call while the narrator reads it */
   callStyle?: CallStyle;
+  /** Ads Studio: reels that differ only in the hook — one edit, the hook clip swapped per version */
+  hooks?: HookVariants;
   meta: {
     questionText: string;
     mode: "CONTINUOUS" | "ANSWER_ONLY";

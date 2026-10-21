@@ -26,6 +26,8 @@ export async function loadStudio(id: string) {
   for (const it of doc.meta.aiBroll ?? []) for (const v of it.variants ?? []) ids.add(v);
   for (const v of doc.meta.bgVariants ?? []) ids.add(v);
   for (const v of doc.callStyle?.avatarVariants ?? []) ids.add(v);
+  // Ads Studio hook versions: their recordings, so switching plays at once
+  for (const v of doc.hooks?.variants ?? []) ids.add(v.clip.assetId);
   if (doc.theme.logoAssetId) ids.add(doc.theme.logoAssetId);
   const assets = (await Promise.all([...ids].map((a) => assetInfo(a, true)))).filter(Boolean);
   // other takes of the same question (for "Zamień ujęcie")

@@ -36,36 +36,71 @@ test("ads studio: script + footage → reels laid out from the transcript", asyn
   await page.reload();
   await expect(page.getByTestId("ads-footage-row")).toHaveAttribute("data-status", "READY", { timeout: 120_000 });
 
-  // 3. lay out the reels
+  // 3. lay out the reels: R1 and R2 differ only in the hook → ONE edit with two hook versions;
+  // R3's hook was never recorded → reported, not laid out
   await page.getByTestId("ads-build").click();
-  await expect(page.getByTestId("ads-open-studio")).toHaveCount(3, { timeout: 60_000 });
+  await expect(page.getByTestId("ads-open-studio")).toHaveCount(2, { timeout: 60_000 });
   const data = await (await request.get(`/api/admin/ads/${projectId}`)).json();
-  const r1 = data.reels.find((r: { code: string }) => r.code === "R1");
-  const r3 = data.reels.find((r: { code: string }) => r.code === "R3");
+  const [r1, r2, r3] = ["R1", "R2", "R3"].map((c) => data.reels.find((r: { code: string }) => r.code === c));
   expect(r1.matches.map((m: { missing?: boolean }) => !!m.missing)).toEqual([false, false, false]);
   expect(r1.matches[0].score).toBeGreaterThan(0.9);
-  // the never-recorded hook is reported, the rest of the reel is still laid out
   expect(r3.matches[0].missing).toBe(true);
+  expect(r3.compositionId).toBeNull();
   await expect(page.getByTestId("ads-reel").nth(2).locator('[data-missing="true"]')).toHaveCount(1);
+  expect(r1.compositionId).toBe(r2.compositionId);
+  expect([r1.hookIndex, r2.hookIndex]).toEqual([0, 1]);
+  await expect(page.getByTestId("ads-hook-version").first()).toHaveText("hook 1/2");
 
-  // the shared body is cut from the same place in every reel; the reel = hook → body → CTA
-  const comp1 = (await (await request.get(`/api/admin/compositions/${r1.compositionId}`)).json()).composition.document;
-  const comp2 = (await (await request.get(`/api/admin/compositions/${data.reels[1].compositionId}`)).json()).composition.document;
-  expect(comp1.clips.map((c: { label: string }) => c.label)).toEqual(["HOOK", "BODY", "CTA"]);
-  expect(comp1.clips[1].sourceIn).toBeCloseTo(comp2.clips[1].sourceIn, 3);
-  expect(comp1.clips[0].sourceIn).toBeLessThan(comp1.clips[1].sourceIn);
-  expect(comp1.clips[1].start).toBeCloseTo(comp1.clips[0].sourceOut - comp1.clips[0].sourceIn, 1);
-  expect(comp1.subtitles.segments.length).toBeGreaterThan(0);
+  // the edit = hook → body → CTA, the title at the top for the whole reel
+  const doc = (await (await request.get(`/api/admin/compositions/${r1.compositionId}`)).json()).composition.document;
+  expect(doc.clips.map((c: { label: string }) => c.label)).toEqual(["HOOK", "BODY", "CTA"]);
+  expect(doc.hooks.variants.map((v: { code: string }) => v.code)).toEqual(["R1", "R2"]);
+  expect(doc.hooks.variants[1].clip.sourceIn).toBeGreaterThan(doc.clips[1].sourceIn); // R2's hook was said after the body
+  const title = doc.overlays.find((o: { role?: string }) => o.role === "question");
+  expect(title).toMatchObject({ text: "Pierwszy", end: null });
+  expect(doc.subtitles.segments.length).toBeGreaterThan(0);
 
   // a second file through the page (sliced upload in the browser)
   await page.getByTestId("ads-video-input").setInputFiles({ name: "nagranie-2.mp4", mimeType: "video/mp4", buffer: buf });
   await expect(page.getByTestId("ads-footage-row")).toHaveCount(2, { timeout: 60_000 });
   await expect(page.getByTestId("ads-footage-row").nth(1)).toHaveAttribute("data-status", "READY", { timeout: 120_000 });
 
-  // opens in the Studio like any video
+  // the Studio: switch the hook version — the rest of the edit stays, the title follows the version
   await page.getByTestId("ads-open-studio").first().click();
   await expect(page.getByTestId("timeline")).toBeVisible({ timeout: 60_000 });
-  await expect(page.getByText("HOOK").first()).toBeVisible();
+  const sw = page.getByTestId("hook-version");
+  await expect(sw).toHaveValue("0");
+  await sw.selectOption("1");
+  await expect(page.getByText("Zapisano")).toBeVisible({ timeout: 20_000 });
+  await expect
+    .poll(async () => {
+      const d = (await (await request.get(`/api/admin/compositions/${r1.compositionId}`)).json()).composition.document;
+      return [d.hooks.active, d.overlays.find((o: { role?: string }) => o.role === "question").text, Math.round(d.clips[0].sourceIn * 100)];
+    }, { timeout: 20_000 })
+    .toEqual([1, "Drugi", Math.round(doc.hooks.variants[1].clip.sourceIn * 100)]);
+  // the shared body sits right after the (other) hook
+  const d2 = (await (await request.get(`/api/admin/compositions/${r1.compositionId}`)).json()).composition.document;
+  expect(d2.clips[1].start).toBeCloseTo(d2.clips[0].sourceOut - d2.clips[0].sourceIn, 1);
+  expect(d2.clips[1].sourceIn).toBeCloseTo(doc.clips[1].sourceIn, 3);
+
+  // every hook version as its own MP4, from the one edit
+  test.setTimeout(600_000);
+  const rj = await (await request.post(`/api/admin/compositions/${r1.compositionId}/render`, { data: { format: "720x1280", quality: "draft", allHooks: true } })).json();
+  expect(rj.jobs.map((j: { code: string }) => j.code)).toEqual(["R1", "R2"]);
+  const durations: number[] = [];
+  for (const j of rj.jobs) {
+    let st: { status: string; duration?: number | null } = { status: "QUEUED" };
+    for (let i = 0; i < 150 && st.status !== "SUCCEEDED"; i++) {
+      await page.waitForTimeout(2000);
+      st = await (await request.get(`/api/admin/render-jobs/${j.id}`)).json();
+      if (st.status === "FAILED") throw new Error("render failed");
+    }
+    expect(st.status).toBe("SUCCEEDED");
+    durations.push(st.duration ?? 0);
+  }
+  const hookLen = (v: { clip: { sourceIn: number; sourceOut: number } }) => v.clip.sourceOut - v.clip.sourceIn;
+  expect(durations.every((x) => x > 0)).toBe(true);
+  expect(durations[1] - durations[0]).toBeCloseTo(hookLen(d2.hooks.variants[1]) - hookLen(d2.hooks.variants[0]), 0);
 });
 
 test("ads campaign settings keep the campaign format and stay off the projects list", async ({ page, request }) => {

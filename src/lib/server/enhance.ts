@@ -60,9 +60,10 @@ export async function cachedEnhancement(sourceAssetId: string, mode: EnhanceMode
 /** Enhance every recording used by a composition; returns sourceAssetId → enhancedAssetId. */
 export async function enhanceComposition(compositionId: string, mode: EnhanceMode, strength: EnhanceStrength): Promise<Record<string, string>> {
   const comp = await prisma.videoComposition.findUniqueOrThrow({ where: { id: compositionId } });
-  const doc = comp.document as unknown as { clips: Array<{ assetId: string }> };
+  const doc = comp.document as unknown as { clips: Array<{ assetId: string }>; hooks?: { variants: Array<{ clip: { assetId: string } }> } };
   const map: Record<string, string> = {};
-  for (const s of [...new Set(doc.clips.map((c) => c.assetId))]) map[s] = await enhanceAudio(s, mode, strength);
+  // hook versions (Ads Studio) may come from other files: their voice is enhanced too
+  for (const s of [...new Set([...doc.clips.map((c) => c.assetId), ...(doc.hooks?.variants ?? []).map((v) => v.clip.assetId)])]) map[s] = await enhanceAudio(s, mode, strength);
   return map;
 }
 

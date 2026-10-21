@@ -510,6 +510,8 @@ model AdReel {
   parts         Json
   order         Int      @default(0)
   compositionId String?
+  /// reels differing only in the hook share one composition: this reel's hook version in it
+  hookIndex     Int?
   /// [{ role, footageId, start, end, score, extra[] } | { role, missing: true }]
   matches       Json?
   createdAt     DateTime @default(now())

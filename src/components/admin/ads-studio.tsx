@@ -91,7 +91,7 @@ interface Match {
 interface AdsData {
   project: { id: string; name: string };
   footage: Array<{ id: string; name: string; status: string; step: string | null; error: string | null; sizeBytes: number; durationSec: number | null; words: number }>;
-  reels: Array<{ id: string; code: string; title: string | null; parts: Array<{ role: string; text: string }>; matches: Match[] | null; compositionId: string | null }>;
+  reels: Array<{ id: string; code: string; title: string | null; parts: Array<{ role: string; text: string }>; matches: Match[] | null; compositionId: string | null; hookIndex: number | null }>;
 }
 interface UploadState {
   name: string;
@@ -192,6 +192,10 @@ export function AdsProject({ id }: { id: string }) {
   const ready = data.footage.filter((f) => f.status === "READY").length;
   const laid = data.reels.filter((r) => r.compositionId).length;
   const missingParts = data.reels.reduce((n, r) => n + (r.matches ?? []).filter((m) => m.missing).length, 0);
+  // reels that differ only in the hook share one edit
+  const groupSize = new Map<string, number>();
+  for (const r of data.reels) if (r.compositionId) groupSize.set(r.compositionId, (groupSize.get(r.compositionId) ?? 0) + 1);
+  const edits = groupSize.size;
 
   return (
     <div className="space-y-6" data-testid="ads-studio">
@@ -313,7 +317,7 @@ export function AdsProject({ id }: { id: string }) {
               <Wand2 className="h-4 w-4" /> 3. Reelsy
             </p>
             <p className="text-sm text-muted">
-              {laid}/{data.reels.length} ułożonych{missingParts ? ` · ${missingParts} fragmentów nie znaleziono w nagraniach` : ""}. Fragmenty są wycinane z transkrypcji — ze słowami, które ekspert dodał od siebie.
+              {laid}/{data.reels.length} ułożonych{edits && edits < laid ? ` w ${edits} montażach (reelsy różniące się tylko hookiem montujesz raz)` : ""}{missingParts ? ` · ${missingParts} fragmentów nie znaleziono w nagraniach` : ""}. Fragmenty są wycinane z transkrypcji — ze słowami, które ekspert dodał od siebie.
             </p>
           </div>
           <div className="flex gap-2">
@@ -367,10 +371,15 @@ export function AdsProject({ id }: { id: string }) {
                     <td className="py-2.5 text-right">
                       {r.compositionId ? (
                         <span className="flex justify-end gap-1.5">
-                          <Link href={`/studio/${r.compositionId}`} className="inline-flex items-center gap-1 rounded-lg border border-line px-2.5 py-1 text-xs font-medium hover:bg-black/[.03]" data-testid="ads-open-studio">
+                          {(groupSize.get(r.compositionId) ?? 1) > 1 ? (
+                            <span className="self-center text-[11px] text-muted" data-testid="ads-hook-version">
+                              hook {(r.hookIndex ?? 0) + 1}/{groupSize.get(r.compositionId)}
+                            </span>
+                          ) : null}
+                          <Link href={`/studio/${r.compositionId}${r.hookIndex != null ? `?hook=${r.hookIndex}` : ""}`} className="inline-flex items-center gap-1 rounded-lg border border-line px-2.5 py-1 text-xs font-medium hover:bg-black/[.03]" data-testid="ads-open-studio">
                             Studio <ArrowUpRight className="h-3 w-3" />
                           </Link>
-                          <button className="rounded-lg px-2 py-1 text-xs text-muted hover:text-ink" disabled={building} onClick={() => confirm(`Ułożyć ${r.code} od nowa? Zmiany w Studio w tym reelsie przepadną.`) && void build(true, [r.id])}>
+                          <button className="rounded-lg px-2 py-1 text-xs text-muted hover:text-ink" disabled={building} onClick={() => confirm((groupSize.get(r.compositionId!) ?? 1) > 1 ? `Ułożyć od nowa montaż z ${groupSize.get(r.compositionId!)} wersjami hooka (razem z ${r.code})? Zmiany w Studio przepadną.` : `Ułożyć ${r.code} od nowa? Zmiany w Studio w tym reelsie przepadną.`) && void build(true, [r.id])}>
                             od nowa
                           </button>
                         </span>

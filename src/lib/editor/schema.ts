@@ -162,6 +162,13 @@ export const EditorDocumentSchema = z.object({
   pauses: z
     .array(z.object({ id: z.string().max(64), assetId: z.string().max(64), start: num, end: num, confidence: num, status: z.enum(["pending", "accepted", "rejected", "applied"]) }))
     .max(5000),
+  hooks: z
+    .object({
+      clipId: z.string().max(64),
+      active: z.number().int().min(0),
+      variants: z.array(z.object({ id: z.string().max(64), code: z.string().max(120), title: z.string().max(500).nullable(), clip: avClip.omit({ id: true, start: true }) })).max(500),
+    })
+    .optional(),
   callStyle: z
     .object({
       mode: z.enum(["bar", "phone"]),

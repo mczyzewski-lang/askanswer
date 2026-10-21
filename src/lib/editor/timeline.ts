@@ -2,7 +2,7 @@
  * Pure timeline operations. Every function returns a new document; the input is
  * never mutated, which makes undo/redo a matter of keeping old references.
  */
-import type { AVClip, AudioClip, EditorDocument, Overlay, SubtitleSegment, SubWord, ZoomEffect } from "./types";
+import type { AVClip, AudioClip, EditorDocument, Overlay, SubtitleSegment, SubWord, TextOverlay, ZoomEffect } from "./types";
 import { uid } from "./id";
 
 export const EPS = 1e-4;
@@ -659,4 +659,56 @@ export function withNarrationSubtitles(doc: EditorDocument, baseAssetId: string,
   const recordings = new Set(doc.clips.map((c) => c.assetId));
   const kept = doc.subtitles.segments.filter((s) => recordings.has(s.assetId));
   return { ...doc, subtitles: { ...doc.subtitles, segments: [...segments, ...kept] }, meta: { ...doc.meta, narrationSubs: baseAssetId } };
+}
+
+/** Move everything that starts at / after timeline time p by d seconds (the clip `skipId` stays). */
+function shiftFrom(doc: EditorDocument, p: number, d: number, skipId: string): EditorDocument {
+  if (Math.abs(d) < EPS) return doc;
+  const mv = (t: number) => (t >= p - EPS ? Math.max(0, t + d) : t);
+  return {
+    ...doc,
+    clips: doc.clips.map((c) => (c.id !== skipId && c.start >= p - EPS ? { ...c, start: Math.max(0, c.start + d) } : c)),
+    narration: doc.narration.map((c) => (c.start >= p - EPS ? { ...c, start: Math.max(0, c.start + d) } : c)),
+    zooms: doc.zooms.map((z) => (z.start >= p - EPS ? { ...z, start: mv(z.start), end: mv(z.end) } : z.end > p ? { ...z, end: Math.max(z.start + 0.2, z.end + d) } : z)),
+    overlays: doc.overlays.map((o) => ({ ...o, start: mv(o.start), end: o.end == null ? null : o.start < p - EPS && o.end > p ? Math.max(o.start + 0.1, o.end + d) : mv(o.end) })),
+  };
+}
+
+/**
+ * Ads Studio: show another hook version. The current hook clip (with its trim) and the title are kept
+ * in its version, the chosen one takes its place, and the rest of the edit moves by the length
+ * difference — so body + CTA are edited once for every version.
+ */
+export function switchHook(doc: EditorDocument, index: number): EditorDocument {
+  const h = doc.hooks;
+  if (!h || index === h.active || !h.variants[index]) return doc;
+  const cur = doc.clips.find((c) => c.id === h.clipId);
+  if (!cur) return doc;
+  const q = doc.overlays.find((o): o is TextOverlay => o.kind === "text" && o.role === "question");
+  const { id: _id, start: _start, ...curClip } = cur;
+  void _id;
+  void _start;
+  const variants = h.variants.map((v, i) => (i === h.active ? { ...v, clip: curClip, title: q ? q.text : v.title } : v));
+  const next = variants[index];
+  const d = next.clip.sourceOut - next.clip.sourceIn - (cur.sourceOut - cur.sourceIn);
+  let out = shiftFrom({ ...doc, hooks: { ...h, active: index, variants } }, clipEnd(cur), d, h.clipId);
+  out = {
+    ...out,
+    // the finishing set on the edit (background, picture, enhanced voice of that file) carries over
+    clips: out.clips.map((c) =>
+      c.id === h.clipId
+        ? {
+            ...next.clip,
+            background: cur.background ?? next.clip.background,
+            look: cur.look ?? next.clip.look,
+            audioAssetId: next.clip.assetId === cur.assetId ? (cur.audioAssetId ?? next.clip.audioAssetId) : (doc.clips.find((x) => x.assetId === next.clip.assetId && x.audioAssetId)?.audioAssetId ?? next.clip.audioAssetId),
+            id: c.id,
+            start: c.start,
+          }
+        : c,
+    ),
+    overlays: out.overlays.map((o) => (q && o.id === q.id ? { ...(o as TextOverlay), text: next.title ?? next.code } : o)),
+    meta: { ...out.meta, questionText: next.title ?? next.code },
+  };
+  return out;
 }

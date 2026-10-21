@@ -1,0 +1,1 @@
+ALTER TABLE "AdReel" ADD COLUMN "hookIndex" INTEGER;

@@ -102,39 +102,104 @@ export function matchAll(texts: string[], footage: FootageWords[]): Map<string, 
   return new Map(unique.map((t) => [t, matchPart(t, footage, { stops })]));
 }
 
+type Footage = FootageWords & { assetId: string; name: string; duration: number };
+
+/** The cut for a found part: a little air before the first and after the last word, without the neighbours. */
+function cutRange(m: StoredMatch, f: Footage): [number, number] {
+  const idx0 = f.words.findIndex((w) => w.start >= m.start! - 1e-6);
+  const idx1 = f.words.findIndex((w) => w.end >= m.end! - 1e-6);
+  const prevEnd = idx0 > 0 ? f.words[idx0 - 1].end : 0;
+  const nextStart = idx1 >= 0 && idx1 + 1 < f.words.length ? f.words[idx1 + 1].start : f.duration;
+  const a = Math.max(0, prevEnd + 0.02, m.start! - 0.15);
+  const b = Math.min(f.duration || m.end! + 0.25, nextStart - 0.02, m.end! + 0.25);
+  return [a, a + Math.max(0.2, b - a)];
+}
+
+/** Reels that differ only in the hook are one edit: grouped by everything that is not the hook. */
+export function groupKey(parts: Array<{ role: string; text: string }>, code: string): string {
+  const rest = parts.filter((p) => p.role !== "hook");
+  return rest.length && rest.length < parts.length ? JSON.stringify(rest.map((p) => [p.role, p.text.trim().replace(/\s+/g, " ")])) : `solo:${code}`;
+}
+
 /**
- * Lay out the reels: match their parts in the footage and create a composition per reel (hook →
- * body → CTA as clips, subtitles from the transcript, pause suggestions). Reels that already have a
- * composition are left alone unless `rebuild`.
+ * Lay out the reels: match their parts in the footage and create one composition per GROUP of reels
+ * that share everything but the hook (hook → body → CTA as clips, subtitles from the transcript,
+ * pause suggestions); each reel is a hook version of it. Existing edits get new hook versions added;
+ * `rebuild` lays them out from scratch.
  */
 export async function buildReels(projectId: string, opts: { reelIds?: string[]; rebuild?: boolean } = {}) {
   const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, include: { theme: true } });
   const footageRows = await prisma.adFootage.findMany({ where: { projectId, status: "READY" }, orderBy: [{ order: "asc" }, { createdAt: "asc" }] });
-  const footage: Array<FootageWords & { assetId: string; name: string; duration: number }> = footageRows
+  const footage: Footage[] = footageRows
     .filter((f) => f.assetId && Array.isArray(f.words))
     .map((f) => ({ id: f.id, assetId: f.assetId!, name: f.name, duration: f.durationSec ?? 0, words: f.words as unknown as FootageWord[] }));
   if (!footage.length) throw new Error("Brak przetworzonych nagrań — wgraj pliki wideo i poczekaj na transkrypcję.");
-  const reels = await prisma.adReel.findMany({ where: { projectId, ...(opts.reelIds?.length ? { id: { in: opts.reelIds } } : {}) }, orderBy: { order: "asc" } });
-  const parts = (r: (typeof reels)[number]) => r.parts as unknown as Array<{ role: string; text: string }>;
-  const found = matchAll(reels.flatMap((r) => parts(r).map((p) => p.text)), footage);
-  const assets = await prisma.mediaAsset.findMany({ where: { id: { in: footage.map((f) => f.assetId) } }, select: { id: true, waveform: true, durationSec: true } });
+  const all = await prisma.adReel.findMany({ where: { projectId }, orderBy: { order: "asc" } });
+  const parts = (r: (typeof all)[number]) => r.parts as unknown as Array<{ role: string; text: string }>;
+  const groups = new Map<string, typeof all>();
+  for (const r of all) {
+    const k = groupKey(parts(r), r.code);
+    groups.set(k, [...(groups.get(k) ?? []), r]);
+  }
+  const wanted = opts.reelIds?.length ? new Set(opts.reelIds) : null;
+  const todo = [...groups.values()].filter((g) => !wanted || g.some((r) => wanted.has(r.id)));
+  const found = matchAll(todo.flatMap((g) => g.flatMap((r) => parts(r).map((p) => p.text))), footage);
+  const assets = await prisma.mediaAsset.findMany({ where: { id: { in: footage.map((f) => f.assetId) } }, select: { id: true, waveform: true } });
   const waveOf = new Map(assets.map((a) => [a.id, a.waveform as unknown as Waveform | null]));
   const theme = project.theme ? themeFromRow(project.theme) : DEFAULT_THEME;
+  const toStored = (p: { role: string; text: string }): StoredMatch => {
+    const m = found.get(p.text);
+    const f = m ? footage.find((x) => x.id === m.footageId) : null;
+    if (!m || !f || m.score < MIN_SCORE) return { role: p.role, text: p.text, missing: true, score: m?.score ?? 0 };
+    return { role: p.role, text: p.text, footageId: f.id, footageName: f.name, start: m.start, end: m.end, score: Math.round(m.score * 100) / 100, extra: m.extra };
+  };
   let built = 0;
-  for (const reel of reels) {
-    const ms: StoredMatch[] = parts(reel).map((p) => {
-      const m = found.get(p.text);
-      const f = m ? footage.find((x) => x.id === m.footageId) : null;
-      if (!m || !f || m.score < MIN_SCORE) return { role: p.role, text: p.text, missing: true, score: m?.score ?? 0 };
-      return { role: p.role, text: p.text, footageId: f.id, footageName: f.name, start: m.start, end: m.end, score: Math.round(m.score * 100) / 100, extra: m.extra };
-    });
-    let compositionId = reel.compositionId;
-    if (opts.rebuild || !compositionId || !(await prisma.videoComposition.findUnique({ where: { id: compositionId }, select: { id: true } }))) {
-      const doc = reelDocument(reel.title || reel.code, ms, footage, waveOf, theme, project);
+  for (const group of todo) {
+    const msOf = new Map(group.map((r) => [r.id, parts(r).map(toStored)]));
+    const hookOf = (r: (typeof group)[number]) => msOf.get(r.id)!.find((m) => m.role === "hook" && !m.missing) ?? null;
+    // the edit the group already has (its first member that points to an existing composition)
+    let compositionId: string | null = null;
+    for (const r of group)
+      if (r.compositionId && (await prisma.videoComposition.findUnique({ where: { id: r.compositionId }, select: { id: true } }))) {
+        compositionId = r.compositionId;
+        break;
+      }
+    const isGroup = group.length > 1 && !groupKeyIsSolo(group[0], parts);
+    const title = (r: (typeof group)[number]) => r.title || r.code;
+    const name = isGroup ? `${group[0].code}–${group[group.length - 1].code} · ${group.length} wersji hooka` : group[0].title ? `${group[0].code} — ${group[0].title}` : group[0].code;
+    let doc: EditorDocument | null = null;
+    if (compositionId && !opts.rebuild) {
+      const cur = await prisma.videoComposition.findUniqueOrThrow({ where: { id: compositionId } });
+      doc = cur.document as unknown as EditorDocument;
+      // new reels of the group become new hook versions of the existing edit
+      if (doc.hooks) {
+        const have = new Set(doc.hooks.variants.map((v) => v.code));
+        const base = doc.clips.find((c) => c.id === doc!.hooks!.clipId);
+        const added = group.filter((r) => !have.has(r.code) && hookOf(r));
+        if (added.length && base) {
+          for (const r of added) doc.hooks.variants.push(hookVariant(r.id, r.code, title(r), hookOf(r)!, footage, base));
+          addWords(doc, added.map((r) => hookOf(r)!), footage, waveOf);
+          await prisma.videoComposition.update({ where: { id: compositionId }, data: { document: doc as unknown as Prisma.InputJsonValue, version: { increment: 1 } } });
+        }
+      }
+    } else {
+      const lead = group.find((r) => hookOf(r)) ?? group[0];
+      doc = reelDocument(title(lead), msOf.get(lead.id)!, footage, waveOf, theme, project);
       if (doc) {
-        const name = reel.title ? `${reel.code} — ${reel.title}` : reel.code;
-        if (compositionId && opts.rebuild && (await prisma.videoComposition.findUnique({ where: { id: compositionId }, select: { id: true } })))
-          await prisma.videoComposition.update({ where: { id: compositionId }, data: { name, document: doc as unknown as Prisma.InputJsonValue, version: { increment: 1 } } });
+        const hookClip = doc.clips.find((c) => c.label === "HOOK");
+        if (isGroup && hookClip) {
+          const { id: _i, start: _s, ...base } = hookClip;
+          void _i;
+          void _s;
+          const members = group.filter((r) => hookOf(r));
+          doc.hooks = {
+            clipId: hookClip.id,
+            active: Math.max(0, members.indexOf(lead)),
+            variants: members.map((r) => hookVariant(r.id, r.code, title(r), hookOf(r)!, footage, { ...base, id: hookClip.id, start: 0 })),
+          };
+          addWords(doc, members.filter((r) => r !== lead).map((r) => hookOf(r)!), footage, waveOf);
+        }
+        if (compositionId) await prisma.videoComposition.update({ where: { id: compositionId }, data: { name, document: doc as unknown as Prisma.InputJsonValue, version: { increment: 1 } } });
         else compositionId = (await prisma.videoComposition.create({ data: { projectId, name, status: "READY_TO_EDIT", document: doc as unknown as Prisma.InputJsonValue } })).id;
         built++;
         // the project's finishing, like after an expert recording
@@ -143,15 +208,51 @@ export async function buildReels(projectId: string, opts: { reelIds?: string[]; 
         if (project.autoBlur || project.autoVoice || project.autoZooms || project.autoImageEnhance) await enqueue("auto-polish", { compositionId }, { idempotencyKey: `auto-polish:${compositionId}:${Date.now()}`, maxAttempts: 2 });
       }
     }
-    await prisma.adReel.update({ where: { id: reel.id }, data: { matches: ms as unknown as Prisma.InputJsonValue, compositionId } });
+    const variants = doc?.hooks?.variants ?? [];
+    for (const r of group) {
+      const idx = variants.findIndex((v) => v.code === r.code);
+      // a reel whose hook was not found has no version in the shared edit yet
+      const laid = !!doc && (idx >= 0 || !doc.hooks);
+      await prisma.adReel.update({ where: { id: r.id }, data: { matches: msOf.get(r.id)! as unknown as Prisma.InputJsonValue, compositionId: laid ? compositionId : null, hookIndex: idx >= 0 ? idx : null } });
+    }
   }
-  return { reels: reels.length, built };
+  return { reels: todo.reduce((n, g) => n + g.length, 0), built, groups: todo.length };
+}
+
+function groupKeyIsSolo(r: { code: string; parts: unknown }, parts: (r: never) => Array<{ role: string; text: string }>) {
+  return groupKey(parts(r as never), r.code).startsWith("solo:");
+}
+
+/** A hook version: the found hook cut, with the look / background / framing of the edit's hook clip. */
+function hookVariant(reelId: string, code: string, title: string, m: StoredMatch, footage: Footage[], base: AVClip) {
+  const f = footage.find((x) => x.id === m.footageId)!;
+  const [a, b] = cutRange(m, f);
+  const { id: _i, start: _s, ...rest } = base;
+  void _i;
+  void _s;
+  return { id: `hook_${reelId}`, code, title, clip: { ...rest, assetId: f.assetId, sourceIn: a, sourceOut: b } };
+}
+
+/** Subtitles and pause suggestions for extra hook cuts (they show when their version is on). */
+function addWords(doc: EditorDocument, ms: StoredMatch[], footage: Footage[], waveOf: Map<string, Waveform | null>) {
+  for (const m of ms) {
+    const f = footage.find((x) => x.id === m.footageId)!;
+    const [a, b] = cutRange(m, f);
+    doc.subtitles.segments.push(...buildSegments(f.assetId, f.words.filter((w) => w.start >= a - 0.01 && w.end <= b + 0.01)));
+    const wf = waveOf.get(f.assetId);
+    if (wf)
+      doc.pauses.push(
+        ...detectPauses({ waveform: wf, words: f.words, sensitivity: "standard", padding: 0.2 })
+          .filter((p) => p.start > a + 0.05 && p.end < b - 0.05)
+          .map((p, i) => ({ ...p, id: `pause_${f.assetId.slice(-6)}_h${Math.round(a * 10)}_${i}`, assetId: f.assetId, status: "pending" as const })),
+      );
+  }
 }
 
 function reelDocument(
   title: string,
   ms: StoredMatch[],
-  footage: Array<FootageWords & { assetId: string; duration: number }>,
+  footage: Footage[],
   waveOf: Map<string, Waveform | null>,
   theme: ReturnType<typeof themeFromRow>,
   project: { questionVisibility: "NARRATION_ONLY" | "FIRST_SECONDS" | "FULL"; questionSeconds: number; theme: { logoAssetId: string | null } | null },
@@ -167,7 +268,8 @@ function reelDocument(
     narration: null,
     segments: [],
     pauses: [],
-    visibility: project.questionVisibility,
+    // the reel's title stays at the top for the whole reel
+    visibility: "FULL",
     questionSeconds: project.questionSeconds,
     logo: !!project.theme?.logoAssetId,
   });
@@ -177,14 +279,8 @@ function reelDocument(
   let t = 0;
   used.forEach((m, k) => {
     const f = footage.find((x) => x.id === m.footageId)!;
-    // a little air before the first and after the last word, without catching the neighbouring words
-    const idx0 = f.words.findIndex((w) => w.start >= m.start! - 1e-6);
-    const idx1 = f.words.findIndex((w) => w.end >= m.end! - 1e-6);
-    const prevEnd = idx0 > 0 ? f.words[idx0 - 1].end : 0;
-    const nextStart = idx1 >= 0 && idx1 + 1 < f.words.length ? f.words[idx1 + 1].start : f.duration;
-    const a = Math.max(0, prevEnd + 0.02, m.start! - 0.15);
-    const b = Math.min(f.duration || m.end! + 0.25, nextStart - 0.02, m.end! + 0.25);
-    const len = Math.max(0.2, b - a);
+    const [a, b] = cutRange(m, f);
+    const len = b - a;
     clips.push({ id: `clip_${k}_${Math.random().toString(36).slice(2, 8)}`, assetId: f.assetId, sourceIn: a, sourceOut: a + len, start: Math.round(t * 30) / 30, volume: 1, muted: false, framing, label: m.role.toUpperCase() });
     t = Math.round((t + len) * 30) / 30;
     (ranges.get(f.assetId) ?? ranges.set(f.assetId, []).get(f.assetId)!).push([a, a + len]);

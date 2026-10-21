@@ -25,7 +25,7 @@ export async function autoPolish(compositionId: string): Promise<AutoPolishResul
   const doc0 = comp.document as unknown as EditorDocument;
   if (doc0.meta.autoPolish) return { done: [], warnings: [], skipped: "already done" };
   if (!p.autoBlur && !p.autoVoice && !p.autoZooms && !p.autoImageEnhance) return { done: [], warnings: [], skipped: "disabled" };
-  const assets = [...new Set(doc0.clips.map((c) => c.assetId))];
+  const assets = [...new Set([...doc0.clips.map((c) => c.assetId), ...(doc0.hooks?.variants ?? []).map((v) => v.clip.assetId)])];
   const done: string[] = [];
   const warnings: string[] = [];
 
@@ -74,13 +74,28 @@ export async function autoPolish(compositionId: string): Promise<AutoPolishResul
       ...(voice?.[c.assetId] && !c.audioAssetId ? { audioAssetId: voice[c.assetId] } : {}),
       ...(looks[c.assetId] && !c.look ? { look: looks[c.assetId] } : {}),
     }));
+    // hook versions get the same finishing as the clip they replace
+    const hooks = doc.hooks
+      ? {
+          ...doc.hooks,
+          variants: doc.hooks.variants.map((v) => ({
+            ...v,
+            clip: {
+              ...v.clip,
+              ...(masked && !v.clip.background ? { background: { blur: p.blurStrength || BLUR_DEFAULT } } : {}),
+              ...(voice?.[v.clip.assetId] && !v.clip.audioAssetId ? { audioAssetId: voice[v.clip.assetId] } : {}),
+              ...(looks[v.clip.assetId] && !v.clip.look ? { look: looks[v.clip.assetId] } : {}),
+            },
+          })),
+        }
+      : undefined;
     let zooms = doc.zooms;
     if (p.autoZooms && !doc.zooms.length) {
       const base = doc.clips[0]?.framing;
       zooms = suggestZooms({ ...doc, clips }, "standard", base ? { cx: base.cx, cy: base.cy } : undefined).map((z) => ({ ...z, suggested: false }));
       if (zooms.length) done.push("zooms");
     }
-    const next: EditorDocument = { ...doc, clips, zooms, meta: { ...doc.meta, autoPolish: `p${Date.now().toString(36)}` } as EditorDocument["meta"] };
+    const next: EditorDocument = { ...doc, clips, zooms, ...(hooks ? { hooks } : {}), meta: { ...doc.meta, autoPolish: `p${Date.now().toString(36)}` } as EditorDocument["meta"] };
     const r = await prisma.videoComposition.updateMany({ where: { id: compositionId, version: cur.version }, data: { document: next as unknown as Prisma.InputJsonValue, version: { increment: 1 } } });
     if (r.count === 1) return { done, warnings };
     await new Promise((res) => setTimeout(res, 500));

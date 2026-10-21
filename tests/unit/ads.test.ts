@@ -73,3 +73,41 @@ describe("numbers", () => {
     expect(similar("4500", "4500")).toBe(true);
   });
 });
+
+describe("hook versions", () => {
+  it("swaps only the hook: the rest moves by the length difference, edits of a version are kept", async () => {
+    const { buildInitialDocument } = await import("../../src/lib/editor/factory");
+    const { DEFAULT_THEME } = await import("../../src/lib/themes");
+    const { switchHook, contentDuration } = await import("../../src/lib/editor/timeline");
+    const doc = buildInitialDocument({ questionText: "Tytuł A", theme: DEFAULT_THEME, mode: "ANSWER_ONLY", recording: { assetId: "f", duration: 60 }, segments: [], pauses: [], visibility: "FULL", questionSeconds: 4 });
+    const fr = doc.clips[0].framing;
+    doc.clips = [
+      { id: "h", assetId: "f", sourceIn: 1, sourceOut: 4, start: 0, volume: 1, muted: false, framing: fr, label: "HOOK", background: { blur: 40 } },
+      { id: "b", assetId: "f", sourceIn: 20, sourceOut: 30, start: 3, volume: 1, muted: false, framing: fr, label: "BODY" },
+    ];
+    doc.zooms = [{ id: "z", start: 5, end: 7, type: "smooth-in", fromScale: 1, toScale: 1.2, easing: "easeInOut", cx: 0.5, cy: 0.4 } as never];
+    doc.hooks = {
+      clipId: "h",
+      active: 0,
+      variants: [
+        { id: "v0", code: "R1", title: "Tytuł A", clip: { assetId: "f", sourceIn: 1, sourceOut: 4, volume: 1, muted: false, framing: fr, label: "HOOK" } },
+        { id: "v1", code: "R2", title: "Tytuł B", clip: { assetId: "f", sourceIn: 40, sourceOut: 45, volume: 1, muted: false, framing: fr, label: "HOOK" } },
+      ],
+    };
+    const b = switchHook(doc, 1);
+    expect(b.clips[0]).toMatchObject({ id: "h", sourceIn: 40, sourceOut: 45, start: 0, background: { blur: 40 } });
+    expect(b.clips[1].start).toBeCloseTo(5); // body after the 5 s hook
+    expect(b.zooms[0].start).toBeCloseTo(7);
+    expect(b.overlays.find((o) => o.kind === "text" && o.role === "question")).toMatchObject({ text: "Tytuł B" });
+    expect(contentDuration(b)).toBeCloseTo(15);
+    // trim the hook of version B, go back and forth: the trim stays with B
+    b.clips[0] = { ...b.clips[0], sourceOut: 44 };
+    b.clips[1] = { ...b.clips[1], start: 4 }; // trimmed with ripple
+    const a = switchHook(b, 0);
+    expect(a.clips[0].sourceIn).toBe(1);
+    expect(a.clips[1].start).toBeCloseTo(3);
+    const b2 = switchHook(a, 1);
+    expect(b2.clips[0].sourceOut).toBe(44);
+    expect(b2.clips[1].start).toBeCloseTo(4);
+  });
+});
