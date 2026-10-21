@@ -116,3 +116,15 @@ test("ads campaign settings keep the campaign format and stay off the projects l
   await page.getByRole("button", { name: /Zapisz/ }).first().click();
   await expect.poll(async () => (await (await request.get(`/api/admin/projects/${p.id}`)).json()).project.format).toBe("ADS");
 });
+
+test("an ads campaign can be deleted with its files", async ({ page, request }) => {
+  await adminRequest(request);
+  const p = await (await request.post("/api/admin/ads", { data: { name: "Kampania do usunięcia" } })).json();
+  await login(page);
+  await page.goto(`/admin/ads/${p.id}`);
+  page.once("dialog", (d) => void d.accept());
+  await page.getByTestId("ads-delete").click();
+  await expect(page).toHaveURL(/\/admin\/ads$/);
+  await expect(page.getByText("Kampania do usunięcia")).toHaveCount(0);
+  expect((await request.get(`/api/admin/ads/${p.id}`)).status()).toBe(404);
+});

@@ -207,9 +207,27 @@ export function AdsProject({ id }: { id: string }) {
           </Link>
           <h1 className="mt-1 font-display text-[28px] font-semibold">{data.project.name}</h1>
         </div>
-        <Link href={`/admin/projects/${id}`} className="text-sm text-muted underline hover:text-ink">
-          Motyw i ustawienia montażu →
-        </Link>
+        <div className="flex items-center gap-4">
+          <Link href={`/admin/projects/${id}`} className="text-sm text-muted underline hover:text-ink">
+            Motyw i ustawienia montażu →
+          </Link>
+          <Button
+            variant="outline"
+            className="text-red-600"
+            data-testid="ads-delete"
+            onClick={async () => {
+              if (!confirm(`Usunąć kampanię „${data.project.name}” razem z nagraniami, reelsami i montażami? Tej operacji nie można cofnąć.`)) return;
+              try {
+                await api(`/api/admin/ads/${id}`, { method: "DELETE" });
+                window.location.href = "/admin/ads";
+              } catch (e) {
+                toast((e as Error).message, "err");
+              }
+            }}
+          >
+            <Trash2 /> Usuń kampanię
+          </Button>
+        </div>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
