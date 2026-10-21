@@ -505,6 +505,8 @@ model AdReel {
   projectId     String
   project       Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
   code          String
+  /// the reel of the script (P01) when the file lists hook versions (P01;h01…, P01;h02…)
+  groupCode     String?
   title         String?
   /// [{ role, text }]
   parts         Json

@@ -21,7 +21,7 @@ export const POST = route(async (req: Request, ctx: { params: Promise<{ projectI
   let updated = 0;
   for (const [i, r] of reels.entries()) {
     const existing = await prisma.adReel.findUnique({ where: { projectId_code: { projectId, code: r.code } } });
-    const data = { title: r.title, parts: r.parts as unknown as Prisma.InputJsonValue, order: i };
+    const data = { title: r.title, groupCode: r.group, parts: r.parts as unknown as Prisma.InputJsonValue, order: i };
     if (existing) {
       await prisma.adReel.update({ where: { id: existing.id }, data });
       updated++;

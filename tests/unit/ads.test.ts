@@ -18,8 +18,19 @@ describe("ads script", () => {
     const { reels, errors } = parseAdsScript("reel;tytuł;hook;body;body 2;cta\nR1;Pierwszy;Hook jeden;Wspólne body;;Kup teraz\nR2;;Hook dwa;Wspólne body;Drugie body;Kup teraz\nR1;dup;x;y;z;w\n");
     expect(errors).toHaveLength(1);
     expect(reels).toHaveLength(2);
-    expect(reels[0]).toEqual({ code: "R1", title: "Pierwszy", parts: [{ role: "hook", text: "Hook jeden" }, { role: "body", text: "Wspólne body" }, { role: "cta", text: "Kup teraz" }] });
+    expect(reels[0]).toEqual({ code: "R1", group: null, hook: null, title: "Pierwszy", parts: [{ role: "hook", text: "Hook jeden" }, { role: "body", text: "Wspólne body" }, { role: "cta", text: "Kup teraz" }] });
     expect(reels[1].parts.map((p) => p.role)).toEqual(["hook", "body", "body2", "cta"]);
+  });
+  it("reads reel;hook-number;tytuł;hook;body;cta — the hooks of a reel belong together", () => {
+    const { reels, errors } = parseAdsScript("reel;hook-number;tytuł;hook;body;cta\nP01;h01;Nazwa hooka;Hook jeden;Body reelsa;CTA reelsa\nP01;h02;Nazwa drugiego hooka;Hook dwa;;\nP02;h01;Inny;Hook trzy;Inne body;Inne CTA\nP01;h01;dup;x;y;z\n");
+    expect(errors).toHaveLength(1);
+    expect(reels.map((r) => [r.code, r.group, r.hook, r.title])).toEqual([
+      ["P01-h01", "P01", "h01", "Nazwa hooka"],
+      ["P01-h02", "P01", "h02", "Nazwa drugiego hooka"],
+      ["P02-h01", "P02", "h01", "Inny"],
+    ]);
+    // body / CTA from the reel's first row
+    expect(reels[1].parts).toEqual([{ role: "hook", text: "Hook dwa" }, { role: "body", text: "Body reelsa" }, { role: "cta", text: "CTA reelsa" }]);
   });
   it("needs the reel column", () => {
     expect(parseAdsScript("hook;body\na;b").errors[0]).toMatch(/reel/);

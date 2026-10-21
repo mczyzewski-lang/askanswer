@@ -18,10 +18,11 @@ test("ads studio: script + footage → reels laid out from the transcript", asyn
 
   // 1. the script: two reels share the same body; one hook was never recorded
   const csv = [
-    "reel;tytuł;hook;body;cta",
-    "R1;Pierwszy;słowo1 słowo2 słowo3;słowo4 słowo5 słowo6 słowo7;słowo11 słowo12",
-    "R2;Drugi;słowo8 słowo9 słowo10;słowo4 słowo5 słowo6 słowo7;słowo11 słowo12",
-    "R3;Trzeci;Tego hooka nikt nigdy nie nagrał;słowo4 słowo5 słowo6 słowo7;słowo11 słowo12",
+    "reel;hook-number;tytuł;hook;body;cta",
+    "P01;h01;Pierwszy;słowo1 słowo2 słowo3;słowo4 słowo5 słowo6 słowo7;słowo11 słowo12",
+    // body / CTA only in the reel's first row
+    "P01;h02;Drugi;słowo8 słowo9 słowo10;;",
+    "P01;h03;Trzeci;Tego hooka nikt nigdy nie nagrał;;",
   ].join("\n");
   await page.getByTestId("ads-script-input").setInputFiles({ name: "scenariusze.csv", mimeType: "text/csv", buffer: Buffer.from(csv, "utf-8") });
   await expect(page.getByTestId("ads-reel")).toHaveCount(3);
@@ -36,12 +37,12 @@ test("ads studio: script + footage → reels laid out from the transcript", asyn
   await page.reload();
   await expect(page.getByTestId("ads-footage-row")).toHaveAttribute("data-status", "READY", { timeout: 120_000 });
 
-  // 3. lay out the reels: R1 and R2 differ only in the hook → ONE edit with two hook versions;
-  // R3's hook was never recorded → reported, not laid out
+  // 3. lay out the reels: the hooks of reel P01 are ONE edit with hook versions;
+  // h03 was never recorded → reported, not laid out
   await page.getByTestId("ads-build").click();
   await expect(page.getByTestId("ads-open-studio")).toHaveCount(2, { timeout: 60_000 });
   const data = await (await request.get(`/api/admin/ads/${projectId}`)).json();
-  const [r1, r2, r3] = ["R1", "R2", "R3"].map((c) => data.reels.find((r: { code: string }) => r.code === c));
+  const [r1, r2, r3] = ["P01-h01", "P01-h02", "P01-h03"].map((c) => data.reels.find((r: { code: string }) => r.code === c));
   expect(r1.matches.map((m: { missing?: boolean }) => !!m.missing)).toEqual([false, false, false]);
   expect(r1.matches[0].score).toBeGreaterThan(0.9);
   expect(r3.matches[0].missing).toBe(true);
@@ -54,7 +55,7 @@ test("ads studio: script + footage → reels laid out from the transcript", asyn
   // the edit = hook → body → CTA, the title at the top for the whole reel
   const doc = (await (await request.get(`/api/admin/compositions/${r1.compositionId}`)).json()).composition.document;
   expect(doc.clips.map((c: { label: string }) => c.label)).toEqual(["HOOK", "BODY", "CTA"]);
-  expect(doc.hooks.variants.map((v: { code: string }) => v.code)).toEqual(["R1", "R2"]);
+  expect(doc.hooks.variants.map((v: { code: string }) => v.code)).toEqual(["P01-h01", "P01-h02"]);
   expect(doc.hooks.variants[1].clip.sourceIn).toBeGreaterThan(doc.clips[1].sourceIn); // R2's hook was said after the body
   const title = doc.overlays.find((o: { role?: string }) => o.role === "question");
   expect(title).toMatchObject({ text: "Pierwszy", end: null });
@@ -86,7 +87,7 @@ test("ads studio: script + footage → reels laid out from the transcript", asyn
   // every hook version as its own MP4, from the one edit
   test.setTimeout(600_000);
   const rj = await (await request.post(`/api/admin/compositions/${r1.compositionId}/render`, { data: { format: "720x1280", quality: "draft", allHooks: true } })).json();
-  expect(rj.jobs.map((j: { code: string }) => j.code)).toEqual(["R1", "R2"]);
+  expect(rj.jobs.map((j: { code: string }) => j.code)).toEqual(["P01-h01", "P01-h02"]);
   const durations: number[] = [];
   for (const j of rj.jobs) {
     let st: { status: string; duration?: number | null } = { status: "QUEUED" };

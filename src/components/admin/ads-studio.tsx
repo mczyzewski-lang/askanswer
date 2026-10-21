@@ -91,7 +91,7 @@ interface Match {
 interface AdsData {
   project: { id: string; name: string };
   footage: Array<{ id: string; name: string; status: string; step: string | null; error: string | null; sizeBytes: number; durationSec: number | null; words: number }>;
-  reels: Array<{ id: string; code: string; title: string | null; parts: Array<{ role: string; text: string }>; matches: Match[] | null; compositionId: string | null; hookIndex: number | null }>;
+  reels: Array<{ id: string; code: string; groupCode: string | null; title: string | null; parts: Array<{ role: string; text: string }>; matches: Match[] | null; compositionId: string | null; hookIndex: number | null }>;
 }
 interface UploadState {
   name: string;
@@ -218,7 +218,7 @@ export function AdsProject({ id }: { id: string }) {
             <FileText className="h-4 w-4" /> 1. Scenariusze
           </p>
           <p className="text-sm text-muted">
-            Plik CSV: <code className="rounded bg-black/[.05] px-1">reel;tytuł;hook;body;cta</code> — jeden wiersz na reels. To samo body w wielu reelsach nagrywasz raz.
+            Plik CSV: <code className="rounded bg-black/[.05] px-1">reel;hook-number;tytuł;hook;body;cta</code> — jeden wiersz na wersję hooka (P01;h01…, P01;h02…). Hooki jednego reelsa to jeden montaż: body + CTA edytujesz raz.
           </p>
           <div className="flex flex-wrap gap-2">
             <Button onClick={() => scriptRef.current?.click()} data-testid="ads-script-button">
@@ -345,7 +345,7 @@ export function AdsProject({ id }: { id: string }) {
                 {data.reels.map((r) => (
                   <tr key={r.id} className="border-t border-line align-top" data-testid="ads-reel">
                     <td className="py-2.5 pr-3">
-                      <span className="font-medium">{r.code}</span>
+                      <span className="font-medium">{r.groupCode ? `${r.groupCode} · ${r.code.slice(r.groupCode.length + 1)}` : r.code}</span>
                       {r.title ? <span className="block text-xs text-muted">{r.title}</span> : null}
                     </td>
                     <td className="py-2.5 pr-3">

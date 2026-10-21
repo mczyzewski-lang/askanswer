@@ -116,7 +116,9 @@ function cutRange(m: StoredMatch, f: Footage): [number, number] {
 }
 
 /** Reels that differ only in the hook are one edit: grouped by everything that is not the hook. */
-export function groupKey(parts: Array<{ role: string; text: string }>, code: string): string {
+export function groupKey(parts: Array<{ role: string; text: string }>, code: string, groupCode?: string | null): string {
+  // the file says which hooks belong together (reel;hook-number): P01-h01, P01-h02 → reel P01
+  if (groupCode) return `group:${groupCode}`;
   const rest = parts.filter((p) => p.role !== "hook");
   return rest.length && rest.length < parts.length ? JSON.stringify(rest.map((p) => [p.role, p.text.trim().replace(/\s+/g, " ")])) : `solo:${code}`;
 }
@@ -138,7 +140,7 @@ export async function buildReels(projectId: string, opts: { reelIds?: string[]; 
   const parts = (r: (typeof all)[number]) => r.parts as unknown as Array<{ role: string; text: string }>;
   const groups = new Map<string, typeof all>();
   for (const r of all) {
-    const k = groupKey(parts(r), r.code);
+    const k = groupKey(parts(r), r.code, r.groupCode);
     groups.set(k, [...(groups.get(k) ?? []), r]);
   }
   const wanted = opts.reelIds?.length ? new Set(opts.reelIds) : null;
@@ -166,7 +168,7 @@ export async function buildReels(projectId: string, opts: { reelIds?: string[]; 
       }
     const isGroup = group.length > 1 && !groupKeyIsSolo(group[0], parts);
     const title = (r: (typeof group)[number]) => r.title || r.code;
-    const name = isGroup ? `${group[0].code}–${group[group.length - 1].code} · ${group.length} wersji hooka` : group[0].title ? `${group[0].code} — ${group[0].title}` : group[0].code;
+    const name = isGroup ? `${group[0].groupCode ?? `${group[0].code}–${group[group.length - 1].code}`} · ${group.length} wersji hooka` : group[0].title ? `${group[0].code} — ${group[0].title}` : group[0].code;
     let doc: EditorDocument | null = null;
     if (compositionId && !opts.rebuild) {
       const cur = await prisma.videoComposition.findUniqueOrThrow({ where: { id: compositionId } });
@@ -219,8 +221,8 @@ export async function buildReels(projectId: string, opts: { reelIds?: string[]; 
   return { reels: todo.reduce((n, g) => n + g.length, 0), built, groups: todo.length };
 }
 
-function groupKeyIsSolo(r: { code: string; parts: unknown }, parts: (r: never) => Array<{ role: string; text: string }>) {
-  return groupKey(parts(r as never), r.code).startsWith("solo:");
+function groupKeyIsSolo(r: { code: string; parts: unknown; groupCode: string | null }, parts: (r: never) => Array<{ role: string; text: string }>) {
+  return groupKey(parts(r as never), r.code, r.groupCode).startsWith("solo:");
 }
 
 /** A hook version: the found hook cut, with the look / background / framing of the edit's hook clip. */

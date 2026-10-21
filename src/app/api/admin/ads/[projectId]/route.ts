@@ -18,6 +18,6 @@ export const GET = route(async (_req: Request, ctx: { params: Promise<{ projectI
   return json({
     project,
     footage: footage.map(({ words, sizeBytes, ...f }) => ({ ...f, sizeBytes: Number(sizeBytes), words: Array.isArray(words) ? words.length : 0 })),
-    reels: reels.map((r) => ({ id: r.id, code: r.code, title: r.title, parts: r.parts, matches: r.matches, hookIndex: r.hookIndex, compositionId: r.compositionId && exists.has(r.compositionId) ? r.compositionId : null })),
+    reels: reels.map((r) => ({ id: r.id, code: r.code, groupCode: r.groupCode, title: r.title, parts: r.parts, matches: r.matches, hookIndex: r.hookIndex, compositionId: r.compositionId && exists.has(r.compositionId) ? r.compositionId : null })),
   });
 });
