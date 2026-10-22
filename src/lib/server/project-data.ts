@@ -134,6 +134,7 @@ export async function projectData(id: string) {
       autoBlur: p.autoBlur,
       blurStrength: p.blurStrength,
       narrationSpeed: p.narrationSpeed,
+      subtitlePreset: p.subtitlePreset,
       autoVoice: p.autoVoice,
       autoZooms: p.autoZooms,
       autoImageEnhance: p.autoImageEnhance,

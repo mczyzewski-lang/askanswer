@@ -352,7 +352,7 @@ export interface EditorDocument {
     /** narration file whose words are already in the subtitles (the question read by the narrator) */
     narrationSubs?: string | null;
     /** project defaults already applied to this video once (later changes in the Studio win) */
-    defaults?: { blur?: boolean; speed?: boolean };
+    defaults?: { blur?: boolean; speed?: boolean; subs?: string };
   };
 }
 

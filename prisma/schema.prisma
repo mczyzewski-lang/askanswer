@@ -172,6 +172,8 @@ model Project {
   blurStrength       Int                @default(45)
   /// default narrator tempo for the question (1 = as generated)
   narrationSpeed     Float              @default(1)
+  /// subtitle style of every video (preset key); null = the editor default
+  subtitlePreset     String?
   /// right after processing: voice "podcast + ElevenLabs" (voice isolation + mastering)
   autoVoice          Boolean            @default(true)
   /// right after processing: dynamic zooms on sentence boundaries

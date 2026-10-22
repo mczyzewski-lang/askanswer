@@ -8,6 +8,7 @@ import type { PanelProps } from "./project-view";
 import { VoicePicker } from "@/components/voice-picker";
 import { ProjectExpertsCard } from "./project-experts-card";
 import { AiPromptsCard } from "./ai-prompts-card";
+import { SUBTITLE_PRESETS } from "@/lib/editor/subtitles";
 import { FORMAT_LABELS, type ProjectFormat } from "@/lib/project-terms";
 import { DEFAULT_TTS_MODEL, TTS_MODELS } from "@/lib/tts-models";
 
@@ -39,6 +40,7 @@ export function SettingsPanel({ data, refresh, toast }: PanelProps) {
     autoBlur: p.autoBlur,
     blurStrength: p.blurStrength ?? 45,
     narrationSpeed: p.narrationSpeed ?? 1,
+    subtitlePreset: (p.subtitlePreset ?? "") as string,
     autoVoice: p.autoVoice,
     autoZooms: p.autoZooms,
     autoImageEnhance: p.autoImageEnhance,
@@ -191,6 +193,20 @@ export function SettingsPanel({ data, refresh, toast }: PanelProps) {
           ) : null}
           <label className="flex items-center justify-between gap-4 text-sm">
             <span>
+              Styl napisów
+              <span className="block text-xs text-muted">Dla wszystkich filmów projektu; po zmianie obejmuje też istniejące. W Studio można zmienić w jednym filmie.</span>
+            </span>
+            <NativeSelect value={form.subtitlePreset} onChange={(e) => set("subtitlePreset", e.target.value)} aria-label="Styl napisów" className="w-48">
+              <option value="">Domyślne edytora</option>
+              {Object.entries(SUBTITLE_PRESETS).map(([k, v]) => (
+                <option key={k} value={k}>
+                  {v.label}
+                </option>
+              ))}
+            </NativeSelect>
+          </label>
+          <label className="flex items-center justify-between gap-4 text-sm">
+            <span>
               Tempo lektora pytania: {form.narrationSpeed.toFixed(2).replace(".", ",")}×
               <span className="block text-xs text-muted">Przyspiesza czytane pytanie (wysokość głosu bez zmian), a „Słuchanie pytania” skraca się samo. W Studio można zmienić dla filmu.</span>
             </span>
@@ -318,7 +334,7 @@ export function SettingsPanel({ data, refresh, toast }: PanelProps) {
               try {
                 await api(`/api/admin/projects/${p.id}`, {
                   method: "PATCH",
-                  json: { ...form, ...((form.format as string) === "ADS" ? { format: undefined } : {}), description: form.description || null, voiceId: form.voiceId || null, ttsModel: form.ttsModel || null, voiceCollectionId: voiceSource === "collection" ? form.voiceCollectionId || null : null, ctaUrl: form.ctaUrl.trim() || null, ctaText: form.ctaText.trim() || null },
+                  json: { ...form, subtitlePreset: form.subtitlePreset || null, ...((form.format as string) === "ADS" ? { format: undefined } : {}), description: form.description || null, voiceId: form.voiceId || null, ttsModel: form.ttsModel || null, voiceCollectionId: voiceSource === "collection" ? form.voiceCollectionId || null : null, ctaUrl: form.ctaUrl.trim() || null, ctaText: form.ctaText.trim() || null },
                 });
                 toast("Zapisano ustawienia");
                 refresh();

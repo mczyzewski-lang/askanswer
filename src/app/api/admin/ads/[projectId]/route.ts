@@ -2,13 +2,36 @@ import { prisma } from "@/lib/server/db";
 import { requireAdmin } from "@/lib/server/auth";
 import { json, route } from "@/lib/server/http";
 import { deleteAssets } from "@/lib/server/assets";
+import { ownTheme } from "@/lib/server/ads";
 
 /** Everything the Ads Studio page shows: footage (with processing state), reels with their matches. */
 export const GET = route(async (_req: Request, ctx: { params: Promise<{ projectId: string }> }) => {
   await requireAdmin();
   const { projectId } = await ctx.params;
-  const project = await prisma.project.findUnique({ where: { id: projectId }, select: { id: true, name: true, format: true, themeId: true } });
-  if (!project) return json({ error: "Nie ma takiej kampanii" }, 404);
+  const p = await prisma.project.findUnique({ where: { id: projectId }, include: { theme: true } });
+  if (!p) return json({ error: "Nie ma takiej kampanii" }, 404);
+  // campaigns from before: a read-only preset (or no) theme → their own editable copy
+  if (!p.theme || p.theme.isPreset) {
+    const t = await ownTheme(p.name, { themeId: p.theme?.id ?? null });
+    await prisma.project.update({ where: { id: p.id }, data: { themeId: t.id } });
+    p.theme = t;
+    p.themeId = t.id;
+  }
+  const project = {
+    id: p.id,
+    name: p.name,
+    format: p.format,
+    themeId: p.themeId,
+    theme: { id: p.theme.id, name: p.theme.name, questionStyle: p.theme.questionStyle, questionPosition: p.theme.questionPosition, primaryColor: p.theme.primaryColor, accentColor: p.theme.accentColor, highlightColor: p.theme.highlightColor, backgroundColor: p.theme.backgroundColor, textColor: p.theme.textColor },
+    subtitlePreset: p.subtitlePreset,
+    ctaEnabled: p.ctaEnabled,
+    ctaUrl: p.ctaUrl,
+    ctaText: p.ctaText,
+    ctaSeconds: p.ctaSeconds,
+    ctaPlacement: p.ctaPlacement,
+    autoBlur: p.autoBlur,
+    blurStrength: p.blurStrength,
+  };
   const footage = await prisma.adFootage.findMany({
     where: { projectId },
     orderBy: [{ order: "asc" }, { createdAt: "asc" }],

@@ -2,10 +2,13 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowUpRight, Download, FileText, Film, Loader2, RefreshCw, Trash2, Upload, Wand2 } from "lucide-react";
-import { Badge, Button, Card, EmptyState, Input, Progress, useToast } from "@/components/ui";
+import { Badge, Button, Card, EmptyState, Input, Label, NativeSelect, Progress, Switch, useToast } from "@/components/ui";
 import { api, cn, formatDate } from "@/lib/utils";
 import { decodeCsv } from "@/lib/csv-import";
 import { adsScriptTemplate } from "@/lib/ads-script";
+import { QUESTION_POSITIONS, QUESTION_STYLES } from "@/lib/question-styles";
+import { SUBTITLE_PRESETS } from "@/lib/editor/subtitles";
+import { THEME_PRESETS } from "@/lib/themes";
 
 // ---------------------------------------------------------------------------
 // List of ad campaigns
@@ -88,8 +91,20 @@ interface Match {
   extra?: string[];
   missing?: boolean;
 }
+interface AdsLook {
+  themeId: string;
+  theme: { id: string; name: string; questionStyle: string; questionPosition: string; primaryColor: string; accentColor: string; highlightColor: string; backgroundColor: string; textColor: string };
+  subtitlePreset: string | null;
+  ctaEnabled: boolean;
+  ctaUrl: string | null;
+  ctaText: string | null;
+  ctaSeconds: number;
+  ctaPlacement: string;
+  autoBlur: boolean;
+  blurStrength: number;
+}
 interface AdsData {
-  project: { id: string; name: string };
+  project: { id: string; name: string } & AdsLook;
   footage: Array<{ id: string; name: string; status: string; step: string | null; error: string | null; sizeBytes: number; durationSec: number | null; words: number }>;
   reels: Array<{ id: string; code: string; groupCode: string | null; title: string | null; parts: Array<{ role: string; text: string }>; matches: Match[] | null; compositionId: string | null; hookIndex: number | null }>;
 }
@@ -328,6 +343,8 @@ export function AdsProject({ id }: { id: string }) {
         </Card>
       </div>
 
+      <AdsLookCard project={data.project} reload={load} toast={toast} />
+
       <Card className="space-y-4 p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -413,5 +430,181 @@ export function AdsProject({ id }: { id: string }) {
         ) : null}
       </Card>
     </div>
+  );
+}
+
+/**
+ * The look of every reel of the campaign: theme (own, or copied from another project), the title at
+ * the top, subtitles, background blur and the CTA end screen. Applied to all reels (also laid out ones).
+ */
+function AdsLookCard({ project, reload, toast }: { project: AdsData["project"]; reload: () => Promise<void>; toast: (t: string, tone?: "ok" | "err") => void }) {
+  const [themes, setThemes] = useState<Array<{ id: string; name: string; isPreset: boolean }>>([]);
+  const [cta, setCta] = useState({ ctaEnabled: project.ctaEnabled, ctaUrl: project.ctaUrl ?? "", ctaText: project.ctaText ?? "", ctaSeconds: project.ctaSeconds, ctaPlacement: project.ctaPlacement });
+  useEffect(() => {
+    void api<Array<{ id: string; name: string; isPreset: boolean }>>("/api/admin/themes").then(setThemes).catch(() => {});
+  }, []);
+  const saveProject = async (data: Record<string, unknown>, msg = "Zapisano — obejmuje wszystkie reelsy kampanii") => {
+    try {
+      await api(`/api/admin/projects/${project.id}`, { method: "PATCH", json: data });
+      toast(msg);
+      await reload();
+    } catch (e) {
+      toast((e as Error).message, "err");
+    }
+  };
+  const saveTheme = async (data: Record<string, unknown>) => {
+    try {
+      await api(`/api/admin/themes/${project.themeId}`, { method: "PATCH", json: data });
+      toast("Zapisano styl tytułu");
+      await reload();
+    } catch (e) {
+      toast((e as Error).message, "err");
+    }
+  };
+  const useTheme = async (body: { themeId?: string; preset?: string }) => {
+    try {
+      await api(`/api/admin/ads/${project.id}/theme`, { method: "POST", json: body });
+      toast("Motyw kampanii zmieniony");
+      await reload();
+    } catch (e) {
+      toast((e as Error).message, "err");
+    }
+  };
+  const t = project.theme;
+  return (
+    <Card className="space-y-5 p-5" data-testid="ads-look">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="font-medium">Wygląd reelsów</p>
+          <p className="text-sm text-muted">Motyw, tytuł nad reelsem, napisy i ekran końcowy — dla wszystkich reelsów kampanii, także już ułożonych.</p>
+        </div>
+        <Link href={`/admin/themes?theme=${project.themeId}`} className="text-sm text-muted underline hover:text-ink">
+          Kolory, czcionki i logo motywu →
+        </Link>
+      </div>
+
+      <div className="grid gap-5 md:grid-cols-2">
+        <div className="space-y-2">
+          <Label>Motyw</Label>
+          <div className="flex items-center gap-2">
+            {[t.backgroundColor, t.primaryColor, t.accentColor, t.highlightColor, t.textColor].map((c, i) => (
+              <span key={i} className="h-6 w-6 rounded-md border border-line" style={{ background: c }} />
+            ))}
+            <span className="text-sm text-muted">{t.name}</span>
+          </div>
+          <NativeSelect
+            value=""
+            aria-label="Użyj motywu"
+            data-testid="ads-theme-from"
+            onChange={(e) => {
+              const v = e.target.value;
+              if (!v) return;
+              void useTheme(v.startsWith("preset:") ? { preset: v.slice(7) } : { themeId: v });
+            }}
+          >
+            <option value="">Użyj innego motywu…</option>
+            <optgroup label="Motywy projektów (kopia — oryginał bez zmian)">
+              {themes
+                .filter((x) => !x.isPreset && x.id !== project.themeId)
+                .map((x) => (
+                  <option key={x.id} value={x.id}>
+                    {x.name}
+                  </option>
+                ))}
+            </optgroup>
+            <optgroup label="Gotowe palety">
+              {THEME_PRESETS.map((p) => (
+                <option key={p.key} value={`preset:${p.key}`}>
+                  {p.name}
+                </option>
+              ))}
+            </optgroup>
+          </NativeSelect>
+        </div>
+
+        <div className="space-y-2">
+          <Label>Tytuł nad reelsem</Label>
+          <div className="flex flex-wrap gap-1.5" data-testid="ads-title-style">
+            {QUESTION_STYLES.map((q) => (
+              <button key={q.id} type="button" aria-pressed={t.questionStyle === q.id} onClick={() => void saveTheme({ questionStyle: q.id })} className={cn("rounded-lg border px-2.5 py-1 text-xs", t.questionStyle === q.id ? "border-ink bg-ink text-white" : "border-line hover:border-black/20")} title={q.hint}>
+                {q.label}
+              </button>
+            ))}
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {QUESTION_POSITIONS.map((q) => (
+              <button key={q.id} type="button" aria-pressed={t.questionPosition === q.id} onClick={() => void saveTheme({ questionPosition: q.id })} className={cn("rounded-lg border px-2.5 py-1 text-xs", t.questionPosition === q.id ? "border-ink bg-ink text-white" : "border-line hover:border-black/20")}>
+                {q.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="ads-subs">Napisy</Label>
+          <NativeSelect id="ads-subs" value={project.subtitlePreset ?? ""} onChange={(e) => void saveProject({ subtitlePreset: e.target.value || null })} data-testid="ads-subtitles">
+            <option value="">Domyślne edytora</option>
+            {Object.entries(SUBTITLE_PRESETS).map(([k, v]) => (
+              <option key={k} value={k}>
+                {v.label}
+              </option>
+            ))}
+          </NativeSelect>
+          <p className="text-xs text-muted">Kolory napisów i podświetlenia biorą się z motywu. Pozycję i rozmiar zmienisz w Studio.</p>
+        </div>
+
+        <div className="space-y-2">
+          <label className="flex items-center justify-between gap-3 text-sm">
+            <span>
+              Rozmyte tło za ekspertem
+              <span className="block text-xs text-muted">Siła: {project.blurStrength}</span>
+            </span>
+            <Switch checked={project.autoBlur} onCheckedChange={(v) => void saveProject({ autoBlur: v })} />
+          </label>
+          {project.autoBlur ? <input type="range" min={5} max={100} step={5} defaultValue={project.blurStrength} onMouseUp={(e) => void saveProject({ blurStrength: Number((e.target as HTMLInputElement).value) })} onTouchEnd={(e) => void saveProject({ blurStrength: Number((e.target as HTMLInputElement).value) })} aria-label="Siła rozmycia" className="w-full" /> : null}
+        </div>
+      </div>
+
+      <div className="space-y-3 rounded-xl border border-line p-3" data-testid="ads-end-screen">
+        <label className="flex items-center justify-between gap-3 text-sm">
+          <span>
+            Ekran końcowy (CTA)
+            <span className="block text-xs text-muted">Adres strony z podpisem, w kolorach motywu — na końcu każdego reelsa.</span>
+          </span>
+          <Switch checked={cta.ctaEnabled} onCheckedChange={(v) => setCta({ ...cta, ctaEnabled: v })} />
+        </label>
+        {cta.ctaEnabled ? (
+          <div className="grid gap-3 sm:grid-cols-[1fr_1fr_90px]">
+            <div className="space-y-1">
+              <Label htmlFor="ads-cta-url">Adres strony</Label>
+              <Input id="ads-cta-url" value={cta.ctaUrl} placeholder="np. kancelaria.pl" onChange={(e) => setCta({ ...cta, ctaUrl: e.target.value })} />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="ads-cta-text">Podpis</Label>
+              <Input id="ads-cta-text" value={cta.ctaText} placeholder="np. Zrób bezpłatny test" onChange={(e) => setCta({ ...cta, ctaText: e.target.value })} />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="ads-cta-sec">Czas (s)</Label>
+              <Input id="ads-cta-sec" type="number" min={1} max={10} value={cta.ctaSeconds} onChange={(e) => setCta({ ...cta, ctaSeconds: Math.min(10, Math.max(1, Math.round(Number(e.target.value) || 3))) })} />
+            </div>
+            <div className="flex gap-2 sm:col-span-3">
+              {(
+                [
+                  ["append", "Dodaj po filmie"],
+                  ["overlay", "Nałóż na końcówkę"],
+                ] as const
+              ).map(([v, label]) => (
+                <button key={v} type="button" aria-pressed={cta.ctaPlacement === v} onClick={() => setCta({ ...cta, ctaPlacement: v })} className={cn("rounded-lg border px-2.5 py-1 text-xs", cta.ctaPlacement === v ? "border-ink bg-ink text-white" : "border-line hover:border-black/20")}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
+        <Button size="sm" onClick={() => void saveProject({ ...cta, ctaUrl: cta.ctaUrl.trim() || null, ctaText: cta.ctaText.trim() || null })} data-testid="ads-end-screen-save">
+          Zapisz ekran końcowy
+        </Button>
+      </div>
+    </Card>
   );
 }

@@ -305,3 +305,36 @@ function reelDocument(
   doc.meta.questionText = title;
   return doc;
 }
+
+/**
+ * A campaign has its own editable theme (like every project): from a preset, or a copy of another
+ * theme (e.g. the one of an expert project) so editing the campaign's look never changes that project.
+ */
+export async function ownTheme(name: string, from: { presetKey?: string | null; themeId?: string | null } = {}) {
+  const { THEME_PRESETS } = await import("../themes");
+  const src = from.themeId ? await prisma.theme.findUnique({ where: { id: from.themeId } }) : null;
+  if (src) {
+    const { id: _id, createdAt: _c, updatedAt: _u, isPreset: _p, name: srcName, ...rest } = src;
+    void _id;
+    void _c;
+    void _u;
+    void _p;
+    return prisma.theme.create({ data: { ...rest, name: `${srcName.replace(/ \(.*\)$/, "")} (${name.slice(0, 40)})`, isPreset: false } });
+  }
+  const preset = THEME_PRESETS.find((t) => t.key === from.presetKey) ?? THEME_PRESETS[0];
+  return prisma.theme.create({
+    data: {
+      name: `${preset.name} (${name.slice(0, 40)})`,
+      presetKey: preset.key,
+      primaryColor: preset.primary,
+      accentColor: preset.accent,
+      secondaryColor: preset.secondary,
+      textColor: preset.text,
+      highlightColor: preset.highlight,
+      backgroundColor: preset.background,
+      questionFont: preset.questionFont,
+      subtitleFont: preset.subtitleFont,
+      labelFont: preset.labelFont,
+    },
+  });
+}

@@ -4,7 +4,8 @@ import { enqueue } from "./jobs";
 import { MASK_VERSION } from "../render/mask-format";
 import { narrationAtSpeed } from "./narration";
 import { retimeNarration } from "../editor/timeline";
-import type { EditorDocument } from "../editor/types";
+import type { EditorDocument, SubtitlePresetKey } from "../editor/types";
+import { SUBTITLE_PRESETS } from "../editor/subtitles";
 
 /**
  * The project's video defaults, applied ONCE to every video (also ones recorded before the setting):
@@ -50,6 +51,14 @@ export async function applyProjectDefaults(compositionId: string): Promise<void>
           done.speed = false; // try again next time
         }
       }
+    }
+
+    // the project's subtitle style: applied to every video whenever the setting changes
+    const preset = p.subtitlePreset as SubtitlePresetKey | null;
+    if (preset && SUBTITLE_PRESETS[preset] && done.subs !== preset) {
+      done.subs = preset;
+      changed = true;
+      doc = { ...doc, subtitles: { ...doc.subtitles, preset, style: { ...SUBTITLE_PRESETS[preset].style, y: doc.subtitles.style.y } } };
     }
 
     if (!changed) return;

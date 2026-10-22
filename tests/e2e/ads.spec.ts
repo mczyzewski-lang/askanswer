@@ -37,6 +37,9 @@ test("ads studio: script + footage → reels laid out from the transcript", asyn
   await page.reload();
   await expect(page.getByTestId("ads-footage-row")).toHaveAttribute("data-status", "READY", { timeout: 120_000 });
 
+  // the campaign's look: subtitles style for every reel
+  expect((await request.patch(`/api/admin/projects/${projectId}`, { data: { subtitlePreset: "bold-social" } })).ok()).toBeTruthy();
+
   // 3. lay out the reels: the hooks of reel P01 are ONE edit with hook versions;
   // h03 was never recorded → reported, not laid out
   await page.getByTestId("ads-build").click();
@@ -60,6 +63,7 @@ test("ads studio: script + footage → reels laid out from the transcript", asyn
   const title = doc.overlays.find((o: { role?: string }) => o.role === "question");
   expect(title).toMatchObject({ text: "Pierwszy", end: null });
   expect(doc.subtitles.segments.length).toBeGreaterThan(0);
+  expect(doc.subtitles.preset).toBe("bold-social");
 
   // a second file through the page (sliced upload in the browser)
   await page.getByTestId("ads-video-input").setInputFiles({ name: "nagranie-2.mp4", mimeType: "video/mp4", buffer: buf });
@@ -127,4 +131,33 @@ test("an ads campaign can be deleted with its files", async ({ page, request }) 
   await expect(page).toHaveURL(/\/admin\/ads$/);
   await expect(page.getByText("Kampania do usunięcia")).toHaveCount(0);
   expect((await request.get(`/api/admin/ads/${p.id}`)).status()).toBe(404);
+});
+
+test("ads campaign look: theme, title style, subtitles and end screen for every reel", async ({ page, request }) => {
+  await adminRequest(request);
+  const p = await (await request.post("/api/admin/ads", { data: { name: "Kampania wygląd" } })).json();
+  await login(page);
+  await page.goto(`/admin/ads/${p.id}`);
+  const look = page.getByTestId("ads-look");
+  await expect(look).toBeVisible();
+  // the title at the top: plain text, in the centre
+  await look.getByTestId("ads-title-style").getByRole("button", { name: "Sam tekst" }).click();
+  await look.getByRole("button", { name: "Środek" }).click();
+  // subtitles
+  await look.getByTestId("ads-subtitles").selectOption("bold-social");
+  // end screen
+  const end = look.getByTestId("ads-end-screen");
+  await end.getByRole("switch").click();
+  await end.getByLabel("Adres strony", { exact: true }).fill("kancelaria.pl");
+  await end.getByLabel("Podpis", { exact: true }).fill("Zrób test");
+  await end.getByRole("button", { name: "Nałóż na końcówkę" }).click();
+  await end.getByTestId("ads-end-screen-save").click();
+  await expect.poll(async () => {
+    const d = await (await request.get(`/api/admin/ads/${p.id}`)).json();
+    return [d.project.theme.questionStyle, d.project.theme.questionPosition, d.project.subtitlePreset, d.project.ctaEnabled, d.project.ctaUrl, d.project.ctaPlacement];
+  }).toEqual(["plain", "center", "bold-social", true, "kancelaria.pl", "overlay"]);
+  // another project's theme: copied (the campaign gets its own editable copy)
+  const before = (await (await request.get(`/api/admin/ads/${p.id}`)).json()).project.themeId;
+  await look.getByTestId("ads-theme-from").selectOption({ index: 1 });
+  await expect.poll(async () => (await (await request.get(`/api/admin/ads/${p.id}`)).json()).project.themeId).not.toBe(before);
 });
