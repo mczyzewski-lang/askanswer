@@ -70,6 +70,17 @@ test("ads studio: script + footage → reels laid out from the transcript", asyn
   await expect(page.getByTestId("ads-footage-row")).toHaveCount(2, { timeout: 60_000 });
   await expect(page.getByTestId("ads-footage-row").nth(1)).toHaveAttribute("data-status", "READY", { timeout: 120_000 });
 
+  // B-roll: upload cutaways to the campaign, pick one — the Studio offers it
+  const br = await request.post(`/api/admin/ads/${projectId}/broll`, { multipart: { file: { name: "przebitka.mp4", mimeType: "video/mp4", buffer: buf } } });
+  expect(br.status()).toBe(201);
+  const brId = (await br.json()).id;
+  await request.post(`/api/admin/ads/${projectId}/broll`, { multipart: { file: { name: "druga.mp4", mimeType: "video/mp4", buffer: buf } } });
+  await page.reload();
+  await expect(page.getByTestId("ads-broll-item")).toHaveCount(2);
+  await page.getByTestId("ads-broll-item").first().getByTestId("ads-broll-pick").click();
+  await expect(page.getByTestId("ads-broll-item").first()).toHaveAttribute("data-picked", "true");
+  await expect.poll(async () => (await (await request.get(`/api/admin/ads/${projectId}/broll`)).json()).items.filter((i: { picked: boolean }) => i.picked).length).toBe(1);
+
   // the Studio: switch the hook version — the rest of the edit stays, the title follows the version
   await page.getByTestId("ads-open-studio").first().click();
   await expect(page.getByTestId("timeline")).toBeVisible({ timeout: 60_000 });
@@ -87,6 +98,18 @@ test("ads studio: script + footage → reels laid out from the transcript", asyn
   const d2 = (await (await request.get(`/api/admin/compositions/${r1.compositionId}`)).json()).composition.document;
   expect(d2.clips[1].start).toBeCloseTo(d2.clips[0].sourceOut - d2.clips[0].sourceIn, 1);
   expect(d2.clips[1].sourceIn).toBeCloseTo(doc.clips[1].sourceIn, 3);
+
+  // the picked cutaway, one click from the Graphics tab: full screen at the playhead
+  await page.getByTestId("tab-graphics").click();
+  await expect(page.getByTestId("studio-broll-item")).toHaveCount(1); // only the picked one
+  await page.getByTestId("studio-broll-item").click();
+  await expect
+    .poll(async () => {
+      const d = (await (await request.get(`/api/admin/compositions/${r1.compositionId}`)).json()).composition.document;
+      const o = d.overlays.find((x: { kind: string; assetId?: string }) => x.kind === "video" && x.assetId === brId);
+      return o ? [o.x, o.y, o.w, o.h, o.fit, o.volume] : null;
+    }, { timeout: 20_000 })
+    .toEqual([0, 0, 1, 1, "cover", 0]);
 
   // every hook version as its own MP4, from the one edit
   test.setTimeout(600_000);

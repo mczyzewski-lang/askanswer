@@ -997,6 +997,7 @@ export function GraphicsPanel({ onUpload, meta }: { onUpload: (f: File) => Promi
   ];
   return (
     <div>
+      <BrollLibrarySection meta={meta} add={add} />
       <Section title="Kształty i elementy">
         <div className="grid grid-cols-2 gap-1.5">
           {items.map(([label, make]) => (
@@ -1254,6 +1255,67 @@ function VoiceEnhanceSection({ meta }: { meta: StudioMeta }) {
       ) : null}
       {err ? <p className="text-[12px] text-red-300">{err}</p> : null}
       <p className="text-[11.5px] text-studio-muted">Ulepszony dźwięk ma identyczny czas trwania — cięcia, pauzy i napisy zostają bez zmian. Oryginał jest zawsze zachowany; możesz wrócić jednym kliknięciem. Zmiana obejmuje podgląd i eksport.</p>
+    </Section>
+  );
+}
+
+interface BrollLibItem extends AssetInfo {
+  name: string;
+  picked: boolean;
+  isVideo: boolean;
+}
+
+/**
+ * Cutaways from the project's B-roll library (Ads Studio): the picked ones first; one click puts the
+ * clip full screen at the playhead (muted, trimmable on the timeline).
+ */
+function BrollLibrarySection({ meta, add }: { meta: StudioMeta; add: (o: Overlay) => void }) {
+  const time = useStudio((s) => s.time);
+  const total = useStudio((s) => (s.doc ? docDuration(s.doc) : 0));
+  const [items, setItems] = useState<BrollLibItem[] | null>(null);
+  const [all, setAll] = useState(false);
+  useEffect(() => {
+    void fetch(`/api/admin/compositions/${meta.compositionId}/broll-library`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : { items: [] }))
+      .then((d) => setItems(d.items ?? []))
+      .catch(() => setItems([]));
+  }, [meta.compositionId]);
+  if (!items?.length) return null;
+  const picked = items.filter((i) => i.picked);
+  const shown = all || !picked.length ? items : picked;
+  const insert = (it: BrollLibItem) => {
+    useStudio.getState().addAssets([it]);
+    const len = it.isVideo ? Math.min(4, it.durationSec ?? 4) : 3;
+    const end = Math.min(Math.max(total, time + 0.5), time + len);
+    const full = { x: 0, y: 0, w: 1, h: 1 };
+    if (it.isVideo) add({ ...baseOverlay(it.name, time), end, animation: "fade", kind: "video", assetId: it.id, fit: "cover", sourceIn: 0, loop: false, volume: 0, radius: 0, ...full });
+    else add({ ...baseOverlay(it.name, time), end, animation: "fade", kind: "image", assetId: it.id, fit: "cover", ...full });
+  };
+  return (
+    <Section
+      title="B-roll"
+      right={
+        picked.length && picked.length < items.length ? (
+          <button className="text-[11.5px] text-studio-muted hover:text-studio-text" onClick={() => setAll((v) => !v)}>
+            {all ? "Tylko wybrane" : `Wszystkie (${items.length})`}
+          </button>
+        ) : undefined
+      }
+    >
+      <p className="text-[11.5px] text-studio-muted">Przebitki kampanii{picked.length && !all ? " — wybrane w Ads Studio" : ""}. Kliknij, aby wstawić na cały ekran w miejscu głowicy.</p>
+      <div className="grid grid-cols-3 gap-1.5" data-testid="studio-broll">
+        {shown.map((it) => (
+          <button key={it.id} type="button" onClick={() => insert(it)} className="group relative overflow-hidden rounded-md border border-studio-line bg-black hover:border-white/40" title={it.name} data-testid="studio-broll-item">
+            {it.isVideo ? (
+              <video src={it.proxyUrl ?? it.url} className="aspect-[9/16] w-full object-cover" muted playsInline preload="metadata" onMouseEnter={(e) => void e.currentTarget.play().catch(() => {})} onMouseLeave={(e) => e.currentTarget.pause()} />
+            ) : (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={it.url} alt="" className="aspect-[9/16] w-full object-cover" />
+            )}
+            <span className="pointer-events-none absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-black/80 to-transparent px-1 pb-0.5 pt-3 text-[10px] text-white">{it.name}</span>
+          </button>
+        ))}
+      </div>
     </Section>
   );
 }

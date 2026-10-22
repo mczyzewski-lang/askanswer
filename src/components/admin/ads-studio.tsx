@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowUpRight, Download, FileText, Film, Loader2, RefreshCw, Trash2, Upload, Wand2 } from "lucide-react";
+import { ArrowUpRight, Clapperboard, Download, FileText, Film, Loader2, RefreshCw, Star, Trash2, Upload, Wand2 } from "lucide-react";
 import { Badge, Button, Card, EmptyState, Input, Label, NativeSelect, Progress, Switch, useToast } from "@/components/ui";
 import { api, cn, formatDate } from "@/lib/utils";
 import { decodeCsv } from "@/lib/csv-import";
@@ -345,6 +345,8 @@ export function AdsProject({ id }: { id: string }) {
 
       <AdsLookCard project={data.project} reload={load} toast={toast} />
 
+      <BrollCard projectId={id} toast={toast} />
+
       <Card className="space-y-4 p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -605,6 +607,116 @@ function AdsLookCard({ project, reload, toast }: { project: AdsData["project"]; 
           Zapisz ekran końcowy
         </Button>
       </div>
+    </Card>
+  );
+}
+
+interface BrollItem {
+  id: string;
+  url: string;
+  proxyUrl?: string | null;
+  name: string;
+  picked: boolean;
+  isVideo: boolean;
+  durationSec: number | null;
+}
+
+/** B-roll (cutaways): upload clips, pick the ones to use — they are offered in the Studio of every reel. */
+function BrollCard({ projectId, toast }: { projectId: string; toast: (t: string, tone?: "ok" | "err") => void }) {
+  const [items, setItems] = useState<BrollItem[] | null>(null);
+  const [uploading, setUploading] = useState<string[]>([]);
+  const ref = useRef<HTMLInputElement>(null);
+  const load = useCallback(async () => setItems((await api<{ items: BrollItem[] }>(`/api/admin/ads/${projectId}/broll`)).items), [projectId]);
+  useEffect(() => {
+    void load();
+  }, [load]);
+  const upload = async (files: File[]) => {
+    for (const f of files) {
+      setUploading((u) => [...u, f.name]);
+      try {
+        const fd = new FormData();
+        fd.set("file", f);
+        const res = await fetch(`/api/admin/ads/${projectId}/broll`, { method: "POST", body: fd });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error ?? `Błąd HTTP ${res.status}`);
+      } catch (e) {
+        toast(`${f.name}: ${(e as Error).message}`, "err");
+      } finally {
+        setUploading((u) => u.filter((n) => n !== f.name));
+        await load();
+      }
+    }
+  };
+  const pick = async (it: BrollItem) => {
+    setItems((xs) => xs?.map((x) => (x.id === it.id ? { ...x, picked: !x.picked } : x)) ?? null);
+    await api(`/api/admin/ads/broll/${it.id}`, { method: "PATCH", json: { picked: !it.picked } }).catch((e) => toast((e as Error).message, "err"));
+  };
+  const picked = items?.filter((i) => i.picked).length ?? 0;
+  return (
+    <Card className="space-y-3 p-5" data-testid="ads-broll">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="flex items-center gap-2 font-medium">
+            <Clapperboard className="h-4 w-4" /> B-roll (przebitki)
+          </p>
+          <p className="text-sm text-muted">Wgraj przebitki (MP4, MOV, WEBM do 5 min lub zdjęcia) i zaznacz gwiazdką te do montażu — w Studio każdego reelsa są w Grafika → B-roll, do wstawienia jednym kliknięciem.</p>
+        </div>
+        <Button onClick={() => ref.current?.click()} disabled={uploading.length > 0} data-testid="ads-broll-button">
+          {uploading.length ? <Loader2 className="animate-spin" /> : <Upload />} {uploading.length ? `Wysyłanie i konwersja (${uploading.length})…` : "Wgraj przebitki"}
+        </Button>
+        <input
+          ref={ref}
+          type="file"
+          multiple
+          accept="video/mp4,video/quicktime,video/webm,image/png,image/jpeg,image/webp"
+          className="hidden"
+          data-testid="ads-broll-input"
+          onChange={(e) => {
+            void upload(Array.from(e.target.files ?? []));
+            e.target.value = "";
+          }}
+        />
+      </div>
+      {items?.length ? (
+        <>
+          <p className="text-xs text-muted">
+            {items.length} przebitek · {picked} wybranych do montażu
+          </p>
+          <div className="grid grid-cols-3 gap-2 sm:grid-cols-5 lg:grid-cols-6">
+            {items.map((it) => (
+              <div key={it.id} className={cn("group relative overflow-hidden rounded-lg border-2 bg-black", it.picked ? "border-amber-400" : "border-transparent")} data-testid="ads-broll-item" data-picked={it.picked}>
+                {it.isVideo ? (
+                  <video src={it.proxyUrl ?? it.url} className="aspect-[9/16] w-full object-cover" muted loop playsInline preload="metadata" onMouseEnter={(e) => void e.currentTarget.play().catch(() => {})} onMouseLeave={(e) => e.currentTarget.pause()} />
+                ) : (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={it.url} alt="" className="aspect-[9/16] w-full object-cover" />
+                )}
+                <span className="pointer-events-none absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-black/80 to-transparent px-1.5 pb-1 pt-4 text-[10.5px] text-white">
+                  {it.name}
+                  {it.durationSec ? ` · ${it.durationSec.toFixed(1)} s` : ""}
+                </span>
+                <button type="button" onClick={() => void pick(it)} aria-pressed={it.picked} aria-label={it.picked ? "Odznacz" : "Wybierz do montażu"} className={cn("absolute left-1 top-1 rounded-full p-1", it.picked ? "bg-amber-400 text-black" : "bg-black/50 text-white")} data-testid="ads-broll-pick">
+                  <Star className="h-3.5 w-3.5" fill={it.picked ? "currentColor" : "none"} />
+                </button>
+                <button
+                  type="button"
+                  aria-label="Usuń przebitkę"
+                  className="absolute right-1 top-1 rounded-full bg-black/50 p-1 text-white opacity-0 transition group-hover:opacity-100"
+                  onClick={async () => {
+                    if (!confirm(`Usunąć „${it.name}” z biblioteki?`)) return;
+                    await api(`/api/admin/ads/broll/${it.id}`, { method: "DELETE" });
+                    await load();
+                  }}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ))}
+          </div>
+        </>
+      ) : items ? (
+        <p className="text-sm text-muted">Brak przebitek.</p>
+      ) : null}
     </Card>
   );
 }
