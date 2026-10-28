@@ -345,8 +345,9 @@ Ustalone wcześniej: można skopiować repozytorium do nowego (fork / nowe repo 
 7. Rate limit w pamięci; rola `EDITOR` nieegzekwowana; brak e‑maili z linkami; brak śledzenia twarzy.
 8. ESLint bez konfiguracji (`next lint` pyta interaktywnie) — lintem jest `tsc`.
 9. Środowisko testowe: Postgres w kontenerze potrafi się zatrzymać po restarcie, a stare procesy `next dev`/worker/atrapa blokują porty → komenda z sekcji 5.
-10. Ostrzeżenia `MaxListenersExceededWarning` w logu serwera testowego — kosmetyczne.
-11. Dysk Railway: przy zapełnieniu przetwarzanie kończy się komunikatem „Brak miejsca na dysku serwera”; materiał Ads (długie pliki z kamery) zajmuje dużo — rozważyć R2 przed większą kampanią.
+10. Test e2e `ads.spec.ts` „script + footage” potrafi raz nie przejść w pełnym przebiegu wszystkich testów (timeout widoczności przy obciążeniu); uruchomiony osobno przechodzi (28.10.2026: pełny przebieg 20/21, osobno 1/1).
+11. Ostrzeżenia `MaxListenersExceededWarning` w logu serwera testowego — kosmetyczne.
+12. Dysk Railway: przy zapełnieniu przetwarzanie kończy się komunikatem „Brak miejsca na dysku serwera”; materiał Ads (długie pliki z kamery) zajmuje dużo — rozważyć R2 przed większą kampanią.
 
 ---
 
