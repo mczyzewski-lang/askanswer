@@ -11,3 +11,4 @@ playwright-report
 tests/fixtures/generated
 tests/tmp
 storage-test
+handoff/
