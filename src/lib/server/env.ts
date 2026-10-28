@@ -89,6 +89,10 @@ export const env = {
   get illustrationVariants() {
     return Math.max(1, Math.min(4, Number(str("ILLUSTRATION_VARIANTS", "3")) || 3));
   },
+  /** text model for script reviews (Ads Studio scoring) */
+  get openaiTextModel() {
+    return str("OPENAI_TEXT_MODEL", "gpt-5");
+  },
   get openaiImageModel() {
     return str("OPENAI_IMAGE_MODEL", "gpt-image-2");
   },

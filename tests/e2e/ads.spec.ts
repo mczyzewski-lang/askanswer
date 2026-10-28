@@ -184,3 +184,49 @@ test("ads campaign look: theme, title style, subtitles and end screen for every 
   await look.getByTestId("ads-theme-from").selectOption({ index: 1 });
   await expect.poll(async () => (await (await request.get(`/api/admin/ads/${p.id}`)).json()).project.themeId).not.toBe(before);
 });
+
+test("ads scoring: OpenAI reviews each script, the new version and an A/B hook can be swapped in", async ({ page, request }) => {
+  test.setTimeout(180_000);
+  await adminRequest(request);
+  const p = await (await request.post("/api/admin/ads", { data: { name: "Kampania scoring" } })).json();
+  await login(page);
+  await page.goto(`/admin/ads/${p.id}`);
+  const csv = ["reel;hook-number;tytuł;hook;body;cta", "P01;h01;Pierwszy;Masz długi?;Stare body reelsa.;Stare CTA.", "P01;h02;Drugi;Komornik dzwoni?;;"].join("\n");
+  await page.getByTestId("ads-script-input").setInputFiles({ name: "scenariusze.csv", mimeType: "text/csv", buffer: Buffer.from(csv, "utf-8") });
+  await expect(page.getByTestId("ads-reel")).toHaveCount(2);
+  await page.getByLabel("Grupa docelowa i usługa").fill("osoby z długami — upadłość konsumencka");
+  await page.getByLabel("Grupa docelowa i usługa").blur();
+  await expect.poll(async () => (await (await request.get(`/api/admin/ads/${p.id}`)).json()).project.adsBrief).toBe("osoby z długami — upadłość konsumencka");
+
+  await page.getByTestId("ads-review-missing").click();
+  await expect(page.getByTestId("ads-score")).toHaveCount(2, { timeout: 60_000 });
+  await expect(page.getByTestId("ads-score").first()).toHaveText("54/100 → 78");
+
+  const reels = async () => (await (await request.get(`/api/admin/ads/${p.id}`)).json()).reels as Array<{ id: string; code: string; parts: Array<{ role: string; text: string }> }>;
+  const text = (r: { parts: Array<{ role: string; text: string }> }, role: string) => r.parts.find((x) => x.role === role)?.text;
+
+  // the dialog: verdict, criteria, the new version, A/B hooks
+  await page.getByTestId("ads-score").first().click();
+  const dlg = page.getByTestId("ads-review");
+  await expect(dlg).toContainText("Hook ogólny");
+  await expect(dlg).toContainText("HOOK 0–2 s");
+  await expect(dlg.getByTestId("ads-new-version")).toContainText("Nowe body z propozycji.");
+  page.on("dialog", (d) => void d.accept());
+  await dlg.getByTestId("ads-apply-hook").first().click();
+  await expect.poll(async () => text((await reels()).find((r) => r.code === "P01-h01")!, "hook")).toBe("Alternatywny hook lęk");
+
+  // the whole new version: body + CTA for every hook version of the reel
+  await dlg.getByTestId("ads-apply-all").click();
+  await expect.poll(async () => (await reels()).map((r) => [text(r, "body"), text(r, "cta")])).toEqual([
+    ["Nowe body z propozycji.", "Wyślij to komuś, kto ma komornika."],
+    ["Nowe body z propozycji.", "Wyślij to komuś, kto ma komornika."],
+  ]);
+  const after = await reels();
+  expect(text(after.find((r) => r.code === "P01-h01")!, "hook")).toBe("Nowy hook: Masz długi?");
+  expect(text(after.find((r) => r.code === "P01-h02")!, "hook")).toBe("Komornik dzwoni?");
+
+  // the updated scripts as CSV (to record again)
+  const out = await (await request.get(`/api/admin/ads/${p.id}/script`)).text();
+  expect(out).toContain("Nowe body z propozycji.");
+  expect(out).toContain("Komornik dzwoni?");
+});

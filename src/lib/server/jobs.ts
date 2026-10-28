@@ -6,7 +6,7 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "./db";
 
-export type JobType = "process-take" | "transcribe-take" | "render" | "enhance-audio" | "generate-broll" | "generate-infographic" | "segment-asset" | "auto-visuals" | "auto-polish" | "generate-background" | "generate-avatar" | "ads-footage" | "ads-build";
+export type JobType = "process-take" | "transcribe-take" | "render" | "enhance-audio" | "generate-broll" | "generate-infographic" | "segment-asset" | "auto-visuals" | "auto-polish" | "generate-background" | "generate-avatar" | "ads-footage" | "ads-build" | "ads-review";
 
 export async function enqueue(type: JobType, payload: Record<string, unknown>, opts: { idempotencyKey?: string; maxAttempts?: number; runAt?: Date } = {}) {
   if (opts.idempotencyKey) {
@@ -51,7 +51,7 @@ export async function reapDeadJobs() {
  * Jobs that mostly wait on AI APIs (OpenAI, Higgsfield, Claude): they run in their own lane, so an
  * expert's new recording gets its illustrations right away instead of queueing behind renders.
  */
-export const AI_JOB_TYPES: JobType[] = ["auto-visuals", "generate-infographic", "generate-broll", "generate-background", "generate-avatar"];
+export const AI_JOB_TYPES: JobType[] = ["auto-visuals", "generate-infographic", "generate-broll", "generate-background", "generate-avatar", "ads-review"];
 
 /** `lane` "ai" claims only AI jobs, "media" everything else (CPU: FFmpeg, transcription, masks). */
 export async function claimJob(workerId: string, lane?: "ai" | "media") {

@@ -148,6 +148,33 @@ const server = http.createServer(async (req, res) => {
         const n = Math.max(1, Math.min(10, Number(body.n ?? 1)));
         return json(200, { created: Math.floor(Date.now() / 1000), data: Array.from({ length: n }, () => ({ b64_json: fs.readFileSync(f).toString("base64") })) });
       }
+      if (req.method === "POST" && url.pathname === "/oai/v1/chat/completions") {
+        const body = JSON.parse((await readBody(req)).toString() || "{}");
+        const user = String(body.messages?.find((m: { role: string }) => m.role === "user")?.content ?? "");
+        oaiLog.push({ model: body.model, size: "", prompt: String(body.messages?.[0]?.content ?? "").slice(0, 400) + "\n---\n" + user, n: 1 });
+        const hook = /\[HOOK\] (.*)/.exec(user)?.[1] ?? "";
+        const review = {
+          score: 54,
+          verdict: "Hook ogólny, brak stawki w pierwszych sekundach.",
+          diagnosis: null,
+          criteria: ["HOOK 0–2 s", "NAPIĘCIE 2–6 s", "RETENCJA / TEMPO", "PAYOFF", "SHAREABILITY", "CTA", "AUTENTYCZNOŚĆ", "DOPASOWANIE DO KLIENTA I OFERTY"].map((name, i) => ({ name, score: 4 + (i % 4), why: `Uzasadnienie ${i + 1}.` })),
+          redFlags: ["Obietnica wyniku: „pozbędziesz się długów”"],
+          levers: ["Konkretny lęk w hooku", "Stawka w 2–6 s", "CTA do wysłania komuś"],
+          newVersion: {
+            onScreen: "Komornik zabrał Ci pensję?",
+            timeline: [{ time: "0–2 s", text: "Komornik zabrał Ci pensję?" }, { time: "2–6 s", text: "Nie wszystko może zabrać." }, { time: "6–20 s", text: "Część zostaje zawsze." }, { time: "koniec", text: "Wyślij to komuś." }],
+            hook: `Nowy hook: ${hook.slice(0, 20)}`,
+            body: "Nowe body z propozycji.",
+            cta: "Wyślij to komuś, kto ma komornika.",
+            shots: ["Zbliżenie na pismo od komornika"],
+            caption: "Co komornik może zabrać? Napisz PENSJA w wiadomości.",
+          },
+          altHooks: [{ mechanism: "lęk", text: "Alternatywny hook lęk" }, { mechanism: "liczba", text: "Alternatywny hook liczba" }, { mechanism: "kontrowersja", text: "Alternatywny hook kontrowersja" }],
+          predicted: { score: 78, limits: "Brak liczby w payoffie." },
+          compliance: ["Unikaj „pozbędziesz się długów”."],
+        };
+        return json(200, { id: "chatcmpl-mock", object: "chat.completion", model: body.model, choices: [{ index: 0, message: { role: "assistant", content: JSON.stringify(review) }, finish_reason: "stop" }] });
+      }
       return json(404, { error: { message: "unknown endpoint" } });
     }
     if (!req.headers["xi-api-key"]) return json(401, { detail: "missing api key" });

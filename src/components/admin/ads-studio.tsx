@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ArrowUpRight, Clapperboard, Download, FileText, Film, Loader2, RefreshCw, Star, Trash2, Upload, Wand2 } from "lucide-react";
-import { Badge, Button, Card, EmptyState, Input, Label, NativeSelect, Progress, Switch, useToast } from "@/components/ui";
+import { Badge, Button, Card, Dialog, DialogContent, EmptyState, Input, Label, NativeSelect, Progress, Switch, Textarea, useToast } from "@/components/ui";
 import { api, cn, formatDate } from "@/lib/utils";
 import { decodeCsv } from "@/lib/csv-import";
 import { adsScriptTemplate } from "@/lib/ads-script";
@@ -102,11 +102,27 @@ interface AdsLook {
   ctaPlacement: string;
   autoBlur: boolean;
   blurStrength: number;
+  adsBrief: string | null;
+  adsFormat: string;
+}
+interface Review {
+  score: number;
+  verdict: string;
+  diagnosis?: string | null;
+  criteria: Array<{ name: string; score: number; why: string }>;
+  redFlags: string[];
+  levers: string[];
+  newVersion: { onScreen: string; timeline: Array<{ time: string; text: string }>; hook: string; body: string; cta: string; shots: string[]; caption: string };
+  altHooks: Array<{ mechanism: string; text: string }>;
+  predicted: { score: number; limits: string };
+  compliance: string[];
+  model?: string;
+  error?: undefined;
 }
 interface AdsData {
   project: { id: string; name: string } & AdsLook;
   footage: Array<{ id: string; name: string; status: string; step: string | null; error: string | null; sizeBytes: number; durationSec: number | null; words: number }>;
-  reels: Array<{ id: string; code: string; groupCode: string | null; title: string | null; parts: Array<{ role: string; text: string }>; matches: Match[] | null; compositionId: string | null; hookIndex: number | null }>;
+  reels: Array<{ id: string; code: string; groupCode: string | null; title: string | null; parts: Array<{ role: string; text: string }>; matches: Match[] | null; compositionId: string | null; hookIndex: number | null; review: Review | { error: string } | null; reviewedAt: string | null }>;
 }
 interface UploadState {
   name: string;
@@ -120,6 +136,8 @@ export function AdsProject({ id }: { id: string }) {
   const [data, setData] = useState<AdsData | null>(null);
   const [uploads, setUploads] = useState<Record<string, UploadState>>({});
   const [building, setBuilding] = useState(false);
+  const [reviewing, setReviewing] = useState(false);
+  const [openReview, setOpenReview] = useState<string | null>(null);
   const { toast, toastNode } = useToast();
   const scriptRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLInputElement>(null);
@@ -128,7 +146,7 @@ export function AdsProject({ id }: { id: string }) {
     void load();
   }, [load]);
   // while files are being processed: refresh
-  const busy = !!data?.footage.some((f) => f.status === "PROCESSING" || f.status === "UPLOADING") || building;
+  const busy = !!data?.footage.some((f) => f.status === "PROCESSING" || f.status === "UPLOADING") || building || reviewing;
   useEffect(() => {
     if (!busy) return;
     const t = setInterval(() => void load(), 3000);
@@ -200,6 +218,29 @@ export function AdsProject({ id }: { id: string }) {
       toast((e as Error).message, "err");
     } finally {
       setBuilding(false);
+    }
+  };
+
+  const review = async (body: { reelIds?: string[]; onlyMissing?: boolean }) => {
+    setReviewing(true);
+    try {
+      const { jobId, reels } = await api<{ jobId: string | null; reels: number }>(`/api/admin/ads/${id}/review`, { method: "POST", json: body });
+      if (!jobId) return toast("Wszystkie reelsy mają już ocenę");
+      toast(`Oceniam ${reels} ${reels === 1 ? "reels" : "reelsów"}…`);
+      for (;;) {
+        await new Promise((r) => setTimeout(r, 2500));
+        const job = await api<{ status: string; error: string | null; result: { reviewed: number; failed: number } | null }>(`/api/admin/jobs/${jobId}`);
+        if (job.status === "FAILED") throw new Error(job.error ?? "Ocena nie powiodła się");
+        if (job.status === "SUCCEEDED") {
+          toast(`Ocenione: ${job.result?.reviewed ?? 0}${job.result?.failed ? ` · błędy: ${job.result.failed}` : ""}`, job.result?.failed ? "err" : "ok");
+          break;
+        }
+      }
+    } catch (e) {
+      toast((e as Error).message, "err");
+    } finally {
+      setReviewing(false);
+      await load();
     }
   };
 
@@ -343,6 +384,18 @@ export function AdsProject({ id }: { id: string }) {
         </Card>
       </div>
 
+      {openReview ? (
+        <ReviewDialog
+          reel={data.reels.find((x) => x.id === openReview)!}
+          siblings={data.reels.filter((x) => { const me = data.reels.find((y) => y.id === openReview); return !!me?.groupCode && x.groupCode === me.groupCode; }).length}
+          onClose={() => setOpenReview(null)}
+          onReview={() => void review({ reelIds: [openReview] })}
+          reviewing={reviewing}
+          reload={load}
+          toast={toast}
+        />
+      ) : null}
+
       <AdsLookCard project={data.project} reload={load} toast={toast} />
 
       <BrollCard projectId={id} toast={toast} />
@@ -368,6 +421,7 @@ export function AdsProject({ id }: { id: string }) {
             ) : null}
           </div>
         </div>
+        {data.reels.length ? <ScoringBar project={data.project} reels={data.reels} reviewing={reviewing} review={review} reload={load} toast={toast} /> : null}
         {data.reels.length ? (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm" data-testid="ads-reels">
@@ -375,6 +429,7 @@ export function AdsProject({ id }: { id: string }) {
                 <tr>
                   <th className="py-2 pr-3 font-medium">Reels</th>
                   <th className="py-2 pr-3 font-medium">Fragmenty</th>
+                  <th className="py-2 pr-3 font-medium">Ocena</th>
                   <th className="py-2 font-medium" />
                 </tr>
               </thead>
@@ -404,6 +459,9 @@ export function AdsProject({ id }: { id: string }) {
                           </span>
                         ))}
                       </div>
+                    </td>
+                    <td className="py-2.5 pr-3">
+                      <ScoreBadge r={r} onOpen={() => setOpenReview(r.id)} onReview={() => void review({ reelIds: [r.id] })} disabled={reviewing} />
                     </td>
                     <td className="py-2.5 text-right">
                       {r.compositionId ? (
@@ -718,5 +776,236 @@ function BrollCard({ projectId, toast }: { projectId: string; toast: (t: string,
         <p className="text-sm text-muted">Brak przebitek.</p>
       ) : null}
     </Card>
+  );
+}
+
+type ReelRow = AdsData["reels"][number];
+
+const scoreTone = (n: number) => (n >= 75 ? "border-emerald-200 bg-emerald-50 text-emerald-800" : n >= 50 ? "border-amber-200 bg-amber-50 text-amber-900" : "border-red-200 bg-red-50 text-red-700");
+
+function ScoreBadge({ r, onOpen, onReview, disabled }: { r: ReelRow; onOpen: () => void; onReview: () => void; disabled: boolean }) {
+  const rv = r.review;
+  if (rv && "score" in rv && typeof rv.score === "number")
+    return (
+      <button type="button" onClick={onOpen} className={cn("rounded-full border px-2 py-0.5 text-xs font-semibold tabular", scoreTone(rv.score))} data-testid="ads-score" title={rv.verdict}>
+        {rv.score}/100{rv.predicted?.score ? ` → ${rv.predicted.score}` : ""}
+      </button>
+    );
+  if (rv && "error" in rv && rv.error)
+    return (
+      <button type="button" onClick={onReview} disabled={disabled} className="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-xs text-red-700" title={rv.error}>
+        błąd · ponów
+      </button>
+    );
+  return (
+    <button type="button" onClick={onReview} disabled={disabled} className="rounded-full border border-line px-2 py-0.5 text-xs text-muted hover:text-ink" data-testid="ads-score-one">
+      Oceń
+    </button>
+  );
+}
+
+/** Scoring of the scripts: format, target group / service (context for the editor), score buttons, script export. */
+function ScoringBar({ project, reels, reviewing, review, reload, toast }: { project: AdsData["project"]; reels: ReelRow[]; reviewing: boolean; review: (b: { onlyMissing?: boolean }) => Promise<void>; reload: () => Promise<void>; toast: (t: string, tone?: "ok" | "err") => void }) {
+  const [brief, setBrief] = useState(project.adsBrief ?? "");
+  const scored = reels.filter((r) => r.review && "score" in r.review);
+  const avg = scored.length ? Math.round(scored.reduce((n, r) => n + ((r.review as Review).score ?? 0), 0) / scored.length) : null;
+  const missing = reels.filter((r) => !r.reviewedAt).length;
+  const save = async (data: Record<string, unknown>) => {
+    try {
+      await api(`/api/admin/projects/${project.id}`, { method: "PATCH", json: data });
+      await reload();
+    } catch (e) {
+      toast((e as Error).message, "err");
+    }
+  };
+  return (
+    <div className="space-y-3 rounded-xl border border-line bg-black/[.015] p-3" data-testid="ads-scoring">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm font-medium">
+          Scoring treści {avg != null ? <span className={cn("ml-1 rounded-full border px-2 py-0.5 text-xs", scoreTone(avg))}>średnio {avg}/100</span> : null}
+          <span className="block text-xs font-normal text-muted">Ocena według wytycznych redaktora rolek (hook, napięcie, tempo, payoff, udostępnienia, CTA…) i nowa wersja do podmiany — OpenAI.</span>
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <Button size="sm" onClick={() => void review({ onlyMissing: true })} disabled={reviewing || !missing} data-testid="ads-review-missing">
+            {reviewing ? <Loader2 className="animate-spin" /> : <Wand2 />} {missing ? `Oceń nieocenione (${missing})` : "Wszystkie ocenione"}
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => confirm(`Ocenić od nowa wszystkie ${reels.length} reelsów? To ${reels.length} zapytań do OpenAI.`) && void review({})} disabled={reviewing}>
+            Oceń wszystkie od nowa
+          </Button>
+          <a href={`/api/admin/ads/${project.id}/script`} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-line px-3 text-xs font-medium hover:bg-black/[.03]" data-testid="ads-script-export">
+            <Download className="h-3.5 w-3.5" /> Scenariusze (CSV)
+          </a>
+        </div>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-[200px_1fr]">
+        <div className="space-y-1">
+          <Label htmlFor="ads-format">Format rolek</Label>
+          <NativeSelect id="ads-format" value={project.adsFormat} onChange={(e) => void save({ adsFormat: e.target.value })}>
+            <option value="[EKSPERT]">Ekspert</option>
+            <option value="[PYTANIE]">Pytanie</option>
+            <option value="[TALKING HEAD KLIENTA]">Talking head klienta</option>
+            <option value="[INNY]">Inny</option>
+          </NativeSelect>
+        </div>
+        <div className="space-y-1">
+          <Label htmlFor="ads-brief">Grupa docelowa i usługa</Label>
+          <Textarea id="ads-brief" rows={2} value={brief} placeholder="np. osoby z długami powyżej 30 tys. zł, które nie dają rady spłacać rat — usługa: upadłość konsumencka" onChange={(e) => setBrief(e.target.value)} onBlur={() => brief !== (project.adsBrief ?? "") && void save({ adsBrief: brief.trim() || null })} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** The full review of one reel, with the version to swap in and the A/B hooks. */
+function ReviewDialog({ reel, siblings, onClose, onReview, reviewing, reload, toast }: { reel: ReelRow; siblings: number; onClose: () => void; onReview: () => void; reviewing: boolean; reload: () => Promise<void>; toast: (t: string, tone?: "ok" | "err") => void }) {
+  const rv = reel.review && "score" in reel.review ? (reel.review as Review) : null;
+  const apply = async (body: { mode: "all" } | { mode: "hook"; text: string }) => {
+    const shared = body.mode === "all" && siblings > 1;
+    if (!confirm(body.mode === "hook" ? "Podmienić hook w scenariuszu na tę propozycję?" : `Podmienić treść reelsa na nową wersję?${shared ? ` Body i CTA zmienią się we wszystkich ${siblings} wersjach hooka tego reelsa.` : ""} Trzeba ją będzie nagrać i ułożyć ponownie.`)) return;
+    try {
+      const r = await api<{ changed: number }>(`/api/admin/ads/reels/${reel.id}/apply`, { method: "POST", json: body });
+      toast(`Podmieniono treść (${r.changed} ${r.changed === 1 ? "wiersz" : "wiersze"} scenariusza) — pobierz nowe scenariusze i nagraj zmienione fragmenty`);
+      await reload();
+    } catch (e) {
+      toast((e as Error).message, "err");
+    }
+  };
+  const nv = rv?.newVersion;
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent title={`Ocena · ${reel.groupCode ? `${reel.groupCode} · ${reel.code.slice(reel.groupCode.length + 1)}` : reel.code}${reel.title ? ` — ${reel.title}` : ""}`} className="max-w-3xl">
+        {!rv ? (
+          <div className="space-y-3">
+            <p className="text-sm text-muted">{reel.review && "error" in reel.review ? reel.review.error : "Ten reels nie ma jeszcze oceny."}</p>
+            <Button onClick={onReview} disabled={reviewing}>
+              {reviewing ? <Loader2 className="animate-spin" /> : <Wand2 />} Oceń
+            </Button>
+          </div>
+        ) : (
+          <div className="space-y-5 text-sm" data-testid="ads-review">
+            <div className="flex flex-wrap items-center gap-3">
+              <span className={cn("rounded-xl border px-3 py-1.5 text-lg font-semibold tabular", scoreTone(rv.score))}>{rv.score}/100</span>
+              <p className="flex-1">{rv.verdict}</p>
+            </div>
+            {rv.diagnosis ? <p className="rounded-lg bg-black/[.04] p-2.5 text-xs">{rv.diagnosis}</p> : null}
+
+            <table className="w-full text-left text-xs">
+              <tbody>
+                {rv.criteria.map((c) => (
+                  <tr key={c.name} className="border-t border-line align-top">
+                    <td className="py-1.5 pr-2 font-medium">{c.name}</td>
+                    <td className="py-1.5 pr-2 tabular">{c.score}/10</td>
+                    <td className="py-1.5 text-muted">{c.why}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <p className="mb-1 text-xs font-semibold uppercase tracking-[0.08em] text-red-700">Czerwone flagi</p>
+                {rv.redFlags.length ? (
+                  <ul className="list-disc space-y-0.5 pl-4">
+                    {rv.redFlags.map((f, i) => (
+                      <li key={i}>{f}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-muted">brak</p>
+                )}
+              </div>
+              <div>
+                <p className="mb-1 text-xs font-semibold uppercase tracking-[0.08em] text-muted">3 największe dźwignie</p>
+                <ol className="list-decimal space-y-0.5 pl-4">
+                  {rv.levers.map((l, i) => (
+                    <li key={i}>{l}</li>
+                  ))}
+                </ol>
+              </div>
+            </div>
+
+            {nv ? (
+              <div className="space-y-2 rounded-xl border border-line p-3" data-testid="ads-new-version">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="font-medium">Nowa wersja do podmiany {rv.predicted?.score ? <span className={cn("ml-1 rounded-full border px-2 py-0.5 text-xs", scoreTone(rv.predicted.score))}>przewidywany wynik {rv.predicted.score}/100</span> : null}</p>
+                  <Button size="sm" onClick={() => void apply({ mode: "all" })} data-testid="ads-apply-all">
+                    Podmień treść
+                  </Button>
+                </div>
+                <p>
+                  <span className="text-xs text-muted">Napis na ekranie (0–2 s): </span>
+                  <b>{nv.onScreen}</b>
+                </p>
+                <ul className="space-y-0.5">
+                  {nv.timeline.map((t, i) => (
+                    <li key={i}>
+                      <span className="tabular text-xs text-muted">[{t.time}]</span> {t.text}
+                    </li>
+                  ))}
+                </ul>
+                <div className="grid gap-2 text-xs sm:grid-cols-3">
+                  {(["hook", "body", "cta"] as const).map((k) => (
+                    <div key={k} className="rounded-lg bg-black/[.03] p-2">
+                      <p className="mb-0.5 font-semibold uppercase text-muted">{k}</p>
+                      <p>{nv[k]}</p>
+                    </div>
+                  ))}
+                </div>
+                {nv.shots.length ? (
+                  <p className="text-xs">
+                    <span className="text-muted">Ujęcia / B-roll: </span>
+                    {nv.shots.join(" · ")}
+                  </p>
+                ) : null}
+                <p className="text-xs">
+                  <span className="text-muted">Opis pod rolką: </span>
+                  {nv.caption}
+                </p>
+              </div>
+            ) : null}
+
+            {rv.altHooks.length ? (
+              <div className="space-y-1.5">
+                <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted">Alternatywne hooki (A/B)</p>
+                {rv.altHooks.map((h, i) => (
+                  <div key={i} className="flex items-start justify-between gap-3 rounded-lg border border-line p-2">
+                    <p>
+                      <span className="mr-1 rounded bg-black/[.05] px-1.5 py-0.5 text-[11px]">{h.mechanism}</span>
+                      {h.text}
+                    </p>
+                    <Button size="sm" variant="outline" onClick={() => void apply({ mode: "hook", text: h.text })} data-testid="ads-apply-hook">
+                      Użyj
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+
+            {rv.predicted?.limits ? (
+              <p className="text-xs">
+                <span className="text-muted">Co jeszcze ogranicza wynik: </span>
+                {rv.predicted.limits}
+              </p>
+            ) : null}
+            {rv.compliance.length ? (
+              <div className="rounded-lg bg-amber-50 p-2.5 text-xs text-amber-900">
+                <p className="mb-0.5 font-semibold">Uwagi compliance</p>
+                <ul className="list-disc pl-4">
+                  {rv.compliance.map((c, i) => (
+                    <li key={i}>{c}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+            <div className="flex justify-between gap-2 border-t border-line pt-3 text-xs text-muted">
+              <span>{reel.reviewedAt ? `Oceniono ${formatDate(reel.reviewedAt)}${rv.model ? ` · ${rv.model}` : ""}` : ""}</span>
+              <button className="underline hover:text-ink" onClick={onReview} disabled={reviewing}>
+                Oceń ponownie
+              </button>
+            </div>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }

@@ -46,6 +46,10 @@ async function handle(job: { id: string; type: string; payload: unknown }) {
       const { processFootage } = await import("../lib/server/ads");
       return processFootage(p.footageId);
     }
+    case "ads-review": {
+      const { reviewReels } = await import("../lib/server/ads");
+      return reviewReels(p.projectId, (job.payload as { reelIds?: string[] }).reelIds);
+    }
     case "ads-build": {
       const { buildReels } = await import("../lib/server/ads");
       return buildReels(p.projectId, job.payload as { reelIds?: string[]; rebuild?: boolean });

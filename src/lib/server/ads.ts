@@ -338,3 +338,59 @@ export async function ownTheme(name: string, from: { presetKey?: string | null; 
     },
   });
 }
+
+/** Score the reels' scripts (one after another) and keep each review with its reel. */
+export async function reviewReels(projectId: string, reelIds?: string[]) {
+  const { reviewReel } = await import("./reel-review");
+  const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { adsBrief: true, adsFormat: true } });
+  const reels = await prisma.adReel.findMany({ where: { projectId, ...(reelIds?.length ? { id: { in: reelIds } } : {}) }, orderBy: { order: "asc" } });
+  let done = 0;
+  let failed = 0;
+  for (const r of reels) {
+    try {
+      const review = await reviewReel({ title: r.title, parts: r.parts as unknown as Array<{ role: string; text: string }>, format: project.adsFormat || "[EKSPERT]", brief: project.adsBrief });
+      await prisma.adReel.update({ where: { id: r.id }, data: { review: review as unknown as Prisma.InputJsonValue, reviewedAt: new Date() } });
+      done++;
+    } catch (e) {
+      failed++;
+      await prisma.adReel.update({ where: { id: r.id }, data: { review: { error: (e as Error).message.slice(0, 500) } as Prisma.InputJsonValue } });
+      // a missing key / no credit: no point going on with the others
+      if (/klucza|API key|quota|billing|credit/i.test((e as Error).message)) break;
+    }
+  }
+  return { reviewed: done, failed };
+}
+
+/**
+ * Swap the script for the proposal: the whole new version (hook of this reel, body + CTA of every hook
+ * version of the reel, since they share them) or just an alternative hook. The reel then needs the new
+ * text recorded and laid out again — its old match is cleared.
+ */
+export async function applyReview(reelId: string, what: { mode: "all" } | { mode: "hook"; text: string }) {
+  const reel = await prisma.adReel.findUniqueOrThrow({ where: { id: reelId } });
+  const parts = reel.parts as unknown as Array<{ role: string; text: string }>;
+  const review = reel.review as unknown as { newVersion?: { hook: string; body: string; cta: string } } | null;
+  const setRole = (ps: Array<{ role: string; text: string }>, role: string, text: string) => {
+    const t = text.trim();
+    if (!t) return ps;
+    return ps.some((p) => p.role === role) ? ps.map((p) => (p.role === role ? { ...p, text: t } : p)) : [...ps, { role, text: t }];
+  };
+  if (what.mode === "hook") {
+    await prisma.adReel.update({ where: { id: reel.id }, data: { parts: setRole(parts, "hook", what.text) as unknown as Prisma.InputJsonValue, matches: Prisma.DbNull } });
+    return { changed: 1 };
+  }
+  const nv = review?.newVersion;
+  if (!nv) throw new Error("Brak propozycji do podmiany — najpierw oceń reels.");
+  // body / CTA are shared by the reel's hook versions
+  const siblings = reel.groupCode ? await prisma.adReel.findMany({ where: { projectId: reel.projectId, groupCode: reel.groupCode } }) : [reel];
+  for (const s of siblings) {
+    let ps = s.parts as unknown as Array<{ role: string; text: string }>;
+    if (s.id === reel.id) ps = setRole(ps, "hook", nv.hook);
+    ps = setRole(setRole(ps, "body", nv.body), "cta", nv.cta);
+    // keep the order hook → body → cta
+    const rank = (r: string) => (r === "hook" ? 0 : r.startsWith("body") ? 1 : r === "cta" ? 3 : 2);
+    ps = [...ps].sort((a, b) => rank(a.role) - rank(b.role));
+    await prisma.adReel.update({ where: { id: s.id }, data: { parts: ps as unknown as Prisma.InputJsonValue, matches: Prisma.DbNull } });
+  }
+  return { changed: siblings.length };
+}

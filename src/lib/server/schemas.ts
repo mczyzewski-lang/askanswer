@@ -32,6 +32,8 @@ export const ProjectInput = z.object({
   autoBlur: z.boolean().optional(),
   blurStrength: z.number().int().min(5).max(100).optional(),
   narrationSpeed: z.number().min(0.9).max(1.4).optional(),
+  adsBrief: z.string().trim().max(2000).nullable().optional(),
+  adsFormat: z.enum(["[EKSPERT]", "[PYTANIE]", "[TALKING HEAD KLIENTA]", "[INNY]"]).optional(),
   subtitlePreset: z.enum(["minimal-white", "bold-social", "dynamic-highlight", "elegant-premium", "clean-corporate"]).nullable().optional(),
   autoVoice: z.boolean().optional(),
   autoZooms: z.boolean().optional(),
