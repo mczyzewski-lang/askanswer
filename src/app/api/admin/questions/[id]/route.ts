@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/server/db";
 import { requireAdmin } from "@/lib/server/auth";
 import { json, route } from "@/lib/server/http";
@@ -29,7 +30,8 @@ export const PATCH = route(async (req: Request, ctx: Ctx) => {
   if (data.expertId) await ensureProjectExpert(current.projectId, data.expertId);
   // the expert accepted another version of the content: ask again
   const changed = (["text", "spokenText", "script"] as const).some((k) => data[k] !== undefined && (data[k] ?? null) !== (current[k] ?? null));
-  if (changed) (data as Record<string, unknown>).contentApprovedAt = null;
+  // …and the script score no longer applies to it
+  if (changed) Object.assign(data, { contentApprovedAt: null, review: Prisma.DbNull, reviewedAt: null });
   return json(await prisma.question.update({ where: { id }, data }));
 });
 

@@ -56,6 +56,10 @@ All variables are listed in `.env.example`.
 | `CLAUDE_MODEL` | no | Default `claude-opus-5-5` |
 | `OPENAI_API_KEY` | for OpenAI infographics | Background illustration or the whole infographic (with text) drawn by OpenAI; server-side only |
 | `OPENAI_IMAGE_MODEL` | no | Default `gpt-image-2` (e.g. `gpt-image-1.5`, `gpt-image-2.5-flare`) |
+| `OPENAI_IMAGE_QUALITY`, `OPENAI_IMAGE_LONG`, `ILLUSTRATION_VARIANTS` | no | Image cost: quality `low`/`medium`/`high` (default medium), long side in px (default 1536), variants per moment 1–4 (default 3) |
+| `OPENAI_TEXT_MODEL` | no | Script scoring (Ads Studio and prompter scripts), default `gpt-5`; falls back to `gpt-4.1` on a model error |
+| `RENDER_CONCURRENCY`, `FFMPEG_THREADS`, `SEGMENT_THREADS` | no | Render / segmentation parallelism |
+| `ADS_MAX_UPLOAD_MB` | no | Maximum size of one Ads Studio footage file |
 | `ELEVENLABS_BASE_URL` | no | Default `https://api.elevenlabs.io` (the tests point it at a mock) |
 | `STORAGE_DRIVER` | no | `local` (default) or `s3` |
 | `STORAGE_LOCAL_DIR` | no | Private directory used by the local driver (default `./storage`) |

@@ -52,6 +52,7 @@ import { parseBulk, parseBulkScripts } from "@/lib/bulk-questions";
 import { terms } from "@/lib/project-terms";
 import { csvTemplate, decodeCsv, hybridCsvTemplate, parseHybridCsv, parseImportCsv } from "@/lib/csv-import";
 import { effectiveKind, kindHasNarration, kindHasPrompter, KIND_LABELS, QUESTION_KINDS, type QuestionKind } from "@/lib/question-kinds";
+import { type Review, ReviewDialog, ScoreBadge, scoreTone } from "./content-review";
 
 type Q = PanelProps["data"]["questions"][number];
 type Take = Q["takes"][number];
@@ -102,6 +103,8 @@ export function QuestionsPanel({ data, refresh, toast }: PanelProps) {
   const [preview, setPreview] = useState<Q | null>(null);
   const [newCat, setNewCat] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
+  const [reviewing, setReviewing] = useState(false);
+  const [openReview, setOpenReview] = useState<string | null>(null);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }), useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }));
   const theme = data.project.theme ? themeFromRow(data.project.theme) : DEFAULT_THEME;
   const T = terms(data.project.format);
@@ -126,6 +129,42 @@ export function QuestionsPanel({ data, refresh, toast }: PanelProps) {
     }
   }, [items, filter, statusFilter, sort]);
   const counts = useMemo(() => Object.fromEntries(Object.keys(STATUS).map((k) => [k, items.filter((q) => q.status === k).length])), [items]);
+  const scorable = items.filter((q) => isScorable(q, data.project.format));
+
+  // script scoring (OpenAI, reel editor guidelines) — in the background, polled here
+  const review = async (body: { questionIds?: string[]; onlyMissing?: boolean }) => {
+    setReviewing(true);
+    try {
+      const { jobId, items: n } = await api<{ jobId: string | null; items: number }>(`/api/admin/projects/${data.project.id}/review`, { method: "POST", json: body });
+      if (!jobId) return void toast("Nie ma treści do oceny — wszystkie skrypty do nagrania mają już ocenę");
+      toast(`Oceniam ${n} ${plural(n, "treść", "treści", "treści")}…`);
+      for (;;) {
+        await new Promise((r) => setTimeout(r, 2500));
+        const job = await api<{ status: string; error: string | null; result: { reviewed: number; failed: number } | null }>(`/api/admin/jobs/${jobId}`);
+        if (job.status === "FAILED") throw new Error(job.error ?? "Ocena nie powiodła się");
+        if (job.status === "SUCCEEDED") {
+          toast(`Ocenione: ${job.result?.reviewed ?? 0}${job.result?.failed ? ` · błędy: ${job.result.failed}` : ""}`, job.result?.failed ? "err" : "ok");
+          break;
+        }
+      }
+    } catch (e) {
+      toast((e as Error).message, "err");
+    } finally {
+      setReviewing(false);
+      refresh();
+    }
+  };
+  const applyReview = async (q: Q, body: { mode: "all" } | { mode: "hook"; text: string }) => {
+    const recorded = q.takes.length > 0;
+    if (!confirm(`${body.mode === "hook" ? "Podmienić hook na tę propozycję?" : "Podmienić treść na nową wersję (hook + skrypt)?"}${q.contentApproved ? " Akceptacja eksperta zostanie cofnięta — zobaczy nową treść w „Przejrzyj treści”." : ""}${recorded ? " Ta treść ma już nagranie — nowe trzeba będzie nagrać ponownie." : ""}`)) return;
+    try {
+      await api(`/api/admin/questions/${q.id}/apply-review`, { method: "POST", json: body });
+      toast("Podmieniono treść");
+      refresh();
+    } catch (e) {
+      toast((e as Error).message, "err");
+    }
+  };
 
   // multi-select for bulk actions (shift-click selects a range in the visible order)
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -287,6 +326,8 @@ export function QuestionsPanel({ data, refresh, toast }: PanelProps) {
         </div>
       </div>
 
+      {scorable.length ? <ContentScoringBar data={data} items={scorable} reviewing={reviewing} review={review} refresh={refresh} toast={toast} /> : null}
+
       <div className="mt-4 flex flex-wrap gap-1.5" data-testid="status-filter">
         {[["all", "Wszystkie", items.length] as const, ...Object.entries(STATUS).map(([k, v]) => [k, v.label, counts[k] ?? 0] as const)].map(([k, label, n]) => (
           <button
@@ -334,7 +375,7 @@ export function QuestionsPanel({ data, refresh, toast }: PanelProps) {
                         {STATUS[q.status]?.label} <span className="tabular font-normal">{counts[q.status]}</span>
                       </p>
                     ) : null}
-                    <QuestionRow q={q} index={items.indexOf(q)} selected={liveSelected.has(q.id)} onToggle={(range) => toggle(q.id, range)} draggable={sort === "manual" && statusFilter === "all"} data={data} refresh={refresh} toast={toast} onEdit={() => setEditing(q)} onPreview={() => setPreview(q)} />
+                    <QuestionRow q={q} index={items.indexOf(q)} selected={liveSelected.has(q.id)} onToggle={(range) => toggle(q.id, range)} draggable={sort === "manual" && statusFilter === "all"} data={data} refresh={refresh} toast={toast} onEdit={() => setEditing(q)} onPreview={() => setPreview(q)} score={isScorable(q, data.project.format) ? { reviewing, onOpen: () => setOpenReview(q.id), onReview: () => void review({ questionIds: [q.id] }) } : undefined} />
                   </div>
                 ))}
               </div>
@@ -405,6 +446,17 @@ export function QuestionsPanel({ data, refresh, toast }: PanelProps) {
         </div>
       ) : null}
 
+      {openReview && items.find((x) => x.id === openReview) ? (
+        <ReviewDialog
+          title={`Ocena · ${items.find((x) => x.id === openReview)!.text}`}
+          review={items.find((x) => x.id === openReview)!.review as unknown as Review | { error: string } | null}
+          reviewedAt={items.find((x) => x.id === openReview)!.reviewedAt}
+          onClose={() => setOpenReview(null)}
+          onReview={() => void review({ questionIds: [openReview] })}
+          reviewing={reviewing}
+          onApply={(b) => applyReview(items.find((x) => x.id === openReview)!, b)}
+        />
+      ) : null}
       <QuestionDialog open={editing !== null} question={editing === "new" ? null : editing} data={data} onClose={() => setEditing(null)} refresh={refresh} toast={toast} />
       <BulkDialog open={bulk} onClose={() => setBulk(false)} data={data} refresh={refresh} toast={toast} />
       <CategoriesDialog open={catsOpen} onClose={() => setCatsOpen(false)} data={data} refresh={refresh} toast={toast} />
@@ -497,6 +549,53 @@ function UnassignedBanner({ data, refresh, toast }: PanelProps) {
   );
 }
 
+/** Items the expert reads from the prompter (script filled in) can be scored. */
+const isScorable = (q: Q, format: string) => effectiveKind(q.kind, format) !== "QUESTION" && !!q.script?.trim();
+
+/**
+ * Scoring of the prompter scripts before recording: target group / service as context, score the ones
+ * still to record that have no score yet, or all of them again.
+ */
+function ContentScoringBar({ data, items, reviewing, review, refresh, toast }: { items: Q[]; reviewing: boolean; review: (b: { onlyMissing?: boolean }) => Promise<void> } & PanelProps) {
+  const [brief, setBrief] = useState(data.project.adsBrief ?? "");
+  const scored = items.filter((q) => q.review && typeof (q.review as unknown as Review).score === "number");
+  const avg = scored.length ? Math.round(scored.reduce((n, q) => n + (q.review as unknown as Review).score, 0) / scored.length) : null;
+  const toRecord = items.filter((q) => q.status === "TO_RECORD");
+  const missing = toRecord.filter((q) => !q.reviewedAt).length;
+  const saveBrief = async () => {
+    if (brief.trim() === (data.project.adsBrief ?? "")) return;
+    try {
+      await api(`/api/admin/projects/${data.project.id}`, { method: "PATCH", json: { adsBrief: brief.trim() || null } });
+      refresh();
+    } catch (e) {
+      toast((e as Error).message, "err");
+    }
+  };
+  return (
+    <div className="mt-4 space-y-3 rounded-xl border border-line bg-black/[.015] p-3" data-testid="content-scoring">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm font-medium">
+          Scoring treści {avg != null ? <span className={cn("ml-1 rounded-full border px-2 py-0.5 text-xs", scoreTone(avg))}>średnio {avg}/100</span> : null}
+          <span className="block text-xs font-normal text-muted">Skrypty z prompterem przed nagraniem: ocena według wytycznych redaktora rolek i nowa wersja do podmiany — OpenAI.</span>
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <Button size="sm" onClick={() => void review({ onlyMissing: true })} disabled={reviewing || !missing} data-testid="content-review-missing">
+            {reviewing ? <Loader2 className="animate-spin" /> : <Wand2 />} {missing ? `Oceń nieocenione do nagrania (${missing})` : "Wszystkie do nagrania ocenione"}
+          </Button>
+          <Button size="sm" variant="outline" disabled={reviewing || !toRecord.length} onClick={() => confirm(`Ocenić od nowa wszystkie ${toRecord.length} treści do nagrania? To ${toRecord.length} zapytań do OpenAI.`) && void review({})}>
+            Oceń wszystkie od nowa
+          </Button>
+        </div>
+      </div>
+      <div className="space-y-1">
+        <Label htmlFor="content-brief">Grupa docelowa i usługa (kontekst oceny)</Label>
+        <Textarea id="content-brief" rows={2} value={brief} placeholder="np. osoby z długami powyżej 30 tys. zł, które nie dają rady spłacać rat — usługa: upadłość konsumencka" onChange={(e) => setBrief(e.target.value)} onBlur={() => void saveBrief()} />
+      </div>
+    </div>
+  );
+}
+
+
 function QuestionRow({
   q,
   index,
@@ -508,7 +607,8 @@ function QuestionRow({
   toast,
   onEdit,
   onPreview,
-}: { q: Q; index: number; draggable?: boolean; selected?: boolean; onToggle?: (range: boolean) => void; onEdit: () => void; onPreview: () => void } & PanelProps) {
+  score,
+}: { q: Q; index: number; draggable?: boolean; selected?: boolean; onToggle?: (range: boolean) => void; onEdit: () => void; onPreview: () => void; score?: { reviewing: boolean; onOpen: () => void; onReview: () => void } } & PanelProps) {
   const router = useRouter();
   const T = terms(data.project.format);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: q.id, disabled: !draggable });
@@ -584,6 +684,7 @@ function QuestionRow({
                 </span>
               ) : null}
               <span>{q.expertName ?? "Brak eksperta"}</span>
+              {score ? <ScoreBadge review={q.review as unknown as Review | { error: string } | null} onOpen={score.onOpen} onReview={score.onReview} disabled={score.reviewing} testid="content-score" /> : null}
               {q.contentApproved ? (
                 <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-800" data-testid="content-approved" title="Ekspert przejrzał i zatwierdził treść. Zmiana treści przez admina cofa akceptację.">
                   ✓ Treść zatwierdzona

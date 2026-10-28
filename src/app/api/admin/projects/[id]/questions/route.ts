@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "@/lib/server/db";
 import { requireAdmin } from "@/lib/server/auth";
@@ -45,7 +46,7 @@ export const POST = route(async (req: Request, ctx: { params: Promise<{ id: stri
         const contentChanged = next.spokenText !== same.spokenText || next.script !== same.script;
         if (contentChanged || next.kind !== same.kind || next.instructions !== same.instructions) {
           // content changed → the expert's approval no longer applies
-          await tx.question.update({ where: { id: same.id }, data: { ...next, ...(contentChanged ? { contentApprovedAt: null } : {}) } });
+          await tx.question.update({ where: { id: same.id }, data: { ...next, ...(contentChanged ? { contentApprovedAt: null, review: Prisma.DbNull, reviewedAt: null } : {}) } });
           updated++;
         }
         continue;

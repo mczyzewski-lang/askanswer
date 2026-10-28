@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "@/lib/server/db";
 import { json, route } from "@/lib/server/http";
@@ -22,6 +23,8 @@ export const PATCH = route(async (req: Request, ctx: { params: Promise<{ token: 
   if (b.text !== undefined) data.text = b.text;
   if (b.spokenText !== undefined) data.spokenText = b.spokenText || null;
   if (b.script !== undefined) data.script = b.script || null;
+  // the expert changed the text: the script score no longer applies to it
+  if ((["text", "spokenText", "script"] as const).some((k) => data[k] !== undefined && (data[k] ?? null) !== (q[k] ?? null))) Object.assign(data, { review: Prisma.DbNull, reviewedAt: null });
   if (b.approve !== undefined) data.contentApprovedAt = b.approve ? new Date() : null;
   const u = await prisma.question.update({ where: { id: q.id }, data, select: { id: true, text: true, spokenText: true, script: true, contentApprovedAt: true } });
   return json({ ...u, approved: !!u.contentApprovedAt });

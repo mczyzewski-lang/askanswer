@@ -255,6 +255,9 @@ model Question {
   spokenText     String?
   /// the expert accepted the content (title / question / script) in "Przejrzyj treści"
   contentApprovedAt DateTime?
+  /// script review by the reel editor guidelines (OpenAI), prompter items; { error } when it failed
+  review         Json?
+  reviewedAt     DateTime?
   expertId       String?
   expert         Expert?            @relation(fields: [expertId], references: [id], onDelete: SetNull)
   text           String
