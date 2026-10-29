@@ -44,6 +44,18 @@ ZASADY DLA FORMATU [PYTANIE]
 - Najlepiej pytanie z prawdziwych komentarzy lub rozmów z klientami.
 - Zakończenie: jednoznaczna odpowiedź + co zrobić teraz.
 
+ZASADY DLA FORMATU [EKSPERT] (ekspert sam mówi hook i treść)
+- Hook wypowiada EKSPERT z pozycji wiedzy i doświadczenia: teza, liczba, lista, ostrzeżenie, mit do obalenia — np. „3 najważniejsze rzeczy, gdy masz długi”, „Ten błąd kosztuje dłużników najwięcej”.
+- Ekspert może zwrócić się do widza w 2. osobie („Masz długi? Zrób to najpierw.”), ale NIE mówi jak klient w 1. osobie o swoim problemie („Czy mam powiedzieć mężowi o długach?” to głos klienta, nie eksperta).
+- Treść to wiedza eksperta podana prosto; bez „zapytała mnie klientka…”, chyba że jest to w oryginale.
+
+ZASADY DLA FORMATU [PYTANIE KLIENTA] (lektor czyta pytanie klienta, ekspert odpowiada)
+- Hook to PYTANIE ZADANE PRZEZ KLIENTA, nie wypowiedź eksperta. Czyta je inny głos (lektor), jakby pisała je prawdziwa osoba: 1. osoba, język potoczny, jej konkretna sytuacja i emocja — np. „Czy mam powiedzieć mężowi o długach?”, „Komornik zajął mi konto. Co z pensją?”.
+- Hook nigdy nie jest tezą ani listą eksperta („3 rzeczy, które…”, „Dziś wyjaśnię…”) i nie mówi o kliencie w 3. osobie („Klientka pyta, czy…”).
+- Hook to jedno lub dwa krótkie zdania, kończy się pytajnikiem; bez danych umożliwiających identyfikację.
+- Treść (body) i CTA mówi EKSPERT: odpowiada bezpośrednio pytającemu i widzom w tej samej sytuacji, nie powtarza pytania słowo w słowo; najpierw krótki kontekst, potem jednoznaczna odpowiedź i co zrobić teraz.
+- Alternatywne hooki (altHooks) w tym formacie to też pytania klienta w 1. osobie.
+
 ZASADY DLA FORMATU [TALKING HEAD KLIENTA]
 - Najmocniejsze emocjonalne zdanie z wywiadu idzie na początek jako hook, potem cofnięcie do historii.
 - Struktura: ból → moment decyzji → co się zmieniło (konkret: czas, kwota, spokój) → zdanie do widza w podobnej sytuacji.
@@ -71,7 +83,7 @@ const OUTPUT = `FORMAT ODPOWIEDZI: wyłącznie JSON (bez markdown), dokładnie w
   "newVersion": {
     "onScreen": "napis na ekranie 0–2 s",
     "timeline": [{"time": "0–2 s", "text": "…"}, {"time": "2–6 s", "text": "…"}, {"time": "6–X s", "text": "…"}, {"time": "koniec", "text": "…"}],
-    "hook": "to, co ekspert mówi w hooku (0–2 s)",
+    "hook": "hook 0–2 s: w formacie [PYTANIE KLIENTA] pytanie klienta w 1. osobie (czyta lektor); w pozostałych to, co mówi ekspert",
     "body": "to, co ekspert mówi po hooku aż do CTA",
     "cta": "CTA wypowiadane na końcu",
     "shots": ["sugestie ujęć / cięć / B-rolli"],
@@ -104,9 +116,16 @@ export interface ReviewInput {
   stats?: string | null;
 }
 
+/** Who says the hook — spelled out so the new version keeps the right voice. */
+const VOICE: Record<string, string> = {
+  "[PYTANIE KLIENTA]": "KTO MÓWI: hook = pytanie klienta czytane przez lektora (głos klienta, 1. osoba); treść i CTA = ekspert odpowiada.",
+  "[EKSPERT]": "KTO MÓWI: hook, treść i CTA mówi ekspert (głos eksperta, wiedza) — hook nie jest pytaniem klienta w 1. osobie.",
+};
+
 export function reviewUserMessage(p: ReviewInput): string {
   return [
     `FORMAT: ${p.format}`,
+    VOICE[p.format] ?? "",
     p.brief ? `GRUPA DOCELOWA I USŁUGA: ${p.brief}` : "",
     p.title ? `TYTUŁ / NAPIS NAD ROLKĄ: ${p.title}` : "",
     "SCENARIUSZ:",

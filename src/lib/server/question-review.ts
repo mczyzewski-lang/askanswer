@@ -15,14 +15,14 @@ export function reviewInputOf(q: Item, kind: QuestionKind) {
   const parts =
     kind === "QUESTION_PROMPTER"
       ? [
-          { role: "hook", text: `(pytanie klienta czytane przez lektora) ${q.spokenText?.trim() || q.text}` },
-          { role: "body", text: q.script ?? "" },
+          { role: "hook (pytanie klienta, czyta lektor)", text: q.spokenText?.trim() || q.text },
+          { role: "body (odpowiedź eksperta)", text: q.script ?? "" },
         ]
       : [
           { role: "hook", text: q.text },
           { role: "body", text: q.script ?? "" },
         ];
-  return { title: q.text, parts, format: kind === "QUESTION_PROMPTER" ? "[PYTANIE]" : "[EKSPERT]" };
+  return { title: q.text, parts, format: kind === "QUESTION_PROMPTER" ? "[PYTANIE KLIENTA]" : "[EKSPERT]" };
 }
 
 export async function reviewQuestions(projectId: string, questionIds?: string[]) {
