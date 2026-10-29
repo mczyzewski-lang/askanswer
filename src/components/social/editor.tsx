@@ -189,7 +189,7 @@ export function ContentEditor({ id }: { id: string }) {
       <div className="grid gap-5 lg:grid-cols-[300px_1fr]">
         {/* LEFT: film */}
         <aside className="space-y-3 lg:sticky lg:top-20 lg:self-start">
-          <div className="aspect-[9/16] overflow-hidden rounded-2xl bg-black">{(variant?.url ?? media.videoUrl) ? <video ref={videoRef} key={variant?.url ?? media.videoUrl!} src={variant?.url ?? media.videoUrl!} controls playsInline className="h-full w-full object-contain" /> : null}</div>
+          <div className="aspect-[9/16] overflow-hidden rounded-2xl bg-black">{(variant?.url ?? media.videoUrl) ? <video ref={videoRef} key={variant?.url ?? media.videoUrl!} src={variant?.url ?? media.videoUrl!} poster={media.thumbUrl ?? undefined} controls playsInline preload="metadata" className="h-full w-full object-contain" /> : null}</div>
           <div className="rounded-2xl border border-line bg-white p-3 text-[12.5px]">
             <dl className="grid grid-cols-2 gap-y-1">
               <dt className="text-muted">Długość</dt>

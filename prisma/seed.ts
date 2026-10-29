@@ -96,6 +96,20 @@ async function main() {
     console.log(`\nDemo recording link for ${expert.name}:\n  ${inv.url}\n`);
   }
   console.log(`Admin login: ${email} / ${password === "askby-admin" ? "askby-admin" : "(z ADMIN_PASSWORD)"}`);
+
+  // Social Media Studio without an Upload-Post key runs in DEMO mode: load the DEMO organization once
+  if (!process.env.UPLOAD_POST_API_KEY && process.env.SOCIAL_SEED_DEMO !== "false") {
+    try {
+      const { seedDemo, demoExists } = await import("../src/lib/server/social/demo");
+      if (!(await demoExists())) {
+        const admin = await prisma.user.findUniqueOrThrow({ where: { email } });
+        await seedDemo(admin.id);
+        console.log("Social Media Studio: wczytano dane DEMO (AV Holding — Nowy Etap, Risify, Pravna)");
+      }
+    } catch (e) {
+      console.error("Social Media Studio: nie udało się wczytać danych DEMO:", (e as Error).message);
+    }
+  }
 }
 
 main()

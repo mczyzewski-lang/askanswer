@@ -80,6 +80,20 @@ Uwagi do zmiennych:
 
 Zapisz zmiany i kliknij **Deploy**. Pierwszy build trwa około 5–8 minut.
 
+### Social Media Studio (opcjonalnie)
+Bez poniższych zmiennych moduł `/social` działa w **trybie DEMO** (nic nie trafia do prawdziwych kont). Żeby włączyć prawdziwą publikację przez Upload-Post, dodaj:
+
+```
+UPLOAD_POST_API_KEY=twoj_klucz_upload_post
+UPLOAD_POST_WEBHOOK_SECRET=losowy_ciag_min_32_znaki
+UPLOAD_POST_WEBHOOK_TOKEN=drugi_losowy_ciag
+SOCIAL_SEED_DEMO=false
+```
+
+- Klucz jest używany wyłącznie po stronie serwera (nigdy nie trafia do przeglądarki).
+- W panelu Upload-Post ustaw adres webhooka: `https://twoja-domena.up.railway.app/api/hooks/upload-post?token=WARTOSC_UPLOAD_POST_WEBHOOK_TOKEN`.
+- Szczegóły (nagłówki podpisu, profile, OAuth white-label, co wymaga płatnego planu): `SOCIAL_MEDIA_STUDIO.md`.
+
 ## 5. Gotowe
 Otwórz `https://twoja-domena.up.railway.app/login` i zaloguj się danymi `ADMIN_EMAIL` / `ADMIN_PASSWORD`.
 

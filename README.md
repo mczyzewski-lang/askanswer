@@ -133,6 +133,13 @@ Every step is idempotent and the job statuses are visible in the dashboard.
 
 ## Features implemented
 
+**Social Media Studio (`/social`)**
+
+* Multi-tenant social media scheduler: organizations, projects, connected accounts (Instagram, Facebook, TikTok, YouTube Shorts, LinkedIn) via Upload-Post.
+* Media library, per-platform AI copy, a mandatory human approval workflow, a calendar, publications, webhooks, analytics, a comments inbox with an AI reply assistant, and DEMO mode.
+* Full documentation, environment variables and the Upload-Post/webhook setup are in [`SOCIAL_MEDIA_STUDIO.md`](SOCIAL_MEDIA_STUDIO.md).
+* Without `UPLOAD_POST_API_KEY` the module runs in DEMO mode and never publishes to real accounts.
+
 **Questions Manager**
 
 * Projects and categories, including custom categories.

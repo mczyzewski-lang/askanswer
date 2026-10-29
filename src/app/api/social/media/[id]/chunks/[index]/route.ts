@@ -16,6 +16,8 @@ export const PUT = route(async (req: Request, ctx: { params: Promise<{ id: strin
   if (!Number.isInteger(i) || i < 0 || i > 100_000) return json({ error: "Nieprawidłowy numer części" }, 400);
   const m = await prisma.socialMedia.findUniqueOrThrow({ where: { id } });
   if (m.status !== "UPLOADING") return json({ ok: true, alreadyComplete: true });
+  // no more slices than the declared size needs (8 MB slices; protects the disk)
+  if (i > Math.ceil(Number(m.sizeBytes) / (8 * 1024 * 1024)) + 1) return json({ error: "Więcej części niż wynika z rozmiaru pliku" }, 400);
   const buf = Buffer.from(await req.arrayBuffer());
   if (!buf.length || buf.length > MAX_CHUNK) return json({ error: "Nieprawidłowy rozmiar części" }, 400);
   const dir = tmpDir("social-uploads", id);

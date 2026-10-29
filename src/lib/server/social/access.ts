@@ -5,7 +5,13 @@
  */
 import { prisma } from "../db";
 import { HttpError, isStaff, requireUser } from "../auth";
+import { rateLimit } from "../ratelimit";
 import { can, permissionsOf, type OrgRole, type Permission } from "@/lib/social/rbac";
+
+/** AI calls cost money: at most 20 a minute per person */
+export function aiLimit(userId: string) {
+  if (!rateLimit(`social-ai:${userId}`, { capacity: 20, perMinute: 20 })) throw new HttpError(429, "Za dużo zapytań do AI naraz — spróbuj za chwilę.");
+}
 
 export type SocialUser = Awaited<ReturnType<typeof requireUser>>;
 

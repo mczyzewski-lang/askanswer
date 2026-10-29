@@ -10,7 +10,8 @@ export const viewport: Viewport = { width: "device-width", initialScale: 1, view
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="pl">
+    // data-theme is set before paint by the Social Media Studio theme script
+    <html lang="pl" suppressHydrationWarning>
       <body>{children}</body>
     </html>
   );

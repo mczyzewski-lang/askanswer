@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/server/db";
 import { json, route } from "@/lib/server/http";
-import { projectAccess } from "@/lib/server/social/access";
+import { projectAccess, aiLimit } from "@/lib/server/social/access";
 import { analystInsights } from "@/lib/server/social/ai";
 import { analystRows } from "@/lib/server/social/analytics";
 
@@ -18,6 +18,7 @@ export const GET = route(async (_req: Request, ctx: { params: Promise<{ id: stri
 export const POST = route(async (_req: Request, ctx: { params: Promise<{ id: string }> }) => {
   const { id } = await ctx.params;
   const a = await projectAccess(id, "analytics.view");
+  aiLimit(a.user.id);
   const rows = await analystRows(id, a.project.timezone);
   if (rows.length < 3) return json({ error: `Za mało danych do analizy (${rows.length} opublikowanych z wynikami) — wróć po kilku publikacjach.` }, 409);
   return json({ insights: await analystInsights(id, rows, a.user.id) });

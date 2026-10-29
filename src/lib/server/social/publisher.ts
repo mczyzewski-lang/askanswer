@@ -21,6 +21,9 @@ import { audit } from "./audit";
 import { notify } from "./notify";
 import { enqueueSocial } from "./queue";
 
+/** links from the provider are shown as hrefs: only http(s) */
+const safeUrl = (u: string | null | undefined) => (u && /^https?:\/\//i.test(u) ? u.slice(0, 2000) : null);
+
 /** the provider needs a date in the future; a very near one is moved a little */
 const MIN_LEAD_MS = 2 * 60_000;
 
@@ -128,7 +131,7 @@ export async function schedulePost(postId: string) {
       await enqueueSocial("social-cancel", { publicationId: pub.id, reason: "edit" }, { idempotencyKey: `cancel:${pub.id}` });
       return { state: "withdrawn" };
     }
-    if (r.state === "completed") return applyStatus(pub.id, { state: "completed", url: r.url, platformPostId: r.platformPostId, raw: r.raw });
+    if (r.state === "completed") return applyStatus(pub.id, { state: "completed", url: safeUrl(r.url), platformPostId: r.platformPostId, raw: r.raw });
     await prisma.platformPost.update({ where: { id: postId }, data: { status: "SCHEDULED", warnings: (r.warnings?.length ? r.warnings : undefined) as Prisma.InputJsonValue | undefined } });
     await notify({ projectId: post.projectId, type: "post_scheduled", title: `Zaplanowano: ${PLATFORM_META[post.platform as Platform].name}`, body: `${post.contentItem.title || media.title} · ${account.displayName ?? account.accountHandle ?? ""}`, link: `/social/content/${post.contentItemId}?post=${postId}`, dedupeKey: `scheduled:${pub.id}`, perm: "content.edit" });
     await audit({ projectId: post.projectId, action: "publication.scheduled", entityType: "ScheduledPublication", entityId: pub.id, data: { jobId: r.jobId, requestId: r.requestId, scheduledAt: scheduledAt.toISOString(), demo: account.isDemo } });
@@ -172,8 +175,8 @@ export async function applyStatus(publicationId: string, s: JobStatus) {
   if (pub.status === "CANCELLED" || pub.status === "CANCELLING") {
     if (s.state === "completed") {
       // a cancel came too late — the post is out
-      await prisma.scheduledPublication.update({ where: { id: pub.id }, data: { status: "PUBLISHED", publishedUrl: s.url ?? null, platformPostId_native: s.platformPostId ?? null } });
-      await prisma.platformPost.update({ where: { id: post.id }, data: { status: "PUBLISHED", publishedUrl: s.url ?? null, platformPostId: s.platformPostId ?? null, publishedAt: new Date(), errorMessage: "Anulowanie nie zdążyło — publikacja ukazała się.", nextMetricsAt: new Date(Date.now() + 3600e3), nextCommentsAt: new Date(Date.now() + 10 * 60e3) } });
+      await prisma.scheduledPublication.update({ where: { id: pub.id }, data: { status: "PUBLISHED", publishedUrl: safeUrl(s.url), platformPostId_native: s.platformPostId ?? null } });
+      await prisma.platformPost.update({ where: { id: post.id }, data: { status: "PUBLISHED", publishedUrl: safeUrl(s.url), platformPostId: s.platformPostId ?? null, publishedAt: new Date(), errorMessage: "Anulowanie nie zdążyło — publikacja ukazała się.", nextMetricsAt: new Date(Date.now() + 3600e3), nextCommentsAt: new Date(Date.now() + 10 * 60e3) } });
     }
     return { state: pub.status };
   }
@@ -181,8 +184,8 @@ export async function applyStatus(publicationId: string, s: JobStatus) {
     case "completed": {
       if (pub.status === "PUBLISHED" && post.status === "PUBLISHED") return { state: "PUBLISHED" };
       const at = new Date();
-      await prisma.scheduledPublication.update({ where: { id: pub.id }, data: { status: "PUBLISHED", publishedUrl: s.url ?? null, platformPostId_native: s.platformPostId ?? null, warnings: (s.warnings?.length ? s.warnings : undefined) as Prisma.InputJsonValue | undefined, errorMessage: null } });
-      await prisma.platformPost.update({ where: { id: post.id }, data: { status: "PUBLISHED", publishedUrl: s.url ?? null, platformPostId: s.platformPostId ?? null, publishedAt: at, errorMessage: null, warnings: (s.warnings?.length ? s.warnings : undefined) as Prisma.InputJsonValue | undefined, nextMetricsAt: new Date(at.getTime() + 3600e3), nextCommentsAt: new Date(at.getTime() + 10 * 60e3) } });
+      await prisma.scheduledPublication.update({ where: { id: pub.id }, data: { status: "PUBLISHED", publishedUrl: safeUrl(s.url), platformPostId_native: s.platformPostId ?? null, warnings: (s.warnings?.length ? s.warnings : undefined) as Prisma.InputJsonValue | undefined, errorMessage: null } });
+      await prisma.platformPost.update({ where: { id: post.id }, data: { status: "PUBLISHED", publishedUrl: safeUrl(s.url), platformPostId: s.platformPostId ?? null, publishedAt: at, errorMessage: null, warnings: (s.warnings?.length ? s.warnings : undefined) as Prisma.InputJsonValue | undefined, nextMetricsAt: new Date(at.getTime() + 3600e3), nextCommentsAt: new Date(at.getTime() + 10 * 60e3) } });
       await notify({ projectId: post.projectId, type: "post_published", title: `Opublikowano: ${PLATFORM_META[post.platform as Platform].name}`, body: `${post.contentItem.title || post.contentItem.media.title} · ${post.socialAccount.displayName ?? ""}`, link: `/social/content/${post.contentItemId}?post=${post.id}`, dedupeKey: `published:${pub.id}`, perm: "content.edit" });
       await audit({ projectId: post.projectId, action: "publication.published", entityType: "ScheduledPublication", entityId: pub.id, data: { url: s.url, platformPostId: s.platformPostId } });
       return { state: "PUBLISHED" };

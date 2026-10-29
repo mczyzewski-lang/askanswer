@@ -334,6 +334,17 @@ Ustalone wcześniej: można skopiować repozytorium do nowego (fork / nowe repo 
 
 ---
 
+## 5a. SOCIAL MEDIA STUDIO (moduł `/social`, 29.10.2026)
+
+Pełna dokumentacja: **`SOCIAL_MEDIA_STUDIO.md`** (architektura, Upload-Post, webhooki, deploy, lista funkcji, płatne plany, wyniki testów, decyzje).
+
+- Multi-tenant: Organization → SocialProject → SocialAccount; role Owner/Admin/Editor/Approver/Viewer (`src/lib/social/rbac.ts`). Użytkownicy `MEMBER` nie mają dostępu do `/admin` i `/studio`.
+- Kod serwera: `src/lib/server/social/*` (provider Upload-Post + DemoProvider, posts/approval, publisher, webhooks, media, ai, analytics, comments, tick). UI: `src/components/social/*`, strony `src/app/social/*`, API `src/app/api/social/*`, webhook `src/app/api/hooks/upload-post`.
+- Akceptacja człowieka jest obowiązkowa: harmonogram u dostawcy powstaje dopiero po zatwierdzeniu rewizji o zgodnym hashu treści; każda edycja po akceptacji ją unieważnia i anuluje zlecenie.
+- Bez `UPLOAD_POST_API_KEY` wszystko działa w DEMO; dane DEMO zawsze idą do DemoProvider.
+- Kolejka: istniejąca kolejka Postgres (pas `social` w workerze), cykliczny `social-tick` co `SOCIAL_TICK_MS`.
+- **Integracja z prawdziwym Upload-Post NIESPRAWDZONA** — testy tylko na atrapie API (`tests/mock/upload-post-mock.ts`), zbudowanej na podstawie oficjalnego SDK npm `upload-post` 2.16.0 (docs.upload-post.com był zablokowany przez politykę sieci). Niepotwierdzone: format nagłówków podpisu webhooka i pole `external_id` (domyślnie wyłączone: `UPLOAD_POST_SEND_EXTERNAL_ID=false`).
+
 ## 6. OTWARTE PROBLEMY / RZECZY NIEDOKOŃCZONE
 
 1. **Scoring z prawdziwym OpenAI niesprawdzony** (tylko atrapa) — zweryfikować dostęp do `gpt-5`, parsowanie JSON, czas i koszt (jedno zapytanie na pozycję; dla 110 reelsów = 110 zapytań). W razie problemów ustawić `OPENAI_TEXT_MODEL=gpt-4.1`.
@@ -348,6 +359,7 @@ Ustalone wcześniej: można skopiować repozytorium do nowego (fork / nowe repo 
 10. Test e2e `ads.spec.ts` „script + footage” potrafi raz nie przejść w pełnym przebiegu wszystkich testów (timeout widoczności przy obciążeniu); uruchomiony osobno przechodzi (28.10.2026: pełny przebieg 20/21, osobno 1/1).
 11. Ostrzeżenia `MaxListenersExceededWarning` w logu serwera testowego — kosmetyczne.
 12. Dysk Railway: przy zapełnieniu przetwarzanie kończy się komunikatem „Brak miejsca na dysku serwera”; materiał Ads (długie pliki z kamery) zajmuje dużo — rozważyć R2 przed większą kampanią.
+13. **Social Media Studio**: integracja Upload-Post zweryfikowana tylko na atrapie; sprawdzić na koncie testowym (podpis webhooka, `external_id`, OAuth white-label, metryki, komentarze TikTok).
 
 ---
 
@@ -359,7 +371,8 @@ Ustalone wcześniej: można skopiować repozytorium do nowego (fork / nowe repo 
 4. (Opcjonalnie) pokazanie oceny / propozycji ekspertowi w „Przejrzyj treści” lub możliwość, by ekspert przyjął propozycję.
 5. Weryfikacja Ads Studio na prawdziwej kampanii (110 reelsów): jakość dopasowania, czas przetwarzania, miejsce na dysku; ewentualnie ręczna korekta granic w widoku kampanii.
 6. Testy na prawdziwych telefonach (iOS Safari, Android Chrome).
-7. Porządki techniczne: konfiguracja ESLint, rate limit w Redis przy wielu instancjach, role adminów.
+7. Social Media Studio: test na testowym koncie Upload-Post (bez publikacji na prawdziwych kontach bez zgody), potem ustawienie nagłówków webhooka zgodnie z aktualną dokumentacją.
+8. Porządki techniczne: konfiguracja ESLint, rate limit w Redis przy wielu instancjach, role adminów.
 
 ---
 

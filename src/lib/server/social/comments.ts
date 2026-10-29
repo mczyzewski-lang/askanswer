@@ -206,6 +206,8 @@ export async function maybeAutoReply(commentId: string) {
     await prisma.socialComment.update({ where: { id: commentId }, data: { needsHuman: true, status: "ESCALATED", aiReason: d.reason.slice(0, 500) } });
     return { skipped: "needs human" };
   }
+  // an automatic reply never carries a link or contact data (a comment could try to steer the AI)
+  if (redactPersonal(d.reply) !== d.reply) return { skipped: "link or contact data in reply" };
   const recent = await prisma.commentReply.findMany({ where: { createdAt: { gt: new Date(Date.now() - 86400e3) }, comment: { projectId: c.projectId } }, select: { text: true } });
   if (recent.some((r) => norm(r.text) === norm(d.reply))) return { skipped: "duplicate text" };
   const reply = await prisma.commentReply.create({ data: { commentId, text: d.reply.slice(0, 1000), source: "AUTO", status: "APPROVED", aiGenerationId: d.generationId, decidedAt: new Date(), idempotencyKey: `auto:${commentId}` } });

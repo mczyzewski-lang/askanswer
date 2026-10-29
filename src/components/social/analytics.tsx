@@ -62,7 +62,15 @@ function Kpi({ label, value, prev, format = "int", hint }: { label: string; valu
 function ViewsChart({ series }: { series: Data["series"] }) {
   const [hover, setHover] = React.useState<number | null>(null);
   const [table, setTable] = React.useState(false);
-  const W = 720;
+  // drawn at the real pixel width, so labels stay 11px whatever the screen
+  const box = React.useRef<HTMLDivElement>(null);
+  const [W, setW] = React.useState(720);
+  React.useEffect(() => {
+    if (!box.current) return;
+    const ro = new ResizeObserver(([e]) => setW(Math.max(320, Math.round(e.contentRect.width))));
+    ro.observe(box.current);
+    return () => ro.disconnect();
+  }, [table]);
   const H = 220;
   const pad = { l: 44, r: 52, t: 12, b: 24 };
   const vals = series.map((s) => s.views);
@@ -115,8 +123,8 @@ function ViewsChart({ series }: { series: Data["series"] }) {
           </table>
         </div>
       ) : (
-        <div className="relative">
-          <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full" onMouseMove={onMove} onMouseLeave={() => setHover(null)} role="img" aria-label="Wyświetlenia w czasie">
+        <div className="relative" ref={box}>
+          <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} className="block max-w-full" onMouseMove={onMove} onMouseLeave={() => setHover(null)} role="img" aria-label="Wyświetlenia w czasie">
             {ticks.map((t) => (
               <g key={t}>
                 <line x1={pad.l} x2={W - pad.r} y1={y(t)} y2={y(t)} stroke="var(--viz-grid)" strokeWidth={1} />
@@ -132,6 +140,8 @@ function ViewsChart({ series }: { series: Data["series"] }) {
             ))}
             <path d={area} fill="var(--viz-1)" opacity={0.1} />
             <path d={line} fill="none" stroke="var(--viz-1)" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+            {/* markers where data exists (a lone day still shows) */}
+            {pts.map((p, i) => (p && (known.length < 12 || i === lastIdx) ? <circle key={i} cx={p[0]} cy={p[1]} r={4} fill="var(--viz-1)" stroke="var(--color-white)" strokeWidth={2} /> : null))}
             {last?.views !== null && last ? (
               <text x={x(lastIdx) + 6} y={y(last.views!) + 4} fontSize={11.5} fill="var(--color-ink)">
                 {fmt(last.views!)}
