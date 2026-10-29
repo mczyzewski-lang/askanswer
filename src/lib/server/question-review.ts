@@ -31,6 +31,7 @@ export async function reviewQuestions(projectId: string, questionIds?: string[])
   const items = await prisma.question.findMany({ where: { projectId, ...(questionIds?.length ? { id: { in: questionIds } } : {}) }, orderBy: { order: "asc" } });
   let done = 0;
   let failed = 0;
+  let error: string | null = null;
   for (const q of items) {
     if (!reviewable(q, project.format)) continue;
     try {
@@ -39,11 +40,12 @@ export async function reviewQuestions(projectId: string, questionIds?: string[])
       done++;
     } catch (e) {
       failed++;
+      error ??= (e as Error).message;
       await prisma.question.update({ where: { id: q.id }, data: { review: { error: (e as Error).message.slice(0, 500) } as Prisma.InputJsonValue } });
-      if (/klucza|API key|quota|billing|credit/i.test((e as Error).message)) break;
+      if (/klucza|klucz API|brak środków|dostępu do modelu|API key|quota|billing|credit/i.test((e as Error).message)) break;
     }
   }
-  return { reviewed: done, failed };
+  return { reviewed: done, failed, error };
 }
 
 /**

@@ -140,10 +140,10 @@ export function QuestionsPanel({ data, refresh, toast }: PanelProps) {
       toast(`Oceniam ${n} ${plural(n, "treść", "treści", "treści")}…`);
       for (;;) {
         await new Promise((r) => setTimeout(r, 2500));
-        const job = await api<{ status: string; error: string | null; result: { reviewed: number; failed: number } | null }>(`/api/admin/jobs/${jobId}`);
+        const job = await api<{ status: string; error: string | null; result: { reviewed: number; failed: number; error?: string | null } | null }>(`/api/admin/jobs/${jobId}`);
         if (job.status === "FAILED") throw new Error(job.error ?? "Ocena nie powiodła się");
         if (job.status === "SUCCEEDED") {
-          toast(`Ocenione: ${job.result?.reviewed ?? 0}${job.result?.failed ? ` · błędy: ${job.result.failed}` : ""}`, job.result?.failed ? "err" : "ok");
+          toast(`Ocenione: ${job.result?.reviewed ?? 0}${job.result?.failed ? ` · błędy: ${job.result.failed}${job.result.error ? ` — ${job.result.error}` : ""}` : ""}`, job.result?.failed ? "err" : "ok");
           break;
         }
       }

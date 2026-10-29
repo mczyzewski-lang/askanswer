@@ -144,7 +144,33 @@ function asReview(raw: unknown): ReelReview {
   };
 }
 
+/** Plain-language reason for an OpenAI error the admin can act on. */
+export function openaiErrorText(status: number, body: { error?: { message?: string; code?: string; type?: string } }): string {
+  const e = body.error ?? {};
+  const raw = e.message ?? `HTTP ${status}`;
+  if (e.code === "insufficient_quota" || /quota|billing/i.test(raw))
+    return `OpenAI: brak środków lub przekroczony limit na koncie OpenAI (platform.openai.com → Billing). Szczegóły: ${raw}`;
+  if (status === 401 || e.code === "invalid_api_key" || /api key/i.test(raw))
+    return `OpenAI: klucz API jest nieprawidłowy lub wyłączony — wygeneruj nowy w platform.openai.com → API keys i podmień OPENAI_API_KEY w Railway. Szczegóły: ${raw}`;
+  if (status === 403 || /verif|organization/i.test(raw)) return `OpenAI: konto nie ma dostępu do modelu (może wymagać weryfikacji organizacji). Szczegóły: ${raw}`;
+  return `OpenAI: ${raw}`;
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** One call, retried on a rate limit (not an empty balance) and on server errors. */
 async function chat(model: string, user: string) {
+  for (let attempt = 0; ; attempt++) {
+    const res = await chatOnce(model, user);
+    if (attempt >= 3 || !(res.status === 429 || res.status >= 500)) return res;
+    const body = await res.clone().json().catch(() => ({}));
+    if (/insufficient_quota|billing/i.test(JSON.stringify(body))) return res;
+    const after = Number(res.headers.get("retry-after"));
+    await sleep(Number.isFinite(after) && after > 0 ? Math.min(after, 60) * 1000 : 2000 * 2 ** attempt);
+  }
+}
+
+async function chatOnce(model: string, user: string) {
   return fetch(`${env.openaiBaseUrl}/chat/completions`, {
     method: "POST",
     headers: { Authorization: `Bearer ${env.openaiKey}`, "Content-Type": "application/json" },
@@ -173,8 +199,8 @@ export async function reviewReel(p: ReviewInput): Promise<ReelReview & { model: 
       res = await chat(model, reviewUserMessage(p));
     }
   }
-  const data = (await res.json().catch(() => ({}))) as { choices?: Array<{ message?: { content?: string } }>; error?: { message?: string } };
-  if (!res.ok) throw new Error(`OpenAI: ${data.error?.message ?? `HTTP ${res.status}`}`);
+  const data = (await res.json().catch(() => ({}))) as { choices?: Array<{ message?: { content?: string } }>; error?: { message?: string; code?: string; type?: string } };
+  if (!res.ok) throw new Error(openaiErrorText(res.status, data));
   const text = data.choices?.[0]?.message?.content ?? "";
   let parsed: unknown;
   try {

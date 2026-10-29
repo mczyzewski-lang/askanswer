@@ -346,6 +346,7 @@ export async function reviewReels(projectId: string, reelIds?: string[]) {
   const reels = await prisma.adReel.findMany({ where: { projectId, ...(reelIds?.length ? { id: { in: reelIds } } : {}) }, orderBy: { order: "asc" } });
   let done = 0;
   let failed = 0;
+  let error: string | null = null;
   for (const r of reels) {
     try {
       const review = await reviewReel({ title: r.title, parts: r.parts as unknown as Array<{ role: string; text: string }>, format: project.adsFormat || "[EKSPERT]", brief: project.adsBrief });
@@ -353,12 +354,13 @@ export async function reviewReels(projectId: string, reelIds?: string[]) {
       done++;
     } catch (e) {
       failed++;
+      error ??= (e as Error).message;
       await prisma.adReel.update({ where: { id: r.id }, data: { review: { error: (e as Error).message.slice(0, 500) } as Prisma.InputJsonValue } });
       // a missing key / no credit: no point going on with the others
-      if (/klucza|API key|quota|billing|credit/i.test((e as Error).message)) break;
+      if (/klucza|klucz API|brak środków|dostępu do modelu|API key|quota|billing|credit/i.test((e as Error).message)) break;
     }
   }
-  return { reviewed: done, failed };
+  return { reviewed: done, failed, error };
 }
 
 /**
