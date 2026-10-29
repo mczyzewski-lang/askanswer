@@ -15,6 +15,8 @@ datasource db {
 enum UserRole {
   ADMIN
   EDITOR
+  /// Social Media Studio only (clients, approvers): no access to the video tools
+  MEMBER
 }
 
 enum QuestionStatus {
@@ -82,20 +84,23 @@ enum SuggestionStatus {
 }
 
 model User {
-  id           String   @id @default(cuid())
-  email        String   @unique
-  name         String
-  passwordHash String
-  role         UserRole @default(ADMIN)
-  createdAt    DateTime @default(now())
+  id                 String                @id @default(cuid())
+  email              String                @unique
+  name               String
+  passwordHash       String
+  role               UserRole              @default(ADMIN)
+  createdAt          DateTime              @default(now())
+  orgMemberships     OrganizationMember[]
+  projectMemberships SocialProjectMember[]
+  notifications      Notification[]
 }
 
 model Expert {
-  id          String       @id @default(cuid())
+  id          String          @id @default(cuid())
   name        String
   email       String?
   title       String? // np. "Radca prawny"
-  createdAt   DateTime     @default(now())
+  createdAt   DateTime        @default(now())
   questions   Question[]
   invitations Invitation[]
   recordings  Recording[]
@@ -104,29 +109,29 @@ model Expert {
 }
 
 model Theme {
-  id              String    @id @default(cuid())
-  name            String
-  presetKey       String?
-  isPreset        Boolean   @default(false)
-  primaryColor    String
-  accentColor     String
-  secondaryColor  String
-  textColor       String
-  highlightColor  String
-  backgroundColor String
-  questionFont    String    @default("Manrope")
-  subtitleFont    String    @default("Inter")
-  labelFont       String    @default("Inter")
+  id               String    @id @default(cuid())
+  name             String
+  presetKey        String?
+  isPreset         Boolean   @default(false)
+  primaryColor     String
+  accentColor      String
+  secondaryColor   String
+  textColor        String
+  highlightColor   String
+  backgroundColor  String
+  questionFont     String    @default("Manrope")
+  subtitleFont     String    @default("Inter")
+  labelFont        String    @default("Inter")
   /// how the question is shown: card | plain | outline | accent | pill
-  questionStyle    String   @default("card")
+  questionStyle    String    @default("card")
   /// top | center | lower
-  questionPosition String   @default("top")
-  logoAssetId     String?
+  questionPosition String    @default("top")
+  logoAssetId      String?
   /// default visual style for AI scenes (Higgsfield); categories can override it
-  brollStyle      String?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-  projects        Project[]
+  brollStyle       String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  projects         Project[]
 }
 
 enum ProjectFormat {
@@ -210,17 +215,17 @@ model Project {
 }
 
 model Category {
-  id        String     @id @default(cuid())
-  name      String
-  projectId String
-  project   Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  order     Int        @default(0)
+  id            String        @id @default(cuid())
+  name          String
+  projectId     String
+  project       Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  order         Int           @default(0)
   /// visual style prompt for AI scenes of this category ({{paper}}, {{ink}}, {{accent}}… = theme colours)
-  brollStyle String?
+  brollStyle    String?
   /// default expert for new questions in this category
-  expertId  String?
-  expert    Expert?    @relation(fields: [expertId], references: [id], onDelete: SetNull)
-  questions Question[]
+  expertId      String?
+  expert        Expert?       @relation(fields: [expertId], references: [id], onDelete: SetNull)
+  questions     Question[]
   subcategories Subcategory[]
 
   @@unique([projectId, name])
@@ -240,35 +245,35 @@ model Subcategory {
 }
 
 model Question {
-  id             String             @id @default(cuid())
-  projectId      String
-  project        Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  categoryId     String?
-  category       Category?          @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  subcategoryId  String?
-  subcategory    Subcategory?       @relation(fields: [subcategoryId], references: [id], onDelete: SetNull)
+  id                String             @id @default(cuid())
+  projectId         String
+  project           Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  categoryId        String?
+  category          Category?          @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  subcategoryId     String?
+  subcategory       Subcategory?       @relation(fields: [subcategoryId], references: [id], onDelete: SetNull)
   /// PROMPTER projects: the script the expert reads (text = the hook)
-  script         String?
+  script            String?
   /// QUESTION | PROMPTER | QUESTION_PROMPTER; null = from the project format
-  kind           String?
+  kind              String?
   /// what the narrator reads when it differs from the video title (text); null = the title
-  spokenText     String?
+  spokenText        String?
   /// the expert accepted the content (title / question / script) in "Przejrzyj treści"
   contentApprovedAt DateTime?
   /// script review by the reel editor guidelines (OpenAI), prompter items; { error } when it failed
-  review         Json?
-  reviewedAt     DateTime?
-  expertId       String?
-  expert         Expert?            @relation(fields: [expertId], references: [id], onDelete: SetNull)
-  text           String
-  instructions   String?
-  maxDurationSec Int?
-  order          Int                @default(0)
-  status         QuestionStatus     @default(TO_RECORD)
-  createdAt      DateTime           @default(now())
-  updatedAt      DateTime           @updatedAt
-  recording      Recording?
-  compositions   VideoComposition[]
+  review            Json?
+  reviewedAt        DateTime?
+  expertId          String?
+  expert            Expert?            @relation(fields: [expertId], references: [id], onDelete: SetNull)
+  text              String
+  instructions      String?
+  maxDurationSec    Int?
+  order             Int                @default(0)
+  status            QuestionStatus     @default(TO_RECORD)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  recording         Recording?
+  compositions      VideoComposition[]
 
   @@index([projectId, order])
 }
@@ -289,80 +294,80 @@ model Invitation {
 }
 
 model Recording {
-  id         String          @id @default(cuid())
-  projectId  String
-  project    Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  questionId String          @unique
-  question   Question        @relation(fields: [questionId], references: [id], onDelete: Cascade)
-  expertId   String
-  expert     Expert          @relation(fields: [expertId], references: [id], onDelete: Cascade)
+  id             String          @id @default(cuid())
+  projectId      String
+  project        Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  questionId     String          @unique
+  question       Question        @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  expertId       String
+  expert         Expert          @relation(fields: [expertId], references: [id], onDelete: Cascade)
   selectedTakeId String?
-  createdAt  DateTime        @default(now())
-  updatedAt  DateTime        @updatedAt
-  takes      RecordingTake[]
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  takes          RecordingTake[]
 }
 
 model RecordingTake {
-  id                String        @id @default(cuid())
-  recordingId       String
-  recording         Recording     @relation(fields: [recordingId], references: [id], onDelete: Cascade)
-  clientId          String        @unique // idempotency key generated on the device
-  takeNumber        Int
-  mode              RecordingMode
-  status            TakeStatus    @default(UPLOADING)
-  mimeType          String
-  totalChunks       Int?
-  receivedChunks    Int[]         @default([])
-  bytesReceived     Int           @default(0)
-  originalAssetId   String?
-  normalizedAssetId String?
-  analysisAssetId   String?
-  narrationAssetId  String?
-  markers           Json? // { narrationStart, narrationEnd, pauses: [...] } in seconds of recorded media
-  durationSec       Float?
-  processingStep    String?
-  processingError   String?
+  id                 String              @id @default(cuid())
+  recordingId        String
+  recording          Recording           @relation(fields: [recordingId], references: [id], onDelete: Cascade)
+  clientId           String              @unique // idempotency key generated on the device
+  takeNumber         Int
+  mode               RecordingMode
+  status             TakeStatus          @default(UPLOADING)
+  mimeType           String
+  totalChunks        Int?
+  receivedChunks     Int[]               @default([])
+  bytesReceived      Int                 @default(0)
+  originalAssetId    String?
+  normalizedAssetId  String?
+  analysisAssetId    String?
+  narrationAssetId   String?
+  markers            Json? // { narrationStart, narrationEnd, pauses: [...] } in seconds of recorded media
+  durationSec        Float?
+  processingStep     String?
+  processingError    String?
   transcriptionError String?
-  createdAt         DateTime      @default(now())
-  updatedAt         DateTime      @updatedAt
-  transcript        Transcript?
-  silences          SilenceSuggestion[]
-  compositions      VideoComposition[]
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  transcript         Transcript?
+  silences           SilenceSuggestion[]
+  compositions       VideoComposition[]
 
   @@unique([recordingId, takeNumber])
 }
 
 model MediaAsset {
-  id          String    @id @default(cuid())
-  kind        AssetKind
-  projectId   String?
-  storageKey  String    @unique
-  mimeType    String
-  sizeBytes   Int       @default(0)
-  durationSec Float?
-  width       Int?
-  height      Int?
-  fps         Float?
-  hasAudio    Boolean   @default(false)
-  hasVideo    Boolean   @default(false)
-  contentHash String?   @unique // e.g. TTS cache key, avoids paying twice for identical narration
+  id           String    @id @default(cuid())
+  kind         AssetKind
+  projectId    String?
+  storageKey   String    @unique
+  mimeType     String
+  sizeBytes    Int       @default(0)
+  durationSec  Float?
+  width        Int?
+  height       Int?
+  fps          Float?
+  hasAudio     Boolean   @default(false)
+  hasVideo     Boolean   @default(false)
+  contentHash  String?   @unique // e.g. TTS cache key, avoids paying twice for identical narration
   originalName String?
-  meta        Json?
-  waveform    Json? // { rate, peaks[], rmsDb[] } computed from the real audio
-  createdAt   DateTime  @default(now())
+  meta         Json?
+  waveform     Json? // { rate, peaks[], rmsDb[] } computed from the real audio
+  createdAt    DateTime  @default(now())
 }
 
 model Transcript {
-  id           String           @id @default(cuid())
-  takeId       String           @unique
-  take         RecordingTake    @relation(fields: [takeId], references: [id], onDelete: Cascade)
+  id           String            @id @default(cuid())
+  takeId       String            @unique
+  take         RecordingTake     @relation(fields: [takeId], references: [id], onDelete: Cascade)
   mediaAssetId String
   provider     String
   model        String
   languageCode String
   text         String
   raw          Json
-  createdAt    DateTime         @default(now())
+  createdAt    DateTime          @default(now())
   words        TranscriptWord[]
   segments     SubtitleSegment[]
 }
@@ -509,16 +514,16 @@ model AdFootage {
 
 /// Ads Studio: one reel of the script and where its parts were found in the footage
 model AdReel {
-  id            String   @id @default(cuid())
+  id            String    @id @default(cuid())
   projectId     String
-  project       Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project       Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
   code          String
   /// the reel of the script (P01) when the file lists hook versions (P01;h01…, P01;h02…)
   groupCode     String?
   title         String?
   /// [{ role, text }]
   parts         Json
-  order         Int      @default(0)
+  order         Int       @default(0)
   compositionId String?
   /// reels differing only in the hook share one composition: this reel's hook version in it
   hookIndex     Int?
@@ -527,8 +532,665 @@ model AdReel {
   /// scoring of the script by the reel editor guidelines (OpenAI) + the version to swap in
   review        Json?
   reviewedAt    DateTime?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
   @@unique([projectId, code])
+}
+
+// ============================================================================
+// Social Media Studio — multi-tenant planning, approval, publishing (Upload-Post),
+// analytics and comments. Organization → SocialProject → SocialAccount.
+// All dates are stored in UTC; the UI shows them in the project's time zone.
+// ============================================================================
+
+enum OrgRole {
+  OWNER
+  ADMIN
+  EDITOR
+  APPROVER
+  VIEWER
+}
+
+enum SocialPlatform {
+  INSTAGRAM
+  FACEBOOK
+  TIKTOK
+  YOUTUBE
+  LINKEDIN
+}
+
+enum AccountStatus {
+  CONNECTED
+  REAUTH_REQUIRED
+  DISCONNECTED
+}
+
+/// status of one publication target (one post on one social account)
+enum PostStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  CHANGES_REQUESTED
+  REJECTED
+  SCHEDULING
+  SCHEDULED
+  PUBLISHING
+  PUBLISHED
+  SCHEDULING_FAILED
+  PUBLISH_FAILED
+  CANCELLED
+  REAUTH_REQUIRED
+}
+
+enum ApprovalDecision {
+  APPROVED
+  REJECTED
+  CHANGES_REQUESTED
+}
+
+/// state of one order at the provider (a post can be ordered again after a cancel)
+enum ProviderJobStatus {
+  SCHEDULING
+  SCHEDULED
+  PUBLISHING
+  PUBLISHED
+  FAILED
+  CANCELLING
+  CANCELLED
+  UNKNOWN
+}
+
+enum SocialMediaStatus {
+  UPLOADING
+  PROCESSING
+  READY
+  FAILED
+}
+
+enum CommentStatus {
+  NEW
+  NEEDS_REPLY
+  REPLIED
+  IGNORED
+  ESCALATED
+}
+
+enum ReplyStatus {
+  DRAFT
+  APPROVED
+  SENDING
+  SENT
+  FAILED
+  REJECTED
+}
+
+model Organization {
+  id        String               @id @default(cuid())
+  name      String
+  slug      String               @unique
+  /// demo data (DEMO mode): never published for real
+  isDemo    Boolean              @default(false)
+  createdAt DateTime             @default(now())
+  updatedAt DateTime             @updatedAt
+  members   OrganizationMember[]
+  projects  SocialProject[]
+}
+
+model OrganizationMember {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role           OrgRole
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([organizationId, userId])
+  @@index([userId])
+}
+
+model SocialProject {
+  id               String                @id @default(cuid())
+  organizationId   String
+  organization     Organization          @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name             String
+  slug             String
+  timezone         String                @default("Europe/Warsaw")
+  language         String                @default("pl")
+  isDemo           Boolean               @default(false)
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+  brand            BrandSettings?
+  members          SocialProjectMember[]
+  providerProfiles ProviderProfile[]
+  accounts         SocialAccount[]
+  media            SocialMedia[]
+  contentItems     ContentItem[]
+  posts            PlatformPost[]
+  comments         SocialComment[]
+  snapshots        AnalyticsSnapshot[]
+  knowledgeDocs    KnowledgeDoc[]
+
+  @@unique([organizationId, slug])
+}
+
+/// access to one project only (e.g. a client who approves their materials)
+model SocialProjectMember {
+  id        String        @id @default(cuid())
+  projectId String
+  project   SocialProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      OrgRole
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  @@unique([projectId, userId])
+  @@index([userId])
+}
+
+/// what the AI must know about the brand (used by every generation)
+model BrandSettings {
+  id                   String        @id @default(cuid())
+  projectId            String        @unique
+  project              SocialProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  description          String        @default("")
+  audience             String        @default("")
+  goal                 String        @default("")
+  tone                 String        @default("")
+  website              String        @default("")
+  products             String        @default("")
+  usp                  String        @default("")
+  preferredCta         String        @default("")
+  forbiddenPhrases     String[]      @default([])
+  keywords             String[]      @default([])
+  knowledgeBase        String        @default("")
+  moderationRules      String        @default("")
+  /// automatic replies: off by default, only for the categories the owner allows
+  autoReplyEnabled     Boolean       @default(false)
+  autoReplyCategories  String[]      @default([])
+  autoReplyMaxPerHour  Int           @default(5)
+  /// comments older than this are removed (GDPR retention)
+  commentRetentionDays Int           @default(365)
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+}
+
+model KnowledgeDoc {
+  id        String        @id @default(cuid())
+  projectId String
+  project   SocialProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name      String
+  content   String
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  @@index([projectId])
+}
+
+/// one Upload-Post user profile; a project has one per "slot" (several accounts of one platform need several profiles)
+model ProviderProfile {
+  id         String          @id @default(cuid())
+  projectId  String
+  project    SocialProject   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  provider   String          @default("upload-post")
+  /// stable profile id at the provider: project_<id> (+ _2, _3… for further slots)
+  username   String          @unique
+  label      String          @default("")
+  isDemo     Boolean         @default(false)
+  lastSyncAt DateTime?
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+  accounts   SocialAccount[]
+
+  @@index([projectId])
+}
+
+model SocialAccount {
+  id                String              @id @default(cuid())
+  projectId         String
+  project           SocialProject       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  providerProfileId String
+  providerProfile   ProviderProfile     @relation(fields: [providerProfileId], references: [id], onDelete: Cascade)
+  platform          SocialPlatform
+  /// the account / channel id at the platform (stable; checked before every publication)
+  platformAccountId String?
+  accountHandle     String?
+  displayName       String?
+  profileImage      String?
+  connectionStatus  AccountStatus       @default(CONNECTED)
+  capabilities      Json?
+  reauthRequired    Boolean             @default(false)
+  /// Facebook page / LinkedIn page (organization) the posts go to
+  pageId            String?
+  pageName          String?
+  isDemo            Boolean             @default(false)
+  lastSyncAt        DateTime?
+  disconnectedAt    DateTime?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  posts             PlatformPost[]
+  comments          SocialComment[]
+  snapshots         AnalyticsSnapshot[]
+
+  @@unique([providerProfileId, platform])
+  @@index([projectId])
+}
+
+model SocialMedia {
+  id               String               @id @default(cuid())
+  projectId        String
+  project          SocialProject        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  uploadedById     String?
+  title            String               @default("")
+  description      String               @default("")
+  originalName     String               @default("")
+  storageKey       String               @unique
+  mimeType         String               @default("video/mp4")
+  sizeBytes        BigInt               @default(0)
+  sourceUrl        String?
+  status           SocialMediaStatus    @default(UPLOADING)
+  error            String?
+  durationSec      Float?
+  width            Int?
+  height           Int?
+  fps              Float?
+  videoCodec       String?
+  audioCodec       String?
+  bitrate          Int?
+  thumbnailKey     String?
+  /// per platform: { ok, warnings[], errors[], conversion? } (rules module version inside)
+  checks           Json?
+  transcript       String?
+  transcriptStatus String?
+  /// imported from an AskBy Studio render (composition id)
+  importedFrom     String?
+  isDemo           Boolean              @default(false)
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+  variants         SocialMediaVariant[]
+  contentItems     ContentItem[]
+
+  @@index([projectId, createdAt])
+}
+
+/// derived file (conversion for a platform); the original is never modified
+model SocialMediaVariant {
+  id          String            @id @default(cuid())
+  mediaId     String
+  media       SocialMedia       @relation(fields: [mediaId], references: [id], onDelete: Cascade)
+  kind        String
+  storageKey  String?           @unique
+  status      SocialMediaStatus @default(PROCESSING)
+  width       Int?
+  height      Int?
+  durationSec Float?
+  sizeBytes   BigInt            @default(0)
+  error       String?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  @@unique([mediaId, kind])
+}
+
+/// one film and its publications (one PlatformPost per target account)
+model ContentItem {
+  id          String         @id @default(cuid())
+  projectId   String
+  project     SocialProject  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  mediaId     String
+  media       SocialMedia    @relation(fields: [mediaId], references: [id], onDelete: Cascade)
+  title       String         @default("")
+  /// the marketing goal / notes for the AI
+  goal        String         @default("")
+  createdById String?
+  isDemo      Boolean        @default(false)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  posts       PlatformPost[]
+  generations AiGeneration[]
+
+  @@index([projectId, createdAt])
+}
+
+model PlatformPost {
+  id               String                 @id @default(cuid())
+  contentItemId    String
+  contentItem      ContentItem            @relation(fields: [contentItemId], references: [id], onDelete: Cascade)
+  projectId        String
+  project          SocialProject          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  socialAccountId  String
+  socialAccount    SocialAccount          @relation(fields: [socialAccountId], references: [id], onDelete: Cascade)
+  platform         SocialPlatform
+  status           PostStatus             @default(DRAFT)
+  title            String                 @default("")
+  description      String                 @default("")
+  hashtags         String[]               @default([])
+  cta              String                 @default("")
+  firstComment     String                 @default("")
+  /// cover: second of the film used as the thumbnail (and/or a custom image)
+  coverTimestamp   Float?
+  /// platform options (YouTube tags / privacy, TikTok privacy, IG share to feed…)
+  options          Json                   @default("{}")
+  /// which file goes out: the original or a converted variant
+  mediaVariantId   String?
+  scheduledAt      DateTime?
+  revision         Int                    @default(1)
+  /// hash of everything an approval covers (texts, options, file, account, date)
+  contentHash      String                 @default("")
+  approvedRevision Int?
+  approvedHash     String?
+  approvedAt       DateTime?
+  approvedById     String?
+  publishedUrl     String?
+  /// native post id at the platform (from the provider)
+  platformPostId   String?
+  publishedAt      DateTime?
+  errorMessage     String?
+  warnings         Json?
+  /// monitoring: next analytics checkpoint / next comments poll
+  nextMetricsAt    DateTime?
+  nextCommentsAt   DateTime?
+  isDemo           Boolean                @default(false)
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+  revisions        ContentRevision[]
+  approvals        Approval[]
+  publications     ScheduledPublication[]
+  snapshots        AnalyticsSnapshot[]
+  comments         SocialComment[]
+  generations      AiGeneration[]
+
+  @@unique([contentItemId, socialAccountId])
+  @@index([projectId, status])
+  @@index([scheduledAt])
+  @@index([nextMetricsAt])
+  @@index([nextCommentsAt])
+}
+
+model ContentRevision {
+  id             String       @id @default(cuid())
+  platformPostId String
+  platformPost   PlatformPost @relation(fields: [platformPostId], references: [id], onDelete: Cascade)
+  revision       Int
+  snapshot       Json
+  contentHash    String
+  editedById     String?
+  reason         String       @default("")
+  createdAt      DateTime     @default(now())
+
+  @@unique([platformPostId, revision])
+}
+
+model Approval {
+  id                String           @id @default(cuid())
+  platformPostId    String
+  platformPost      PlatformPost     @relation(fields: [platformPostId], references: [id], onDelete: Cascade)
+  /// the exact version decided on
+  revision          Int
+  contentHash       String
+  decision          ApprovalDecision
+  comment           String           @default("")
+  userId            String
+  invalidatedAt     DateTime?
+  invalidatedReason String?
+  createdAt         DateTime         @default(now())
+
+  @@index([platformPostId, createdAt])
+}
+
+/// one order at the provider for one post (a new one after a safe cancel + re-order)
+model ScheduledPublication {
+  id                      String               @id @default(cuid())
+  platformPostId          String
+  platformPost            PlatformPost         @relation(fields: [platformPostId], references: [id], onDelete: Cascade)
+  platform                SocialPlatform
+  socialAccountId         String
+  providerProfileUsername String
+  providerJobId           String?              @unique
+  providerRequestId       String?              @unique
+  /// stable correlation id: smp_<post>_<generation>
+  externalId              String               @unique
+  /// protects against a repeated request (timeouts): same key = same order at the provider
+  idempotencyKey          String               @unique
+  generation              Int
+  scheduledAt             DateTime
+  status                  ProviderJobStatus    @default(SCHEDULING)
+  approvalId              String?
+  contentHash             String
+  publishedUrl            String?
+  platformPostId_native   String?
+  errorMessage            String?
+  warnings                Json?
+  isDemo                  Boolean              @default(false)
+  lastCheckedAt           DateTime?
+  createdAt               DateTime             @default(now())
+  updatedAt               DateTime             @updatedAt
+  attempts                PublicationAttempt[]
+
+  @@unique([platformPostId, generation])
+  @@index([status])
+}
+
+/// every request to the provider for an order (audit + "check before retry")
+model PublicationAttempt {
+  id                     String               @id @default(cuid())
+  scheduledPublicationId String
+  publication            ScheduledPublication @relation(fields: [scheduledPublicationId], references: [id], onDelete: Cascade)
+  kind                   String
+  idempotencyKey         String?
+  httpStatus             Int?
+  ok                     Boolean              @default(false)
+  request                Json?
+  response               Json?
+  error                  String?
+  durationMs             Int?
+  createdAt              DateTime             @default(now())
+
+  @@index([scheduledPublicationId, createdAt])
+}
+
+/// metrics at one moment; a metric the platform does not report stays null (never 0)
+model AnalyticsSnapshot {
+  id                 String         @id @default(cuid())
+  projectId          String
+  project            SocialProject  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  platformPostId     String?
+  platformPost       PlatformPost?  @relation(fields: [platformPostId], references: [id], onDelete: Cascade)
+  socialAccountId    String
+  socialAccount      SocialAccount  @relation(fields: [socialAccountId], references: [id], onDelete: Cascade)
+  platform           SocialPlatform
+  /// 1h | 24h | 72h | 7d | 30d | refresh | account
+  checkpoint         String
+  capturedAt         DateTime       @default(now())
+  views              Int?
+  reach              Int?
+  impressions        Int?
+  likes              Int?
+  comments           Int?
+  shares             Int?
+  saves              Int?
+  watchTimeSec       Float?
+  avgViewDurationSec Float?
+  engagementRate     Float?
+  followers          Int?
+  /// metric names the platform does not support for this post
+  unsupported        String[]       @default([])
+  raw                Json?
+  isDemo             Boolean        @default(false)
+
+  @@index([platformPostId, capturedAt])
+  @@index([projectId, capturedAt])
+  @@index([socialAccountId, capturedAt])
+}
+
+model SocialComment {
+  id              String         @id @default(cuid())
+  projectId       String
+  project         SocialProject  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  socialAccountId String
+  socialAccount   SocialAccount  @relation(fields: [socialAccountId], references: [id], onDelete: Cascade)
+  platformPostId  String?
+  platformPost    PlatformPost?  @relation(fields: [platformPostId], references: [id], onDelete: SetNull)
+  platform        SocialPlatform
+  nativeId        String
+  parentNativeId  String?
+  authorName      String         @default("")
+  authorHandle    String?
+  authorId        String?
+  text            String
+  likeCount       Int?
+  postedAt        DateTime
+  status          CommentStatus  @default(NEW)
+  /// question | positive | negative | spam | purchase_intent | contact_request | needs_human
+  category        String?
+  sentiment       String?
+  isQuestion      Boolean        @default(false)
+  isLead          Boolean        @default(false)
+  needsHuman      Boolean        @default(false)
+  language        String?
+  aiReason        String?
+  classifiedAt    DateTime?
+  /// written by our own account (a reply sent from the app or natively)
+  isOwn           Boolean        @default(false)
+  readAt          DateTime?
+  isDemo          Boolean        @default(false)
+  raw             Json?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  replies         CommentReply[]
+
+  @@unique([socialAccountId, nativeId])
+  @@index([projectId, status, postedAt])
+}
+
+model CommentReply {
+  id             String        @id @default(cuid())
+  commentId      String
+  comment        SocialComment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  text           String
+  /// AI | HUMAN | AUTO
+  source         String
+  status         ReplyStatus   @default(DRAFT)
+  /// PUBLIC = under the comment; PRIVATE = Instagram DM to the author
+  visibility     String        @default("PUBLIC")
+  aiGenerationId String?
+  createdById    String?
+  decidedById    String?
+  decidedAt      DateTime?
+  sentAt         DateTime?
+  nativeId       String?
+  error          String?
+  idempotencyKey String        @unique
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@index([commentId])
+}
+
+model AiGeneration {
+  id             String        @id @default(cuid())
+  projectId      String
+  /// POSTS | REGENERATE | HOOKS | HASHTAGS | COMMENT_CLASSIFY | COMMENT_REPLY | INSIGHTS
+  kind           String
+  contentItemId  String?
+  contentItem    ContentItem?  @relation(fields: [contentItemId], references: [id], onDelete: Cascade)
+  platformPostId String?
+  platformPost   PlatformPost? @relation(fields: [platformPostId], references: [id], onDelete: Cascade)
+  commentId      String?
+  model          String        @default("")
+  rulesVersion   String        @default("")
+  input          Json?
+  output         Json?
+  error          String?
+  userId         String?
+  createdAt      DateTime      @default(now())
+
+  @@index([projectId, kind, createdAt])
+  @@index([platformPostId, createdAt])
+}
+
+model Notification {
+  id             String    @id @default(cuid())
+  userId         String
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organizationId String?
+  projectId      String?
+  type           String
+  title          String
+  body           String    @default("")
+  link           String?
+  /// one notification per user and event (no duplicates)
+  dedupeKey      String
+  readAt         DateTime?
+  emailedAt      DateTime?
+  createdAt      DateTime  @default(now())
+
+  @@unique([userId, dedupeKey])
+  @@index([userId, readAt, createdAt])
+}
+
+model WebhookEvent {
+  id             String    @id @default(cuid())
+  provider       String    @default("upload-post")
+  /// delivery id header, or a hash of the signed body when the provider sends none
+  deliveryId     String    @unique
+  eventType      String    @default("")
+  signatureValid Boolean   @default(false)
+  rawBody        String
+  headers        Json?
+  /// RECEIVED | PROCESSED | IGNORED | FAILED
+  status         String    @default("RECEIVED")
+  error          String?
+  receivedAt     DateTime  @default(now())
+  processedAt    DateTime?
+
+  @@index([status, receivedAt])
+}
+
+model AuditLog {
+  id             String   @id @default(cuid())
+  organizationId String?
+  projectId      String?
+  userId         String?
+  action         String
+  entityType     String
+  entityId       String?
+  data           Json?
+  ip             String?
+  createdAt      DateTime @default(now())
+
+  @@index([projectId, createdAt])
+  @@index([organizationId, createdAt])
+}
+
+/// invitation of a person to an organization or one project (they set their own password)
+model UserInvite {
+  id             String    @id @default(cuid())
+  email          String
+  name           String    @default("")
+  tokenHash      String    @unique
+  organizationId String?
+  projectId      String?
+  role           OrgRole
+  invitedById    String?
+  expiresAt      DateTime
+  acceptedAt     DateTime?
+  createdAt      DateTime  @default(now())
+
+  @@index([email])
+}
+
+/// DEMO provider state (mock adapter): profiles, connected accounts, orders, comments
+model DemoProviderRecord {
+  id        String   @id @default(cuid())
+  kind      String
+  key       String   @unique
+  data      Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([kind])
 }

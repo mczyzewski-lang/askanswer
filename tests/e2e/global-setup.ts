@@ -7,7 +7,7 @@ export default async function globalSetup() {
   if (!/askby_test/.test(url)) throw new Error("Refusing to reset a non-test database: " + url);
   execSync("npx prisma migrate deploy", { stdio: "inherit", env: process.env });
   execSync(
-    `psql "${url.replace("?schema=public", "")}" -v ON_ERROR_STOP=1 -c 'TRUNCATE "User","Expert","Theme","Project","Category","Question","Invitation","Recording","RecordingTake","MediaAsset","Transcript","TranscriptWord","SubtitleSegment","SilenceSuggestion","VideoComposition","RenderJob","Job","Subcategory","VoiceCollection","VoiceCollectionItem" CASCADE'`,
+    `psql "${url.replace("?schema=public", "")}" -v ON_ERROR_STOP=1 -c 'TRUNCATE "User","Expert","Theme","Project","Category","Question","Invitation","Recording","RecordingTake","MediaAsset","Transcript","TranscriptWord","SubtitleSegment","SilenceSuggestion","VideoComposition","RenderJob","Job","Subcategory","VoiceCollection","VoiceCollectionItem","Organization","WebhookEvent","AuditLog","UserInvite","DemoProviderRecord" CASCADE'`,
     { stdio: "inherit" },
   );
   fs.rmSync("storage-test", { recursive: true, force: true });

@@ -9,6 +9,7 @@ const items = [
   { href: "/admin/experts", label: "Eksperci", match: (p: string) => p.startsWith("/admin/experts") },
   { href: "/admin/voices", label: "Głosy", match: (p: string) => p.startsWith("/admin/voices") },
   { href: "/admin/themes", label: "Motywy", match: (p: string) => p.startsWith("/admin/themes") },
+  { href: "/social", label: "Social Media", match: () => false },
 ];
 
 export function AdminNav() {

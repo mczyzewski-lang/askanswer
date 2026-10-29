@@ -21,6 +21,11 @@ const testEnv = {
   ANTHROPIC_API_KEY: "",
   OPENAI_API_KEY: "sk-mock-openai-key-0123456789",
   OPENAI_BASE_URL: "http://127.0.0.1:4010/oai/v1",
+  // Social Media Studio: the real Upload-Post adapter, pointed at the mock (never the real API)
+  UPLOAD_POST_API_KEY: "up-mock-key-123",
+  UPLOAD_POST_BASE_URL: "http://127.0.0.1:4010/uploadpost/api",
+  UPLOAD_POST_WEBHOOK_SECRET: "whsec_e2e_secret_0123456789",
+  SOCIAL_TICK_MS: "4000",
   NEXT_TELEMETRY_DISABLED: "1",
 };
 Object.assign(process.env, testEnv);

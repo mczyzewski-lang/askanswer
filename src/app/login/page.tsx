@@ -8,7 +8,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
         <div className="mb-8 text-center">
           <div className="mx-auto mb-4 flex h-11 w-11 items-center justify-center rounded-2xl bg-ink text-white font-display font-bold">A</div>
           <h1 className="font-display text-2xl font-semibold">AskBy Studio</h1>
-          <p className="mt-1 text-sm text-muted">Zaloguj się do panelu administratora</p>
+          <p className="mt-1 text-sm text-muted">Zaloguj się do AskBy Studio i Social Media Studio</p>
         </div>
         <LoginForm next={next && next.startsWith("/") && !next.startsWith("//") ? next : "/admin"} />
       </div>

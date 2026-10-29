@@ -69,7 +69,52 @@ async function handle(job: { id: string; type: string; payload: unknown }) {
     case "generate-infographic":
       return generateInfographic(job.id, job.payload as Parameters<typeof generateInfographic>[1]);
     default:
+      if (job.type.startsWith("social-")) return handleSocial(job.type, job.payload as Record<string, string>);
       throw new PermanentError(`Unknown job type ${job.type}`);
+  }
+}
+
+/** Social Media Studio jobs; a refusal by the business rules (HttpError) is a final answer, not a crash */
+async function handleSocial(type: string, p: Record<string, string>) {
+  const { HttpError } = await import("../lib/server/errors");
+  try {
+    switch (type) {
+      case "social-media":
+        return (await import("../lib/server/social/media")).processMedia(p.mediaId);
+      case "social-convert":
+        return (await import("../lib/server/social/media")).convertMedia(p.variantId);
+      case "social-transcribe":
+        return (await import("../lib/server/social/media")).transcribeMedia(p.mediaId);
+      case "social-import-url":
+        return (await import("../lib/server/social/media")).importFromUrl(p.mediaId);
+      case "social-generate": {
+        const { generatePosts } = await import("../lib/server/social/ai");
+        const { applyGenerated } = await import("../lib/server/social/content");
+        const r = await generatePosts(p.contentItemId, p.userId ?? null, (p as unknown as { postIds?: string[] }).postIds);
+        return applyGenerated(p.contentItemId, r, p.userId ?? null);
+      }
+      case "social-schedule":
+        return (await import("../lib/server/social/publisher")).schedulePost(p.postId);
+      case "social-cancel":
+        return (await import("../lib/server/social/publisher")).cancelPublication(p.publicationId, (p.reason as "user" | "edit" | "replace") ?? "user");
+      case "social-check":
+        return (await import("../lib/server/social/publisher")).checkPublication(p.publicationId);
+      case "social-webhook":
+        return (await import("../lib/server/social/webhooks")).processWebhookEvent(p.eventId);
+      case "social-metrics":
+        return (await import("../lib/server/social/analytics")).collectMetrics(p.postId);
+      case "social-comments":
+        return (await import("../lib/server/social/comments")).pollComments(p.postId);
+      case "social-reply":
+        return (await import("../lib/server/social/comments")).sendReply(p.replyId);
+      case "social-tick":
+        return (await import("../lib/server/social/tick")).socialTick();
+      default:
+        throw new PermanentError(`Unknown job type ${type}`);
+    }
+  } catch (e) {
+    if (e instanceof HttpError && e.status < 500 && e.status !== 429) return { skipped: e.message };
+    throw e;
   }
 }
 
@@ -83,8 +128,8 @@ async function sweepTemp() {
   }
 }
 
-/** Two lanes in one process: FFmpeg/transcription work, and AI jobs that mostly wait on APIs. */
-async function loop(lane: "media" | "ai") {
+/** Three lanes in one process: FFmpeg/transcription work, AI jobs, and social provider API calls. */
+async function loop(lane: "media" | "ai" | "social") {
   console.log(`[worker] ${workerId} ${lane} lane started`);
   while (!stopping) {
     let job;
@@ -134,7 +179,19 @@ for (const sig of ["SIGINT", "SIGTERM"] as const) {
 
 void sweepTemp();
 setInterval(() => void sweepTemp(), 3600_000).unref();
-for (const lane of ["media", "ai"] as const)
+// Social Media Studio: due publications, checks, metrics, comments — a "social-tick" job per interval
+const TICK_MS = Number(process.env.SOCIAL_TICK_MS ?? 60_000);
+async function socialTick() {
+  try {
+    const { scheduleTick } = await import("../lib/server/social/tick");
+    await scheduleTick(TICK_MS);
+  } catch (e) {
+    console.error("[worker] social tick failed", (e as Error).message);
+  }
+}
+setTimeout(() => void socialTick(), 5000).unref();
+setInterval(() => void socialTick(), TICK_MS).unref();
+for (const lane of ["media", "ai", "social"] as const)
   loop(lane).catch((e) => {
     console.error(e);
     process.exit(1);

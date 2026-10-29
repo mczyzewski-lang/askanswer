@@ -15,6 +15,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { socialAi, uploadPostMock } from "./upload-post-mock";
 
 const PORT = Number(process.env.MOCK_PORT ?? 4010);
 const ff = process.env.FFMPEG_PATH || "ffmpeg";
@@ -132,6 +133,8 @@ const server = http.createServer(async (req, res) => {
     res.end(JSON.stringify(data));
   };
   try {
+    // ---- MOCK Upload-Post (Social Media Studio): /uploadpost/api/* + test controls ----
+    if (url.pathname.startsWith("/uploadpost/")) return uploadPostMock(req, res, url, json);
     // ---- MOCK Higgsfield (text-to-video): POST /{model} → request_id; GET /requests/:id/status ----
     if (url.pathname.startsWith("/hf/")) return higgsfield(req, res, url.pathname.slice(3), json);
     // ---- MOCK OpenAI images: POST /oai/v1/images/generations → base64 PNG; GET /oai/v1/models/:id ----
@@ -152,6 +155,8 @@ const server = http.createServer(async (req, res) => {
         const body = JSON.parse((await readBody(req)).toString() || "{}");
         const user = String(body.messages?.find((m: { role: string }) => m.role === "user")?.content ?? "");
         oaiLog.push({ model: body.model, size: "", prompt: String(body.messages?.[0]?.content ?? "").slice(0, 400) + "\n---\n" + user, n: 1 });
+        const social = socialAi(String(body.messages?.[0]?.content ?? ""), user);
+        if (social) return json(200, { id: "chatcmpl-mock", object: "chat.completion", model: body.model, choices: [{ index: 0, message: { role: "assistant", content: JSON.stringify(social) }, finish_reason: "stop" }] });
         const hook = /\[HOOK\] (.*)/.exec(user)?.[1] ?? "";
         const review = {
           score: 54,

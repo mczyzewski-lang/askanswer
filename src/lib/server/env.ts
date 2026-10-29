@@ -105,6 +105,38 @@ export const env = {
   get claudeModel() {
     return str("CLAUDE_MODEL", "claude-opus-5-5");
   },
+  /** Upload-Post (Social Media Studio). Without a key the studio runs in DEMO mode (mock provider). */
+  get uploadPostKey() {
+    return cleanSecret(str("UPLOAD_POST_API_KEY"), "UPLOAD_POST_API_KEY");
+  },
+  get uploadPostBaseUrl() {
+    return str("UPLOAD_POST_BASE_URL", "https://api.upload-post.com/api").replace(/\/$/, "");
+  },
+  /** shared secret for the webhook signature (HMAC SHA-256), if the provider signs deliveries */
+  get uploadPostWebhookSecret() {
+    return cleanSecret(str("UPLOAD_POST_WEBHOOK_SECRET"), "UPLOAD_POST_WEBHOOK_SECRET");
+  },
+  /** secret token in the webhook URL (?token=…) — second factor, and the only one if deliveries are unsigned */
+  get uploadPostWebhookToken() {
+    return cleanSecret(str("UPLOAD_POST_WEBHOOK_TOKEN"), "UPLOAD_POST_WEBHOOK_TOKEN");
+  },
+  get uploadPostSignatureHeader() {
+    return str("UPLOAD_POST_SIGNATURE_HEADER", "x-upload-post-signature").toLowerCase();
+  },
+  get uploadPostTimestampHeader() {
+    return str("UPLOAD_POST_TIMESTAMP_HEADER", "x-upload-post-timestamp").toLowerCase();
+  },
+  get uploadPostDeliveryHeader() {
+    return str("UPLOAD_POST_DELIVERY_HEADER", "x-upload-post-delivery").toLowerCase();
+  },
+  /** send our stable external_id with every order (not confirmed in the provider's public SDK — off by default) */
+  get uploadPostSendExternalId() {
+    return str("UPLOAD_POST_SEND_EXTERNAL_ID", "false") === "true";
+  },
+  /** force DEMO mode even with a key (e.g. a staging environment) */
+  get socialDemoForced() {
+    return str("SOCIAL_DEMO_MODE", "false") === "true";
+  },
   get storageDriver(): "local" | "s3" {
     return str("STORAGE_DRIVER", "local") === "s3" ? "s3" : "local";
   },
@@ -151,6 +183,11 @@ export function elevenLabsConfigured(): boolean {
 
 export function higgsfieldConfigured(): boolean {
   return env.higgsfieldCredentials.length >= 8;
+}
+
+/** Social Media Studio talks to the real Upload-Post API only with a key and without SOCIAL_DEMO_MODE. */
+export function uploadPostLive(): boolean {
+  return env.uploadPostKey.length >= 8 && !env.socialDemoForced;
 }
 
 export function openaiConfigured(): boolean {

@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+/* Social Media Studio dark mode: html[data-theme=dark] (set by the /social shell) */
+@custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
+
 /* Openly licensed (SIL OFL) fonts, shared with the server renderer for preview/export parity */
 @font-face { font-family: "Inter"; src: url("/fonts/Inter-400.ttf") format("truetype"); font-weight: 400; font-style: normal; font-display: swap; }
 @font-face { font-family: "Inter"; src: url("/fonts/Inter-500.ttf") format("truetype"); font-weight: 500; font-style: normal; font-display: swap; }
@@ -66,3 +69,23 @@ input[type="range"].range-light { background: var(--color-line); }
 .safe-top { padding-top: max(12px, env(safe-area-inset-top)); }
 @keyframes notify-in { from { opacity: 0; transform: translateY(-8px) scale(.98) } to { opacity: 1; transform: none } }
 .notify-in { animation: notify-in .28s cubic-bezier(.2,.8,.2,1); }
+
+/* Social Media Studio dark theme: the colour tokens are swapped, so every component (also the shared
+   UI kit: cards, dialogs, inputs) follows. "white" is the surface colour, "ink" the text colour. */
+html[data-theme="dark"] {
+  color-scheme: dark;
+  --color-white: #17181c;
+  --color-paper: #0f1013;
+  --color-ink: #ececef;
+  --color-line: #2a2b31;
+  --color-muted: #9a9ca5;
+  --color-brand: #8b8bf0;
+  --color-brand-soft: #24244a;
+}
+html[data-theme="dark"] body { background: var(--color-paper); color: var(--color-ink); }
+html[data-theme="dark"] .bg-black\/\[\.03\], html[data-theme="dark"] .hover\:bg-black\/\[\.03\]:hover, html[data-theme="dark"] .hover\:bg-black\/\[\.05\]:hover, html[data-theme="dark"] .bg-black\/\[\.05\] { background-color: rgb(255 255 255 / .06); }
+html[data-theme="dark"] .bg-black\/\[\.06\] { background-color: rgb(255 255 255 / .08); }
+
+/* chart series hue (validated: light #2a78d6 on white, dark #3987e5 on #17181c; >= 3:1) */
+:root { --viz-1: #2a78d6; --viz-grid: #ecebe8; }
+html[data-theme="dark"] { --viz-1: #3987e5; --viz-grid: #2a2b31; }

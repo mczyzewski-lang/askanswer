@@ -12,7 +12,17 @@ export async function currentUser() {
   return prisma.user.findUnique({ where: { id: s.uid }, select: { id: true, email: true, name: true, role: true } });
 }
 
+/** staff of the video studio (ADMIN / EDITOR); MEMBER accounts only see Social Media Studio */
+export const isStaff = (role: string) => role === "ADMIN" || role === "EDITOR";
+
 export async function requireAdmin() {
+  const u = await currentUser();
+  if (!u) throw new HttpError(401, "Wymagane logowanie");
+  if (!isStaff(u.role)) throw new HttpError(403, "Brak dostępu");
+  return u;
+}
+
+export async function requireUser() {
   const u = await currentUser();
   if (!u) throw new HttpError(401, "Wymagane logowanie");
   return u;
