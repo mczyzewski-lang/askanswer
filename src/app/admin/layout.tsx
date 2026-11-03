@@ -6,6 +6,7 @@ import { AdminNav } from "@/components/admin/nav";
 import { ActivityNotifier } from "@/components/admin/activity-notifier";
 import { diskUsage } from "@/lib/server/storage";
 import { env } from "@/lib/server/env";
+import { appCommit } from "@/lib/server/version";
 
 export const dynamic = "force-dynamic";
 
@@ -25,6 +26,11 @@ export default async function AdminLayout({ children }: { children: React.ReactN
           </Link>
           <AdminNav />
           <div className="ml-auto flex items-center gap-3 text-sm">
+            {appCommit() ? (
+              <span className="hidden font-mono text-[11px] text-muted lg:inline" title="Wdrożona wersja (commit) — porównaj z ostatnim commitem na GitHubie" data-testid="app-version">
+                v {appCommit()}
+              </span>
+            ) : null}
             {lowDisk ? (
               <span
                 className="rounded-full bg-red-50 px-2.5 py-1 text-xs font-medium text-red-700"

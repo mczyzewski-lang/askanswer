@@ -21,6 +21,9 @@ RUN npm ci \
  && rm -f linux/*/libonnxruntime_providers_cuda.so linux/*/libonnxruntime_providers_tensorrt.so
 
 COPY . .
+# the deployed commit, shown in the admin header and at /api/version (Railway passes it as a build argument)
+ARG RAILWAY_GIT_COMMIT_SHA=""
+ENV APP_COMMIT=$RAILWAY_GIT_COMMIT_SHA
 RUN npm run build
 
 ENV NODE_ENV=production
