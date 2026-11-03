@@ -29,6 +29,7 @@ const profiles = new Map<string, Record<string, Record<string, unknown>>>();
 const jobs = new Map<string, Job>();
 const idem = new Map<string, string>();
 const log = { uploads: [] as Array<{ user: string; platform: string; idempotencyKey: string; scheduled_date: string; title: string; description: string; external_id?: string; jobId: string; duplicate: boolean }>, cancels: [] as string[], patches: [] as Array<{ id: string; body: unknown }>, replies: [] as Array<{ path: string; body: unknown }> };
+const extraComments: Array<{ id: string; text: string; username: string; timestamp: string; like_count: number }> = [];
 const ownReplies = new Map<string, Array<Record<string, unknown>>>();
 
 function readBody(req: http.IncomingMessage): Promise<Buffer> {
@@ -85,6 +86,12 @@ export async function uploadPostMock(req: http.IncomingMessage, res: http.Server
     return res.end();
   }
   if (p === "/_log") return json(200, { ...log, jobs: [...jobs.values()] });
+  // test control: a comment that appears under every published post from now on
+  if (p === "/_comment" && req.method === "POST") {
+    const b = JSON.parse((await readBody(req)).toString() || "{}");
+    extraComments.push({ id: id("cx"), text: String(b.text ?? ""), username: String(b.username ?? "anon"), timestamp: new Date().toISOString(), like_count: 0 });
+    return json(200, { ok: true });
+  }
   if (p === "/_control" && req.method === "POST") {
     const b = JSON.parse((await readBody(req)).toString() || "{}");
     const j = jobs.get(b.jobId);
@@ -200,7 +207,7 @@ export async function uploadPostMock(req: http.IncomingMessage, res: http.Server
       { id: `c2_${postId}`, text: "Świetny materiał, dzięki!", username: "tomek", timestamp: new Date(Date.now() - 300e3).toISOString(), like_count: 5 },
       { id: `c3_${postId}`, text: "Dostałem pozew z sądu, co mam zrobić w mojej sprawie?", username: "marek", timestamp: new Date(Date.now() - 200e3).toISOString(), like_count: 0 },
     ];
-    return json(200, { success: true, comments: [...base, ...(ownReplies.get(postId) ?? [])] });
+    return json(200, { success: true, comments: [...base, ...extraComments.map((c) => ({ ...c, id: `${c.id}_${postId}` })), ...(ownReplies.get(postId) ?? [])] });
   }
   if ((p === "/api/uploadposts/comments/create" || p === "/api/uploadposts/comments/public-reply" || p === "/api/uploadposts/comments/reply") && req.method === "POST") {
     const b = JSON.parse((await readBody(req)).toString() || "{}");

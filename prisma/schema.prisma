@@ -674,6 +674,7 @@ model SocialProject {
   comments         SocialComment[]
   snapshots        AnalyticsSnapshot[]
   knowledgeDocs    KnowledgeDoc[]
+  automations      CommentAutomation[]
 
   @@unique([organizationId, slug])
 }
@@ -1068,13 +1069,36 @@ model SocialComment {
   @@index([projectId, status, postedAt])
 }
 
+/// "Comment PLAN and get the link": a comment with the keyword gets the owner's ready reply automatically
+model CommentAutomation {
+  id          String           @id @default(cuid())
+  projectId   String
+  project     SocialProject    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  keyword     String
+  /// reply under the comment (may carry the lead magnet's link — written by a person)
+  publicReply String           @default("")
+  /// Instagram only: private message (DM) to the comment's author
+  dmReply     String           @default("")
+  /// empty = every platform of the project
+  platforms   SocialPlatform[] @default([])
+  enabled     Boolean          @default(true)
+  sentCount   Int              @default(0)
+  lastSentAt  DateTime?
+  createdById String?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@index([projectId])
+}
+
 model CommentReply {
   id             String        @id @default(cuid())
   commentId      String
   comment        SocialComment @relation(fields: [commentId], references: [id], onDelete: Cascade)
   text           String
-  /// AI | HUMAN | AUTO
+  /// AI | HUMAN | AUTO | KEYWORD (a comment automation)
   source         String
+  automationId   String?
   status         ReplyStatus   @default(DRAFT)
   /// PUBLIC = under the comment; PRIVATE = Instagram DM to the author
   visibility     String        @default("PUBLIC")

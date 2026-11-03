@@ -11,6 +11,7 @@
  *    for complaints, legal / medical matters, personal data, conflicts, unusual or unverified things;
  *    limited per hour, never the same text twice, never in a thread with our own reply.
  */
+import { runKeywordAutomations } from "./automations";
 import { Prisma } from "@prisma/client";
 import { prisma } from "../db";
 import { HttpError } from "../errors";
@@ -79,13 +80,15 @@ export async function pollComments(postId: string) {
     throw e;
   }
   await prisma.platformPost.update({ where: { id: postId }, data: { nextCommentsAt: nextPollAt(post.publishedAt, post.platform as Platform) } });
+  // "Skomentuj PLAN": ready replies first (no AI needed), then classification
+  for (const id of fresh) await runKeywordAutomations(id).catch((e) => console.error("[social] keyword reply", (e as Error).message));
   if (fresh.length) await classifyNew(post.projectId, fresh);
   return { new: fresh.length };
 }
 
 /** classify + set the handling status; notify about leads and sensitive comments */
 export async function classifyNew(projectId: string, ids: string[]) {
-  const rows = await prisma.socialComment.findMany({ where: { id: { in: ids } }, include: { platformPost: { select: { description: true, contentItem: { select: { title: true } } } } } });
+  const rows = await prisma.socialComment.findMany({ where: { id: { in: ids } }, include: { platformPost: { select: { description: true, contentItem: { select: { title: true } } } }, replies: { select: { status: true } } } });
   let classes: Awaited<ReturnType<typeof classifyComments>> = [];
   try {
     classes = await classifyComments(projectId, rows.map((r) => ({ id: r.id, text: r.text, postContext: r.platformPost?.contentItem.title ?? "", hadPersonalData: hasPersonal(r.text) })));
@@ -98,8 +101,11 @@ export async function classifyNew(projectId: string, ids: string[]) {
     const row = rows.find((r) => r.id === c.id);
     if (!row) continue;
     const needsHuman = c.needsHuman || c.category === "needs_human" || c.sensitive.length > 0;
-    const status = needsHuman ? "ESCALATED" : c.category === "question" || c.category === "purchase_intent" || c.category === "contact_request" ? "NEEDS_REPLY" : "NEW";
-    await prisma.socialComment.update({ where: { id: row.id }, data: { category: c.category, sentiment: c.sentiment, isQuestion: c.isQuestion || c.category === "question", isLead: c.isLead || c.category === "purchase_intent" || c.category === "contact_request", needsHuman, language: c.language, aiReason: [c.reason, c.sensitive.length ? `wrażliwe: ${c.sensitive.join(", ")}` : ""].filter(Boolean).join(" · ").slice(0, 500), classifiedAt: new Date(), status } });
+    // already answered (a comment automation): the classification does not reopen it
+    const answered = row.replies.some((r) => r.status !== "REJECTED" && r.status !== "FAILED");
+    const status = answered ? row.status : needsHuman ? "ESCALATED" : c.category === "question" || c.category === "purchase_intent" || c.category === "contact_request" ? "NEEDS_REPLY" : "NEW";
+    await prisma.socialComment.update({ where: { id: row.id }, data: { category: c.category, sentiment: c.sentiment, isQuestion: c.isQuestion || c.category === "question", isLead: c.isLead || c.category === "purchase_intent" || c.category === "contact_request", needsHuman, language: c.language, aiReason: [row.aiReason?.startsWith("Zawiera słowo") ? row.aiReason : "", c.reason, c.sensitive.length ? `wrażliwe: ${c.sensitive.join(", ")}` : ""].filter(Boolean).join(" · ").slice(0, 500), classifiedAt: new Date(), status } });
+    if (answered) continue; // handled by a comment automation: no lead / attention notice, no AI reply
     if (c.isLead || c.category === "purchase_intent" || c.category === "contact_request")
       await notify({ projectId, type: "lead_comment", title: `Potencjalny lead (${PLATFORM_META[row.platform as Platform].name})`, body: redactPersonal(row.text).slice(0, 200), link: `/social/comments?comment=${row.id}`, dedupeKey: `lead:${row.id}`, perm: "comments.reply" });
     else if (needsHuman || c.sentiment === "negative")

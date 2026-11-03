@@ -8,6 +8,7 @@ import { api, cn } from "@/lib/utils";
 import { PLATFORMS, PLATFORM_META, type Platform } from "@/lib/social/platforms";
 import { ORG_ROLES, ROLE_LABELS, type OrgRole } from "@/lib/social/rbac";
 import { useSocial } from "./shell";
+import { Automations } from "./automations";
 import { DemoBadge, ErrorBox, Field, Loading, Metric, PageHeader, Panel, Pill, PlatformIcon, Tabs, useApi } from "./ui";
 
 export interface AccountView {
@@ -44,7 +45,7 @@ interface Result {
   lastUpdated: string | null;
 }
 
-type Tab = "overview" | "accounts" | "brand" | "team" | "danger";
+type Tab = "overview" | "accounts" | "brand" | "automations" | "team" | "danger";
 
 export function ProjectView({ id }: { id: string }) {
   const search = useSearchParams();
@@ -77,6 +78,7 @@ export function ProjectView({ id }: { id: string }) {
           ["overview", "Przegląd"],
           ["accounts", `Konta (${data.accounts.filter((a) => a.status !== "DISCONNECTED").length})`],
           ["brand", "Ustawienia marki"],
+          ...(perms.has("comments.view") ? ([["automations", "Automatyzacje"]] as Array<[Tab, string]>) : []),
           ...(perms.has("members.manage") ? ([["team", "Zespół"]] as Array<[Tab, string]>) : []),
           ...(perms.has("project.delete") ? ([["danger", "Usuń projekt"]] as Array<[Tab, string]>) : []),
         ]}
@@ -84,6 +86,7 @@ export function ProjectView({ id }: { id: string }) {
       {tab === "overview" ? <Overview data={data} /> : null}
       {tab === "accounts" ? <Accounts data={data} reload={reload} /> : null}
       {tab === "brand" ? <Brand projectId={id} /> : null}
+      {tab === "automations" ? <Automations projectId={id} tz={data.project.timezone} /> : null}
       {tab === "team" ? <Team data={data} reload={reload} /> : null}
       {tab === "danger" ? <Danger data={data} /> : null}
     </>

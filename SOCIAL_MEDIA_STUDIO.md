@@ -232,6 +232,14 @@ npx next build
 - nigdy dla skarg, spraw prawnych, medycznych, danych osobowych, konfliktów ani sytuacji nietypowych;
 - limit na godzinę, żadnego identycznego tekstu w ciągu 24 h, nic w wątku z naszą odpowiedzią, żadnych linków ani danych kontaktowych.
 
+### Automatyzacje komentarzy („Skomentuj PLAN”) — dodane 03.11.2026
+- Projekt → zakładka **Automatyzacje**: słowo (np. PLAN) → gotowa odpowiedź pod komentarzem i/lub wiadomość prywatna (Instagram). Tekst pisze człowiek, może zawierać link; `{imię}` wstawia imię autora (tylko gdy wygląda na imię, nie nazwę konta).
+- Szybki start z lead magnetu (zestaw DUO): słowo + teksty z linkiem = „Strona internetowa” z Ustawień marki + adres materiału.
+- Działa przy pobieraniu komentarzy, przed klasyfikacją AI (`src/lib/server/social/automations.ts`, dopasowanie `src/lib/social/automation.ts`).
+- Bezpieczeństwo: tylko krótkie komentarze (≤ 10 słów, ≤ 120 znaków) — dłuższe ze słowem idą do człowieka z notką; ta sama osoba raz na dobę na to samo słowo (na konto); 60 odpowiedzi/h na projekt (potem powiadomienie); nigdy na własne komentarze ani komentarze z odpowiedzią; tryb DEMO → DemoProvider.
+- Odpowiedzi w skrzynce mają oznaczenie „automatyzacja” (`CommentReply.source = KEYWORD`, `automationId`).
+- **Niesprawdzone na żywo:** odpowiedź prywatna (DM) na Instagramie przez Upload-Post (`/uploadposts/comments/reply`) — wymaga uprawnień do wiadomości na koncie.
+
 ## 7. Co wymaga płatnego planu lub dodatkowych uprawnień
 
 Szczegóły planów sprawdź w aktualnym cenniku Upload-Post — nie dało się ich zweryfikować z tego środowiska.

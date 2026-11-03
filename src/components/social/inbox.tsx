@@ -193,7 +193,7 @@ function CommentDetail({ c, onChange }: { c: Comment; onChange: () => Promise<vo
             .filter((r) => r.status !== "DRAFT")
             .map((r) => (
               <li key={r.id} className="text-muted">
-                {r.status === "SENT" ? "✓ Wysłano" : r.status === "FAILED" ? "✕ Błąd" : r.status === "REJECTED" ? "Odrzucony projekt" : r.status} ({r.source === "AUTO" ? "auto" : r.source === "AI" || r.source === "AI_EDITED" ? "AI" : "człowiek"}, {r.visibility === "PRIVATE" ? "DM" : "publicznie"}): „{r.text}” {r.error ? <span className="text-red-600">{r.error}</span> : null}
+                {r.status === "SENT" ? "✓ Wysłano" : r.status === "FAILED" ? "✕ Błąd" : r.status === "REJECTED" ? "Odrzucony projekt" : r.status} ({r.source === "KEYWORD" ? "automatyzacja" : r.source === "AUTO" ? "auto" : r.source === "AI" || r.source === "AI_EDITED" ? "AI" : "człowiek"}, {r.visibility === "PRIVATE" ? "DM" : "publicznie"}): „{r.text}” {r.error ? <span className="text-red-600">{r.error}</span> : null}
               </li>
             ))}
         </ul>

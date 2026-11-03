@@ -355,6 +355,56 @@ test.describe.serial("Social Media Studio", () => {
     expect(Number(sql(`SELECT count(*) FROM "CommentReply" WHERE source = 'AUTO'`))).toBe(0);
   });
 
+  test("comment automation: „PLAN” gets the ready reply with the link; long comments and repeats are left alone", async () => {
+    test.setTimeout(120_000);
+    await j(api, "POST", `/api/social/projects/${projectA}/automations`, { keyword: "PLAN", publicReply: "{imię}, dziękuję! Plan rozmowy: https://duo.example/wiedza/trudna-rozmowa", dmReply: "Cześć {imię}! Twój plan: https://duo.example/wiedza/trudna-rozmowa" }, 201);
+    // the same keyword twice is refused
+    await j(api, "POST", `/api/social/projects/${projectA}/automations`, { keyword: "plan", publicReply: "x" }, 409);
+    for (const c of [
+      { text: "PLAN 🙏", username: "ania_k" },
+      { text: "Plan! A dlaczego mój mąż ciągle krzyczy, kiedy próbuję spokojnie porozmawiać o pieniądzach i dzieciach?", username: "ola" },
+      { text: "planuję się rozwieść", username: "bartek" },
+    ])
+      await fetch(`${MOCK}/_comment`, { method: "POST", body: JSON.stringify(c) });
+    // a manual refresh runs once per 2 minutes: let this one through right after the previous test's
+    sql(`UPDATE "Job" SET "idempotencyKey" = NULL WHERE "idempotencyKey" LIKE 'comments:%:manual:%'`);
+    await j(api, "POST", `/api/social/projects/${projectA}/comments/refresh`, undefined, 202);
+    await waitFor(async () => Number(sql(`SELECT count(*) FROM "CommentReply" WHERE source = 'KEYWORD' AND status NOT IN ('SENT', 'FAILED')`)) === 0 && Number(sql(`SELECT count(*) FROM "CommentReply" WHERE source = 'KEYWORD' AND status = 'SENT' AND visibility = 'PUBLIC'`)) > 0, "keyword replies SENT");
+    const log = await (await fetch(`${MOCK}/_log`)).json();
+    const pub = log.replies.find((r: { path: string; body: { message: string } }) => r.path === "/api/uploadposts/comments/public-reply" && r.body.message.includes("trudna-rozmowa"));
+    // Instagram: the same link as a private message to the author
+    const igDm = log.replies.find((r: { path: string; body: { message: string } }) => r.path === "/api/uploadposts/comments/reply" && r.body.message.includes("Twój plan"));
+    if (sql(`SELECT count(*) FROM "CommentReply" WHERE source = 'KEYWORD' AND visibility = 'PRIVATE'`) !== "0") expect(igDm).toBeTruthy();
+    // a handle ("ania_k") is not a first name: {imię} is left out
+    expect(pub.body.message).toBe("Dziękuję! Plan rozmowy: https://duo.example/wiedza/trudna-rozmowa");
+    // only "PLAN 🙏" triggered: the long comment waits for a person, "planuję" is not the keyword
+    expect(sql(`SELECT count(DISTINCT c.text) FROM "CommentReply" r JOIN "SocialComment" c ON c.id = r."commentId" WHERE r.source = 'KEYWORD'`)).toBe("1");
+    expect(sql(`SELECT DISTINCT c.text FROM "CommentReply" r JOIN "SocialComment" c ON c.id = r."commentId" WHERE r.source = 'KEYWORD'`)).toBe("PLAN 🙏");
+    expect(sql(`SELECT DISTINCT status FROM "SocialComment" WHERE text LIKE 'Plan! A dlaczego%'`)).not.toBe("REPLIED");
+    expect(sql(`SELECT "aiReason" FROM "SocialComment" WHERE text LIKE 'Plan! A dlaczego%' LIMIT 1`)).toMatch(/Zawiera słowo PLAN/);
+    // the same person once a day per keyword (per account), even under several posts
+    const perAccount = sql(`SELECT max(n) FROM (SELECT count(*) n FROM "CommentReply" r JOIN "SocialComment" c ON c.id = r."commentId" WHERE r.source = 'KEYWORD' AND r.visibility = 'PUBLIC' GROUP BY c."socialAccountId") x`);
+    expect(perAccount).toBe("1");
+    const list = await j<{ automations: Array<{ keyword: string; sentCount: number }> }>(api, "GET", `/api/social/projects/${projectA}/automations`);
+    expect(list.automations[0].sentCount).toBeGreaterThan(0);
+  });
+
+  test("comment automation UI: a new automation from a lead magnet, with preview", async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+    const page = await ctx.newPage();
+    await loginAs(page, "admin@askby.local", "askby-admin");
+    await page.goto(`/social/projects/${projectA}?tab=automations`);
+    await expect(page.getByTestId("automation-row")).toHaveCount(1);
+    await page.getByTestId("automation-new").click();
+    await page.getByLabel("Lead magnet").selectOption({ label: "PĘTLA — Pętla konfliktu" });
+    await expect(page.getByLabel("Słowo w komentarzu")).toHaveValue("PĘTLA");
+    await expect(page.getByTestId("automation-preview")).toContainText("Anna, dziękuję! Tu znajdziesz „Pętla konfliktu”");
+    if (process.env.AUTOMATION_SHOT) await page.getByTestId("automations").screenshot({ path: process.env.AUTOMATION_SHOT });
+    await page.getByTestId("automation-save").click();
+    await expect(page.getByTestId("automation-row")).toHaveCount(2);
+    await ctx.close();
+  });
+
   let c3 = "";
   let p3 = "";
   test("22–23: lost authorization holds publications; reconnecting brings them back", async () => {
