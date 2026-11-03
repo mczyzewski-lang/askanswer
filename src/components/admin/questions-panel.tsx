@@ -54,6 +54,7 @@ import { csvTemplate, decodeCsv, hybridCsvTemplate, parseHybridCsv, parseImportC
 import { effectiveKind, kindHasNarration, kindHasPrompter, KIND_LABELS, QUESTION_KINDS, type QuestionKind } from "@/lib/question-kinds";
 import { type CurrentScript, type Review, ReviewDialog, ScoreBadge, ScoringCounts, scoreTone } from "./content-review";
 import { LeadMagnetsEditor } from "./lead-magnets-editor";
+import { DropZone } from "@/components/drop-zone";
 import type { LeadMagnet } from "@/lib/lead-magnets";
 
 type Q = PanelProps["data"]["questions"][number];
@@ -255,7 +256,7 @@ export function QuestionsPanel({ data, refresh, toast }: PanelProps) {
   };
 
   return (
-    <div>
+    <DropZone accept=".csv,text/csv" multiple={false} label="Upuść plik CSV — zaimportuję pozycje" onFiles={(fs) => importCsv(fs[0])} onRejected={(n) => toast(`To nie jest plik CSV: ${n.join(", ")}`, "err")} data-testid="questions-drop">
       <div className="flex flex-wrap items-center gap-2">
         <Button onClick={() => setEditing("new")}>
           <Plus /> {T.add}
@@ -472,7 +473,7 @@ export function QuestionsPanel({ data, refresh, toast }: PanelProps) {
           ) : null}
         </DialogContent>
       </Dialog>
-    </div>
+    </DropZone>
   );
 }
 

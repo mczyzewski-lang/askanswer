@@ -1,4 +1,5 @@
 "use client";
+import { DropZone } from "@/components/drop-zone";
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -189,7 +190,10 @@ function UploadDialog({ projectId, onClose, onDone }: { projectId: string; onClo
           <div className="space-y-3">
             {mode === "file" ? (
               <Field label="Plik MP4 / MOV">
-                <input type="file" accept="video/mp4,video/quicktime,.mp4,.mov,.m4v" onChange={(e) => setFile(e.target.files?.[0] ?? null)} className="block w-full text-sm" data-testid="media-file" />
+                <DropZone accept="video/mp4,video/quicktime,.mp4,.mov,.m4v" multiple={false} label="Upuść film" onFiles={(fs) => setFile(fs[0])} className="rounded-xl border border-dashed border-line p-3">
+                  <input type="file" accept="video/mp4,video/quicktime,.mp4,.mov,.m4v" onChange={(e) => setFile(e.target.files?.[0] ?? null)} className="block w-full text-sm" data-testid="media-file" />
+                  <p className="mt-1 text-xs text-muted">{file ? `Wybrano: ${file.name}` : "…albo przeciągnij plik tutaj"}</p>
+                </DropZone>
               </Field>
             ) : (
               <Field label="Adres URL filmu" hint="Publiczny link do pliku (http/https). Adresy sieci wewnętrznych są blokowane.">

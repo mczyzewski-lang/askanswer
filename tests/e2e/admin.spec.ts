@@ -264,3 +264,26 @@ test("DUO Terapia preset brings its colours and brand logo", async ({ request: a
   expect(logo.status()).toBe(200);
   expect((await logo.body()).subarray(1, 4).toString()).toBe("PNG");
 });
+
+test("files can be dragged in: a CSV dropped on the list is imported", async ({ page, request }) => {
+  await adminRequest(request);
+  const project = await (await request.post("/api/admin/projects", { data: { name: "Przeciąganie CSV" } })).json();
+  await login(page);
+  await page.goto(`/admin/projects/${project.id}`);
+  const zone = page.getByTestId("questions-drop");
+  const drop = async (name: string, type: string, text: string) => {
+    const dt = await page.evaluateHandle(([n, t, x]) => {
+      const d = new DataTransfer();
+      d.items.add(new File([x], n, { type: t }));
+      return d;
+    }, [name, type, text] as const);
+    await zone.dispatchEvent("dragenter", { dataTransfer: dt });
+    await expect(zone.getByText("Upuść plik CSV")).toBeVisible();
+    await zone.dispatchEvent("drop", { dataTransfer: dt });
+  };
+  // a file of another type is refused with its name
+  await drop("zdjecie.png", "image/png", "x");
+  await expect(page.getByText("To nie jest plik CSV: zdjecie.png")).toBeVisible();
+  await drop("pytania.csv", "text/csv", "Kategoria;Podkategoria;Pytanie\nOgólne;;Czy przeciąganie pliku działa?");
+  await expect(page.getByText("Czy przeciąganie pliku działa?")).toBeVisible({ timeout: 15_000 });
+});

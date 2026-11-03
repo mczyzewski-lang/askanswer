@@ -20,3 +20,16 @@ describe("sliced uploads", () => {
     expect(sniffVideo(Buffer.from("not a video at all"))).toBeNull();
   });
 });
+
+import { acceptsFile } from "@/lib/client/accept-file";
+
+describe("drop zone file filter", () => {
+  const f = (name: string, type: string) => new File(["x"], name, { type });
+  it("accepts by MIME type, wildcard or extension", () => {
+    expect(acceptsFile(f("P1016420.MP4", "video/mp4"), "video/*")).toBe(true);
+    expect(acceptsFile(f("klip.mov", ""), "video/mp4,.mov")).toBe(true);
+    expect(acceptsFile(f("pytania.CSV", "application/vnd.ms-excel"), ".csv,text/csv")).toBe(true);
+    expect(acceptsFile(f("zdjecie.png", "image/png"), ".csv,text/csv")).toBe(false);
+    expect(acceptsFile(f("cokolwiek.bin", ""), undefined)).toBe(true);
+  });
+});

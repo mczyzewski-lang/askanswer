@@ -30,6 +30,7 @@ import type { PlaybackEngine } from "./playback";
 import { NarrationSpeed, NarrationVoiceChanger } from "./narration";
 import { CallStyleSection } from "./call-style";
 import { AbHooksSection } from "./ab-hooks";
+import { DropZone } from "@/components/drop-zone";
 
 export interface StudioMeta {
   compositionId: string;
@@ -1001,8 +1002,29 @@ export function GraphicsPanel({ onUpload, meta }: { onUpload: (f: File) => Promi
     ["Dymek / callout", () => ({ ...baseOverlay("Callout", time), kind: "callout", x: 0.08, y: 0.32, w: 0.84, h: 0.11, title: "Pamiętaj!", subtitle: "Ochrona trwa 10 lat i można ją przedłużać.", fill: "$primary", accent: "$accent", textColor: "$text", fontFamily: "$label", animation: "pop" })],
     ["Belka (lower third)", () => ({ ...baseOverlay("Belka", time), kind: "lowerThird", end: time + 5, x: 0.06, y: 0.6, w: 0.66, h: 0.08, title: "Imię Nazwisko", subtitle: meta.project.name, fill: "$primary", accent: "$accent", textColor: "$text", fontFamily: "$label", animation: "slide" })],
   ];
+  const placeFile = async (f: File) => {
+    setUploading(true);
+    try {
+      const a = await onUpload(f);
+      if (!a) return;
+      // keep the file's aspect ratio: 60% of the frame width, centred
+      const w = 0.6;
+      const ar = a.width && a.height ? a.width / a.height : 16 / 9;
+      const h = Math.min(0.6, (w * doc.width) / ar / doc.height);
+      const pos = { x: (1 - w) / 2, y: 0.36 - h / 2 + 0.05, w, h };
+      const total = docDuration(doc);
+      if (a.kind === "OVERLAY_VIDEO") {
+        const end = Math.min(total, time + Math.max(1, a.durationSec ?? 5));
+        add({ ...baseOverlay(f.name, time), end, animation: anim, kind: "video", assetId: a.id, fit: "contain", sourceIn: 0, loop: false, volume: 0, radius: 24, ...pos });
+      } else {
+        add({ ...baseOverlay(f.name, time), animation: anim, kind: "image", assetId: a.id, fit: "contain", ...pos });
+      }
+    } finally {
+      setUploading(false);
+    }
+  };
   return (
-    <div>
+    <DropZone dark accept="image/png,image/jpeg,image/webp,image/gif,video/mp4,video/quicktime,video/webm" multiple={false} label="Upuść grafikę lub wideo — trafi na oś czasu w bieżącym miejscu" onFiles={(fs) => void placeFile(fs[0])} data-testid="graphics-drop">
       <BrollLibrarySection meta={meta} add={add} />
       <Section title="Kształty i elementy">
         <div className="grid grid-cols-2 gap-1.5">
@@ -1033,41 +1055,22 @@ export function GraphicsPanel({ onUpload, meta }: { onUpload: (f: File) => Promi
           </Select>
         </Row>
         <SButton variant="primary" className="w-full" disabled={uploading} onClick={() => fileRef.current?.click()}>
-          {uploading ? <Loader2 className="animate-spin" /> : <ImagePlus />} {uploading ? "Wysyłanie i konwersja…" : "Wgraj grafikę lub wideo"}
+          {uploading ? <Loader2 className="animate-spin" /> : <ImagePlus />} {uploading ? "Wysyłanie i konwersja…" : "Wgraj grafikę lub wideo (albo przeciągnij)"}
         </SButton>
         <input
           ref={fileRef}
           type="file"
           accept="image/png,image/jpeg,image/webp,image/gif,video/mp4,video/quicktime,video/webm"
           className="hidden"
-          onChange={async (e) => {
+          onChange={(e) => {
             const f = e.target.files?.[0];
             e.target.value = "";
-            if (!f) return;
-            setUploading(true);
-            try {
-              const a = await onUpload(f);
-              if (!a) return;
-              // keep the file's aspect ratio: 60% of the frame width, centred
-              const w = 0.6;
-              const ar = a.width && a.height ? a.width / a.height : 16 / 9;
-              const h = Math.min(0.6, (w * doc.width) / ar / doc.height);
-              const pos = { x: (1 - w) / 2, y: 0.36 - h / 2 + 0.05, w, h };
-              const total = docDuration(doc);
-              if (a.kind === "OVERLAY_VIDEO") {
-                const end = Math.min(total, time + Math.max(1, a.durationSec ?? 5));
-                add({ ...baseOverlay(f.name, time), end, animation: anim, kind: "video", assetId: a.id, fit: "contain", sourceIn: 0, loop: false, volume: 0, radius: 24, ...pos });
-              } else {
-                add({ ...baseOverlay(f.name, time), animation: anim, kind: "image", assetId: a.id, fit: "contain", ...pos });
-              }
-            } finally {
-              setUploading(false);
-            }
+            if (f) void placeFile(f);
           }}
         />
         <p className="text-[11.5px] text-studio-muted">Wideo jest domyślnie wyciszone — dźwięk włączysz we właściwościach warstwy. Maks. 300 MB / 5 min.</p>
       </Section>
-    </div>
+    </DropZone>
   );
 }
 

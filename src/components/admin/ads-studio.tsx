@@ -13,6 +13,7 @@ import { type Review, ReviewDialog, ScoreBadge, ScoringCounts, scoreTone } from 
 import { LeadMagnetsEditor } from "./lead-magnets-editor";
 import { formatBytes, sendChunks, uploadQueue } from "@/lib/client/chunked-upload";
 import { FragmentEditor, type Fragment } from "./broll-fragments";
+import { DropZone } from "@/components/drop-zone";
 import type { LeadMagnet } from "@/lib/lead-magnets";
 
 // ---------------------------------------------------------------------------
@@ -277,124 +278,128 @@ export function AdsProject({ id }: { id: string }) {
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
-        <Card className="space-y-3 p-5">
-          <p className="flex items-center gap-2 font-medium">
-            <FileText className="h-4 w-4" /> 1. Scenariusze
-          </p>
-          <p className="text-sm text-muted">
-            Plik CSV: <code className="rounded bg-black/[.05] px-1">reel;hook-number;tytuł;hook;body;cta</code> — jeden wiersz na wersję hooka (P01;h01…, P01;h02…). Hooki jednego reelsa to jeden montaż: body + CTA edytujesz raz.
-          </p>
-          <div className="flex flex-wrap gap-2">
-            <Button onClick={() => scriptRef.current?.click()} data-testid="ads-script-button">
-              <Upload /> Wgraj scenariusze (CSV)
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => {
-                const url = URL.createObjectURL(new Blob([adsScriptTemplate()], { type: "text/csv;charset=utf-8" }));
-                const a = document.createElement("a");
-                a.href = url;
-                a.download = "scenariusze-reels.csv";
-                a.click();
-                URL.revokeObjectURL(url);
-              }}
-            >
-              <Download /> Wzór pliku
-            </Button>
-          </div>
-          <input ref={scriptRef} type="file" accept=".csv,text/csv" className="hidden" data-testid="ads-script-input" onChange={(e) => (e.target.files?.[0] ? void importScript(e.target.files[0]) : null, (e.target.value = ""))} />
-          <p className="text-sm">{data.reels.length ? `${data.reels.length} reelsów w scenariuszu` : "Brak scenariuszy"}</p>
-        </Card>
+        <DropZone accept=".csv,text/csv" multiple={false} label="Upuść plik CSV ze scenariuszami" onFiles={(files) => void importScript(files[0])} onRejected={(n) => toast(`Pominięto (zły typ pliku): ${n.join(", ")}`, "err")} className="rounded-2xl [&>*:first-child]:h-full" data-testid="ads-script-drop">
+          <Card className="space-y-3 p-5">
+            <p className="flex items-center gap-2 font-medium">
+              <FileText className="h-4 w-4" /> 1. Scenariusze
+            </p>
+            <p className="text-sm text-muted">
+              Plik CSV: <code className="rounded bg-black/[.05] px-1">reel;hook-number;tytuł;hook;body;cta</code> — jeden wiersz na wersję hooka (P01;h01…, P01;h02…). Hooki jednego reelsa to jeden montaż: body + CTA edytujesz raz.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <Button onClick={() => scriptRef.current?.click()} data-testid="ads-script-button">
+                <Upload /> Wgraj scenariusze (CSV)
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  const url = URL.createObjectURL(new Blob([adsScriptTemplate()], { type: "text/csv;charset=utf-8" }));
+                  const a = document.createElement("a");
+                  a.href = url;
+                  a.download = "scenariusze-reels.csv";
+                  a.click();
+                  URL.revokeObjectURL(url);
+                }}
+              >
+                <Download /> Wzór pliku
+              </Button>
+            </div>
+            <input ref={scriptRef} type="file" accept=".csv,text/csv" className="hidden" data-testid="ads-script-input" onChange={(e) => (e.target.files?.[0] ? void importScript(e.target.files[0]) : null, (e.target.value = ""))} />
+            <p className="text-sm">{data.reels.length ? `${data.reels.length} reelsów w scenariuszu` : "Brak scenariuszy"}</p>
+          </Card>
+        </DropZone>
 
-        <Card className="space-y-3 p-5">
-          <p className="flex items-center gap-2 font-medium">
-            <Film className="h-4 w-4" /> 2. Nagrania
-          </p>
-          <p className="text-sm text-muted">Surowe pliki z kamery lub telefonu (MP4, MOV, WEBM), także długie, z powtórkami. Każdy jest transkrybowany ze znacznikami czasu słów.</p>
-          <Button onClick={() => videoRef.current?.click()} data-testid="ads-video-button">
-            <Upload /> Wgraj pliki wideo
-          </Button>
-          <input
-            ref={videoRef}
-            type="file"
-            multiple
-            accept="video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm"
-            className="hidden"
-            data-testid="ads-video-input"
-            onChange={(e) => {
-              for (const f of Array.from(e.target.files ?? [])) void uploadOne(f);
-              e.target.value = "";
-            }}
-          />
-          <ul className="space-y-1.5" data-testid="ads-footage">
-            {Object.entries(uploads).map(([k, u]) => (
-              <li key={k} className="rounded-lg border border-line p-2 text-sm">
-                <div className="flex justify-between gap-2">
-                  <span className="truncate">{u.name}</span>
-                  <span className="shrink-0 text-muted">
-                    {u.size ? `${formatBytes(u.size)} · ` : ""}
-                    {u.error ? "błąd" : u.waiting ? "w kolejce" : u.progress >= 1 ? "składanie pliku…" : `wysyłanie ${Math.round(u.progress * 100)}%`}
+        <DropZone accept="video/*,.mp4,.mov,.webm,.m4v" multiple={true} label="Upuść pliki wideo — wyślą się po 2 naraz" onFiles={(files) => files.forEach((f) => void uploadOne(f))} onRejected={(n) => toast(`Pominięto (zły typ pliku): ${n.join(", ")}`, "err")} className="rounded-2xl [&>*:first-child]:h-full" data-testid="ads-video-drop">
+          <Card className="space-y-3 p-5">
+            <p className="flex items-center gap-2 font-medium">
+              <Film className="h-4 w-4" /> 2. Nagrania
+            </p>
+            <p className="text-sm text-muted">Surowe pliki z kamery lub telefonu (MP4, MOV, WEBM), także długie, z powtórkami. Każdy jest transkrybowany ze znacznikami czasu słów.</p>
+            <Button onClick={() => videoRef.current?.click()} data-testid="ads-video-button">
+              <Upload /> Wgraj pliki wideo (albo przeciągnij tutaj)
+            </Button>
+            <input
+              ref={videoRef}
+              type="file"
+              multiple
+              accept="video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm"
+              className="hidden"
+              data-testid="ads-video-input"
+              onChange={(e) => {
+                for (const f of Array.from(e.target.files ?? [])) void uploadOne(f);
+                e.target.value = "";
+              }}
+            />
+            <ul className="space-y-1.5" data-testid="ads-footage">
+              {Object.entries(uploads).map(([k, u]) => (
+                <li key={k} className="rounded-lg border border-line p-2 text-sm">
+                  <div className="flex justify-between gap-2">
+                    <span className="truncate">{u.name}</span>
+                    <span className="shrink-0 text-muted">
+                      {u.size ? `${formatBytes(u.size)} · ` : ""}
+                      {u.error ? "błąd" : u.waiting ? "w kolejce" : u.progress >= 1 ? "składanie pliku…" : `wysyłanie ${Math.round(u.progress * 100)}%`}
+                    </span>
+                  </div>
+                  {u.error ? (
+                    <p className="flex items-center justify-between gap-2 text-xs text-red-600">
+                      {u.error}
+                      {u.file ? (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="shrink-0"
+                          data-testid="upload-retry"
+                          onClick={() => {
+                            setUploads(({ [k]: _gone, ...rest }) => (void _gone, rest));
+                            void uploadOne(u.file!);
+                          }}
+                        >
+                          <RefreshCw /> Wgraj ponownie
+                        </Button>
+                      ) : null}
+                    </p>
+                  ) : (
+                    <Progress value={u.progress} className="mt-1.5" />
+                  )}
+                </li>
+              ))}
+              {data.footage.map((f) => (
+                <li key={f.id} className="flex items-center justify-between gap-2 rounded-lg border border-line p-2 text-sm" data-testid="ads-footage-row" data-status={f.status}>
+                  <span className="min-w-0">
+                    <span className="block truncate">{f.name}</span>
+                    <span className={cn("block text-xs", f.status === "FAILED" ? "text-red-600" : "text-muted")}>
+                      {f.status === "READY"
+                        ? `Gotowe · ${f.durationSec ? `${Math.round(f.durationSec)} s` : ""} · ${f.words} słów`
+                        : f.status === "FAILED"
+                          ? f.error ?? "Błąd przetwarzania"
+                          : f.step ?? "Przetwarzanie…"}
+                    </span>
                   </span>
-                </div>
-                {u.error ? (
-                  <p className="flex items-center justify-between gap-2 text-xs text-red-600">
-                    {u.error}
-                    {u.file ? (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="shrink-0"
-                        data-testid="upload-retry"
-                        onClick={() => {
-                          setUploads(({ [k]: _gone, ...rest }) => (void _gone, rest));
-                          void uploadOne(u.file!);
-                        }}
-                      >
-                        <RefreshCw /> Wgraj ponownie
+                  <span className="flex shrink-0 items-center gap-1">
+                    {f.status === "PROCESSING" || f.status === "UPLOADING" ? <Loader2 className="h-4 w-4 animate-spin text-muted" /> : null}
+                    {f.status === "FAILED" ? (
+                      <Button size="iconSm" variant="ghost" aria-label="Przetwórz ponownie" onClick={async () => (await api(`/api/admin/ads/footage/${f.id}`, { method: "POST" }), load())}>
+                        <RefreshCw />
                       </Button>
                     ) : null}
-                  </p>
-                ) : (
-                  <Progress value={u.progress} className="mt-1.5" />
-                )}
-              </li>
-            ))}
-            {data.footage.map((f) => (
-              <li key={f.id} className="flex items-center justify-between gap-2 rounded-lg border border-line p-2 text-sm" data-testid="ads-footage-row" data-status={f.status}>
-                <span className="min-w-0">
-                  <span className="block truncate">{f.name}</span>
-                  <span className={cn("block text-xs", f.status === "FAILED" ? "text-red-600" : "text-muted")}>
-                    {f.status === "READY"
-                      ? `Gotowe · ${f.durationSec ? `${Math.round(f.durationSec)} s` : ""} · ${f.words} słów`
-                      : f.status === "FAILED"
-                        ? f.error ?? "Błąd przetwarzania"
-                        : f.step ?? "Przetwarzanie…"}
-                  </span>
-                </span>
-                <span className="flex shrink-0 items-center gap-1">
-                  {f.status === "PROCESSING" || f.status === "UPLOADING" ? <Loader2 className="h-4 w-4 animate-spin text-muted" /> : null}
-                  {f.status === "FAILED" ? (
-                    <Button size="iconSm" variant="ghost" aria-label="Przetwórz ponownie" onClick={async () => (await api(`/api/admin/ads/footage/${f.id}`, { method: "POST" }), load())}>
-                      <RefreshCw />
+                    <Button
+                      size="iconSm"
+                      variant="ghost"
+                      aria-label="Usuń nagranie"
+                      onClick={async () => {
+                        if (!confirm(`Usunąć „${f.name}”?`)) return;
+                        await api(`/api/admin/ads/footage/${f.id}`, { method: "DELETE" });
+                        await load();
+                      }}
+                    >
+                      <Trash2 />
                     </Button>
-                  ) : null}
-                  <Button
-                    size="iconSm"
-                    variant="ghost"
-                    aria-label="Usuń nagranie"
-                    onClick={async () => {
-                      if (!confirm(`Usunąć „${f.name}”?`)) return;
-                      await api(`/api/admin/ads/footage/${f.id}`, { method: "DELETE" });
-                      await load();
-                    }}
-                  >
-                    <Trash2 />
-                  </Button>
-                </span>
-              </li>
-            ))}
-          </ul>
-        </Card>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </Card>
+        </DropZone>
       </div>
 
       {openReview ? (
@@ -783,154 +788,156 @@ function BrollCard({ projectId, toast }: { projectId: string; toast: (t: string,
   };
   const picked = items?.filter((i) => i.picked).length ?? 0;
   return (
-    <Card className="space-y-3 p-5" data-testid="ads-broll">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <p className="flex items-center gap-2 font-medium">
-            <Clapperboard className="h-4 w-4" /> B-roll (przebitki)
-          </p>
-          <p className="text-sm text-muted">Wgraj przebitki (MP4, MOV, WEBM do 10 min — także duże pliki z aparatu, wysyłane w częściach — lub zdjęcia) i zaznacz gwiazdką te do montażu — w Studio każdego reelsa są w Grafika → B-roll, do wstawienia jednym kliknięciem.</p>
+    <DropZone accept="video/*,image/png,image/jpeg,image/webp,.mp4,.mov,.webm" multiple={true} label="Upuść przebitki (wideo lub zdjęcia)" onFiles={(files) => void upload(files)} onRejected={(n) => toast(`Pominięto (zły typ pliku): ${n.join(", ")}`, "err")} className="rounded-2xl" data-testid="ads-broll-drop">
+      <Card className="space-y-3 p-5" data-testid="ads-broll">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="flex items-center gap-2 font-medium">
+              <Clapperboard className="h-4 w-4" /> B-roll (przebitki)
+            </p>
+            <p className="text-sm text-muted">Wgraj przebitki (MP4, MOV, WEBM do 10 min — także duże pliki z aparatu, wysyłane w częściach — lub zdjęcia) i zaznacz gwiazdką te do montażu — w Studio każdego reelsa są w Grafika → B-roll, do wstawienia jednym kliknięciem.</p>
+          </div>
+          <Button onClick={() => ref.current?.click()} data-testid="ads-broll-button">
+            {Object.keys(uploads).length || converting ? <Loader2 className="animate-spin" /> : <Upload />} Wgraj przebitki
+          </Button>
+          <input
+            ref={ref}
+            type="file"
+            multiple
+            accept="video/mp4,video/quicktime,video/webm,image/png,image/jpeg,image/webp"
+            className="hidden"
+            data-testid="ads-broll-input"
+            onChange={(e) => {
+              void upload(Array.from(e.target.files ?? []));
+              e.target.value = "";
+            }}
+          />
         </div>
-        <Button onClick={() => ref.current?.click()} data-testid="ads-broll-button">
-          {Object.keys(uploads).length || converting ? <Loader2 className="animate-spin" /> : <Upload />} Wgraj przebitki
-        </Button>
-        <input
-          ref={ref}
-          type="file"
-          multiple
-          accept="video/mp4,video/quicktime,video/webm,image/png,image/jpeg,image/webp"
-          className="hidden"
-          data-testid="ads-broll-input"
-          onChange={(e) => {
-            void upload(Array.from(e.target.files ?? []));
-            e.target.value = "";
-          }}
-        />
-      </div>
-      {Object.keys(uploads).length || pending.some((p) => !dismissed.includes(p.id)) ? (
-        <ul className="space-y-1.5" data-testid="ads-broll-uploads">
-          {Object.entries(uploads).map(([k, u]) => (
-            <li key={k} className="rounded-lg border border-line p-2 text-sm">
-              <div className="flex justify-between gap-2">
-                <span className="truncate">{u.name}</span>
-                <span className="shrink-0 text-muted">
-                  {u.size ? `${formatBytes(u.size)} · ` : ""}
-                  {u.error ? "błąd" : u.waiting ? "w kolejce" : `wysyłanie ${Math.round(u.progress * 100)}%`}
-                </span>
-              </div>
-              {u.error ? (
-                <p className="flex items-center justify-between gap-2 text-xs text-red-600">
-                  {u.error}
-                  {u.file ? (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="shrink-0"
-                      data-testid="upload-retry"
-                      onClick={() => {
-                        setUploads(({ [k]: _gone, ...rest }) => (void _gone, rest));
-                        void uploadOne(u.file!);
-                      }}
-                    >
-                      <RefreshCw /> Wgraj ponownie
-                    </Button>
-                  ) : null}
-                </p>
-              ) : (
-                <Progress value={u.progress} className="mt-1.5" />
-              )}
-            </li>
-          ))}
-          {pending
-            .filter((p) => p.status !== "UPLOADING" && !dismissed.includes(p.id))
-            .map((p) => (
-              <li key={p.id} className="flex items-center justify-between gap-2 rounded-lg border border-line p-2 text-sm" data-testid="ads-broll-pending" data-status={p.status}>
-                <span className="truncate">{p.name}</span>
-                <span className={cn("flex shrink-0 items-center gap-2 text-xs", p.status === "FAILED" ? "text-red-600" : "text-muted")}>
-                  {p.status === "FAILED" ? (
-                    <>
-                      {p.error ?? "Błąd przetwarzania"}
-                      <Button size="sm" variant="outline" data-testid="upload-retry" onClick={() => {
-                        setDismissed((d) => [...d, p.id]);
-                        ref.current?.click();
-                      }}>
+        {Object.keys(uploads).length || pending.some((p) => !dismissed.includes(p.id)) ? (
+          <ul className="space-y-1.5" data-testid="ads-broll-uploads">
+            {Object.entries(uploads).map(([k, u]) => (
+              <li key={k} className="rounded-lg border border-line p-2 text-sm">
+                <div className="flex justify-between gap-2">
+                  <span className="truncate">{u.name}</span>
+                  <span className="shrink-0 text-muted">
+                    {u.size ? `${formatBytes(u.size)} · ` : ""}
+                    {u.error ? "błąd" : u.waiting ? "w kolejce" : `wysyłanie ${Math.round(u.progress * 100)}%`}
+                  </span>
+                </div>
+                {u.error ? (
+                  <p className="flex items-center justify-between gap-2 text-xs text-red-600">
+                    {u.error}
+                    {u.file ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="shrink-0"
+                        data-testid="upload-retry"
+                        onClick={() => {
+                          setUploads(({ [k]: _gone, ...rest }) => (void _gone, rest));
+                          void uploadOne(u.file!);
+                        }}
+                      >
                         <RefreshCw /> Wgraj ponownie
                       </Button>
-                    </>
-                  ) : (
-                    <span className="inline-flex items-center gap-1">
-                      <Loader2 className="h-3 w-3 animate-spin" /> konwersja na serwerze · {formatBytes(p.sizeBytes)}
-                    </span>
-                  )}
-                </span>
+                    ) : null}
+                  </p>
+                ) : (
+                  <Progress value={u.progress} className="mt-1.5" />
+                )}
               </li>
             ))}
-        </ul>
-      ) : null}
-      {items?.length ? (
-        <>
-          <p className="text-xs text-muted">
-            {items.length} przebitek · {picked} wybranych do montażu
-          </p>
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-line bg-black/[.015] p-3 text-sm" data-testid="broll-basket">
-            <span>
-              <b>Koszyk przebitek: {fragments.length}</b> {fragments.length === 1 ? "fragment" : "fragmentów"} z {new Set(fragments.map((f) => f.assetId)).size} wideo
-            </span>
-            <label className="flex items-center gap-2">
-              W każdym reelsie losowo
-              <NativeSelect value={String(perReel)} onChange={(e) => void savePerReel(Number(e.target.value))} aria-label="Przebitek na reels" className="h-8 w-16">
-                {[0, 1, 2, 3, 4, 5, 6].map((n) => (
-                  <option key={n} value={n}>
-                    {n}
-                  </option>
-                ))}
-              </NativeSelect>
-              przebitek
-            </label>
-            <span className="text-xs text-muted">{fragments.length ? "Wstawiane przy układaniu reelsów w treść (nie na hook i nie na CTA), wyciszone, do 3,5 s. Już ułożone reelsy zmienia „od nowa”." : "Kliknij „Wytnij” na wideo, żeby dodać fragmenty."}</span>
-          </div>
-          <div className="grid grid-cols-3 gap-2 sm:grid-cols-5 lg:grid-cols-6">
-            {items.map((it) => (
-              <div key={it.id} className={cn("group relative overflow-hidden rounded-lg border-2 bg-black", it.picked ? "border-amber-400" : "border-transparent")} data-testid="ads-broll-item" data-picked={it.picked}>
-                {it.isVideo ? (
-                  <video src={it.proxyUrl ?? it.url} className="aspect-[9/16] w-full object-cover" muted loop playsInline preload="metadata" onMouseEnter={(e) => void e.currentTarget.play().catch(() => {})} onMouseLeave={(e) => e.currentTarget.pause()} />
-                ) : (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={it.url} alt="" className="aspect-[9/16] w-full object-cover" />
-                )}
-                <span className="pointer-events-none absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-black/80 to-transparent px-1.5 pb-1 pt-4 text-[10.5px] text-white">
-                  {it.name}
-                  {it.durationSec ? ` · ${it.durationSec.toFixed(1)} s` : ""}
-                </span>
-                {it.isVideo ? (
-                  <button type="button" onClick={() => setCutting(it)} className="absolute bottom-6 left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-full bg-white/90 px-2 py-0.5 text-[11px] font-medium text-ink shadow" data-testid="broll-cut">
-                    <Scissors className="h-3 w-3" /> Wytnij{fragments.some((f) => f.assetId === it.id) ? ` (${fragments.filter((f) => f.assetId === it.id).length})` : ""}
+            {pending
+              .filter((p) => p.status !== "UPLOADING" && !dismissed.includes(p.id))
+              .map((p) => (
+                <li key={p.id} className="flex items-center justify-between gap-2 rounded-lg border border-line p-2 text-sm" data-testid="ads-broll-pending" data-status={p.status}>
+                  <span className="truncate">{p.name}</span>
+                  <span className={cn("flex shrink-0 items-center gap-2 text-xs", p.status === "FAILED" ? "text-red-600" : "text-muted")}>
+                    {p.status === "FAILED" ? (
+                      <>
+                        {p.error ?? "Błąd przetwarzania"}
+                        <Button size="sm" variant="outline" data-testid="upload-retry" onClick={() => {
+                          setDismissed((d) => [...d, p.id]);
+                          ref.current?.click();
+                        }}>
+                          <RefreshCw /> Wgraj ponownie
+                        </Button>
+                      </>
+                    ) : (
+                      <span className="inline-flex items-center gap-1">
+                        <Loader2 className="h-3 w-3 animate-spin" /> konwersja na serwerze · {formatBytes(p.sizeBytes)}
+                      </span>
+                    )}
+                  </span>
+                </li>
+              ))}
+          </ul>
+        ) : null}
+        {items?.length ? (
+          <>
+            <p className="text-xs text-muted">
+              {items.length} przebitek · {picked} wybranych do montażu
+            </p>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-line bg-black/[.015] p-3 text-sm" data-testid="broll-basket">
+              <span>
+                <b>Koszyk przebitek: {fragments.length}</b> {fragments.length === 1 ? "fragment" : "fragmentów"} z {new Set(fragments.map((f) => f.assetId)).size} wideo
+              </span>
+              <label className="flex items-center gap-2">
+                W każdym reelsie losowo
+                <NativeSelect value={String(perReel)} onChange={(e) => void savePerReel(Number(e.target.value))} aria-label="Przebitek na reels" className="h-8 w-16">
+                  {[0, 1, 2, 3, 4, 5, 6].map((n) => (
+                    <option key={n} value={n}>
+                      {n}
+                    </option>
+                  ))}
+                </NativeSelect>
+                przebitek
+              </label>
+              <span className="text-xs text-muted">{fragments.length ? "Wstawiane przy układaniu reelsów w treść (nie na hook i nie na CTA), wyciszone, do 3,5 s. Już ułożone reelsy zmienia „od nowa”." : "Kliknij „Wytnij” na wideo, żeby dodać fragmenty."}</span>
+            </div>
+            <div className="grid grid-cols-3 gap-2 sm:grid-cols-5 lg:grid-cols-6">
+              {items.map((it) => (
+                <div key={it.id} className={cn("group relative overflow-hidden rounded-lg border-2 bg-black", it.picked ? "border-amber-400" : "border-transparent")} data-testid="ads-broll-item" data-picked={it.picked}>
+                  {it.isVideo ? (
+                    <video src={it.proxyUrl ?? it.url} className="aspect-[9/16] w-full object-cover" muted loop playsInline preload="metadata" onMouseEnter={(e) => void e.currentTarget.play().catch(() => {})} onMouseLeave={(e) => e.currentTarget.pause()} />
+                  ) : (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={it.url} alt="" className="aspect-[9/16] w-full object-cover" />
+                  )}
+                  <span className="pointer-events-none absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-black/80 to-transparent px-1.5 pb-1 pt-4 text-[10.5px] text-white">
+                    {it.name}
+                    {it.durationSec ? ` · ${it.durationSec.toFixed(1)} s` : ""}
+                  </span>
+                  {it.isVideo ? (
+                    <button type="button" onClick={() => setCutting(it)} className="absolute bottom-6 left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-full bg-white/90 px-2 py-0.5 text-[11px] font-medium text-ink shadow" data-testid="broll-cut">
+                      <Scissors className="h-3 w-3" /> Wytnij{fragments.some((f) => f.assetId === it.id) ? ` (${fragments.filter((f) => f.assetId === it.id).length})` : ""}
+                    </button>
+                  ) : null}
+                  <button type="button" onClick={() => void pick(it)} aria-pressed={it.picked} aria-label={it.picked ? "Odznacz" : "Wybierz do montażu"} className={cn("absolute left-1 top-1 rounded-full p-1", it.picked ? "bg-amber-400 text-black" : "bg-black/50 text-white")} data-testid="ads-broll-pick">
+                    <Star className="h-3.5 w-3.5" fill={it.picked ? "currentColor" : "none"} />
                   </button>
-                ) : null}
-                <button type="button" onClick={() => void pick(it)} aria-pressed={it.picked} aria-label={it.picked ? "Odznacz" : "Wybierz do montażu"} className={cn("absolute left-1 top-1 rounded-full p-1", it.picked ? "bg-amber-400 text-black" : "bg-black/50 text-white")} data-testid="ads-broll-pick">
-                  <Star className="h-3.5 w-3.5" fill={it.picked ? "currentColor" : "none"} />
-                </button>
-                <button
-                  type="button"
-                  aria-label="Usuń przebitkę"
-                  className="absolute right-1 top-1 rounded-full bg-black/50 p-1 text-white opacity-0 transition group-hover:opacity-100"
-                  onClick={async () => {
-                    if (!confirm(`Usunąć „${it.name}” z biblioteki?`)) return;
-                    await api(`/api/admin/ads/broll/${it.id}`, { method: "DELETE" });
-                    await load();
-                  }}
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            ))}
-          </div>
-        </>
-      ) : items && !Object.keys(uploads).length && !pending.filter((p) => !dismissed.includes(p.id)).length ? (
-        <p className="text-sm text-muted">Brak przebitek.</p>
-      ) : null}
-      {cutting ? <FragmentEditor projectId={projectId} item={cutting} fragments={fragments} onClose={() => setCutting(null)} reload={load} toast={toast} /> : null}
-    </Card>
+                  <button
+                    type="button"
+                    aria-label="Usuń przebitkę"
+                    className="absolute right-1 top-1 rounded-full bg-black/50 p-1 text-white opacity-0 transition group-hover:opacity-100"
+                    onClick={async () => {
+                      if (!confirm(`Usunąć „${it.name}” z biblioteki?`)) return;
+                      await api(`/api/admin/ads/broll/${it.id}`, { method: "DELETE" });
+                      await load();
+                    }}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </>
+        ) : items && !Object.keys(uploads).length && !pending.filter((p) => !dismissed.includes(p.id)).length ? (
+          <p className="text-sm text-muted">Brak przebitek.</p>
+        ) : null}
+        {cutting ? <FragmentEditor projectId={projectId} item={cutting} fragments={fragments} onClose={() => setCutting(null)} reload={load} toast={toast} /> : null}
+      </Card>
+    </DropZone>
   );
 }
 
