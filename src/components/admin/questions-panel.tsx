@@ -50,8 +50,8 @@ import type { PanelProps } from "./project-view";
 import { QuestionPreview } from "./question-preview";
 import { parseBulk, parseBulkScripts } from "@/lib/bulk-questions";
 import { terms } from "@/lib/project-terms";
-import { csvTemplate, decodeCsv, hybridCsvTemplate, parseHybridCsv, parseImportCsv } from "@/lib/csv-import";
-import { effectiveKind, kindHasNarration, kindHasPrompter, KIND_LABELS, QUESTION_KINDS, type QuestionKind } from "@/lib/question-kinds";
+import { adsCsvTemplate, csvTemplate, decodeCsv, hybridCsvTemplate, parseHybridCsv, parseImportCsv } from "@/lib/csv-import";
+import { effectiveKind, kindHasHooks, kindHasNarration, kindHasPrompter, KIND_LABELS, QUESTION_KINDS, type QuestionKind } from "@/lib/question-kinds";
 import { type CurrentScript, type Review, ReviewDialog, ScoreBadge, ScoringCounts, scoreTone } from "./content-review";
 import { LeadMagnetsEditor } from "./lead-magnets-editor";
 import { DropZone } from "@/components/drop-zone";
@@ -247,10 +247,10 @@ export function QuestionsPanel({ data, refresh, toast }: PanelProps) {
   };
 
   const downloadTemplate = () => {
-    const url = URL.createObjectURL(new Blob([T.hybrid ? hybridCsvTemplate() : csvTemplate(T.prompter)], { type: "text/csv;charset=utf-8" }));
+    const url = URL.createObjectURL(new Blob([data.project.adsRecording ? adsCsvTemplate() : T.hybrid ? hybridCsvTemplate() : csvTemplate(T.prompter)], { type: "text/csv;charset=utf-8" }));
     const a = document.createElement("a");
     a.href = url;
-    a.download = T.hybrid ? "wzor-hybryda.csv" : T.prompter ? "wzor-skrypty-prompter.csv" : "wzor-pytania.csv";
+    a.download = data.project.adsRecording ? "wzor-reklamy.csv" : T.hybrid ? "wzor-hybryda.csv" : T.prompter ? "wzor-skrypty-prompter.csv" : "wzor-pytania.csv";
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
@@ -707,7 +707,8 @@ function QuestionRow({
               ) : null}
               {T.hybrid ? (
                 <span className="rounded-full bg-black/[.05] px-2 py-0.5 text-[11px] font-medium text-ink/70" data-testid="kind-badge">
-                  {KIND_LABELS[effectiveKind(q.kind, data.project.format)].short}
+                                    {KIND_LABELS[effectiveKind(q.kind, data.project.format)].short}
+                  {(q.hooks ?? []).length >= 2 && kindHasHooks(effectiveKind(q.kind, data.project.format)) ? ` · reklama, ${q.hooks!.length} hooki` : ""}
                 </span>
               ) : null}
               <span>{q.expertName ?? "Brak eksperta"}</span>
@@ -1009,8 +1010,10 @@ function QuestionDialog({ open, question, data, onClose, refresh, toast }: { ope
   const [instructions, setInstructions] = useState("");
   const [script, setScript] = useState("");
   const [max, setMax] = useState<string>("");
-  const [kind, setKind] = useState<QuestionKind>("QUESTION");
+    const [kind, setKind] = useState<QuestionKind>("QUESTION");
   const [spoken, setSpoken] = useState("");
+  // an ad: several hooks, one per line (2+ = one edit with interchangeable hooks)
+  const [hooksText, setHooksText] = useState("");
   const T = terms(data.project.format);
   // what the item is recorded as (hybrid projects choose it per item)
   const k = T.hybrid ? kind : effectiveKind(null, data.project.format);
@@ -1027,8 +1030,9 @@ function QuestionDialog({ open, question, data, onClose, refresh, toast }: { ope
     setInstructions(question?.instructions ?? "");
     setScript(question?.script ?? "");
     setMax(question?.maxDurationSec ? String(question.maxDurationSec) : "");
-    setKind(effectiveKind(question?.kind, data.project.format));
+        setKind(question ? effectiveKind(question.kind, data.project.format) : data.project.adsRecording ? "HOOK_PROMPTER" : effectiveKind(null, data.project.format));
     setSpoken(question?.spokenText ?? "");
+    setHooksText((question?.hooks ?? []).join("\n"));
   }
   const theme = data.project.theme ? themeFromRow(data.project.theme) : DEFAULT_THEME;
   return (
@@ -1048,7 +1052,8 @@ function QuestionDialog({ open, question, data, onClose, refresh, toast }: { ope
                 expertId: expertId || null, instructions: instructions || null, maxDurationSec: max ? Number(max) : null,
                 ...(usesScript ? { script: script.trim() || null } : {}),
                 ...(T.hybrid ? { kind } : {}),
-                ...(kindHasNarration(k) || k === "HOOK_PROMPTER" ? { spokenText: spoken.trim() || null } : {}) };
+                                ...(kindHasNarration(k) || k === "HOOK_PROMPTER" ? { spokenText: spoken.trim() || null } : {}),
+                ...(kindHasHooks(k) ? { hooks: hooksText.split("\n").map((h) => h.trim()).filter(Boolean) } : {}) };
               try {
                 if (question) await api(`/api/admin/questions/${question.id}`, { method: "PATCH", json: body });
                 else await api(`/api/admin/projects/${data.project.id}/questions`, { method: "POST", json: body });
@@ -1096,6 +1101,19 @@ function QuestionDialog({ open, question, data, onClose, refresh, toast }: { ope
                 <Label htmlFor="qspoken">Pytanie czytane przez lektora (opcjonalnie)</Label>
                 <Textarea id="qspoken" value={spoken} onChange={(e) => setSpoken(e.target.value)} rows={2} placeholder="np. Dzień dobry, rozwodzę się i zastanawiam, kto zdecyduje o opiece nad dziećmi?" />
                 <p className="text-xs text-muted">Gdy puste, lektor czyta tytuł wideo. Na filmie u góry zawsze widać tytuł.</p>
+              </div>
+            ) : null}
+                        {kindHasHooks(k) ? (
+              <div className="space-y-1.5" data-testid="hooks-field">
+                <Label htmlFor="qhooks">{k === "QUESTION_PROMPTER" ? "Wersje pytania do reklamy (opcjonalnie, jedna w linii)" : "Hooki do reklamy (opcjonalnie, jeden w linii)"}</Label>
+                <Textarea id="qhooks" value={hooksText} onChange={(e) => setHooksText(e.target.value)} rows={4} placeholder={k === "QUESTION_PROMPTER" ? "Czy mam powiedzieć mężowi o długach?\nMąż nie wie o moich długach. Co robić?" : "Masz długi i nie wiesz, czy powiedzieć o nich mężowi?\n3 rzeczy, które musisz wiedzieć, zanim powiesz mężowi o długach"} />
+                <p className="text-xs text-muted">
+                  {hooksText.split("\n").filter((h) => h.trim()).length >= 2
+                    ? k === "QUESTION_PROMPTER"
+                      ? `Reklama z ${hooksText.split("\n").filter((h) => h.trim()).length} wersjami pytania: lektor przeczyta je po kolei, ekspert odpowie raz — w Studio jeden montaż z wymiennymi pytaniami.`
+                      : `Reklama z ${hooksText.split("\n").filter((h) => h.trim()).length} hookami: ekspert czyta je po kolei, potem treść — w Studio jeden montaż z wymiennymi hookami.`
+                    : "Dwa lub więcej = reklama z wymiennymi hookami (jedno nagranie, jeden montaż w Studio)."}
+                </p>
               </div>
             ) : null}
             {usesScript ? (

@@ -15,8 +15,10 @@ import { deleteAssets } from "./assets";
 import { computeWaveform, detectPauses } from "../editor/silence";
 import { buildSegments } from "../editor/subtitles";
 import { buildInitialDocument } from "../editor/factory";
-import { withNarrationSubtitles } from "../editor/timeline";
-import { narrationWords } from "./narration";
+import { withNarrationSubtitles, withTitleHooks } from "../editor/timeline";
+import { splitAdTake, tightenAdTake, type AdPart } from "../editor/ad-takes";
+import { effectiveKind, hookList, isMultiHook } from "../question-kinds";
+import { narrationWords, questionNarration } from "./narration";
 import { themeFromRow, DEFAULT_THEME } from "../themes";
 import type { EditorDocument, Waveform } from "../editor/types";
 import { ElevenLabsError, transcribe } from "./elevenlabs";
@@ -34,8 +36,10 @@ interface Markers {
   answerStart?: number | null;
   /** the camera picture size as the expert saw it (orientation applied) — to catch squeezed files */
   camera?: { w: number; h: number };
-  /** front camera: flip horizontally, so the video is what the expert saw in the mirrored preview */
+    /** front camera: flip horizontally, so the video is what the expert saw in the mirrored preview */
   mirrored?: boolean;
+  /** hook + prompter ad: hook 1, hook 2… and the body, where the expert tapped "Dalej" (seconds of the take) */
+  adParts?: AdPart[];
 }
 
 /**
@@ -258,8 +262,9 @@ export async function transcribeTake(takeId: string, force = false): Promise<voi
       await queueAutoVisuals(c.id);
       continue;
     }
-    const assetIdForSubs = doc.clips[0]?.assetId ?? take.normalizedAssetId!;
-    const next: EditorDocument = { ...doc, subtitles: { ...doc.subtitles, segments: buildSegments(assetIdForSubs, words), source: "transcript" } };
+        const assetIdForSubs = doc.clips[0]?.assetId ?? take.normalizedAssetId!;
+    // an ad split by the expert's taps: each hook and the body fitted to their words
+    const next: EditorDocument = tightenAdTake({ ...doc, subtitles: { ...doc.subtitles, segments: buildSegments(assetIdForSubs, words), source: "transcript" } }, words);
     await prisma.videoComposition.update({ where: { id: c.id }, data: { document: next as unknown as Prisma.InputJsonValue, version: { increment: 1 } } });
     // only after the subtitles are saved: the AI reads them to pick the moments
     await queueAutoVisuals(c.id);
@@ -332,6 +337,28 @@ export async function ensureComposition(takeId: string) {
       /* subtitles of the question are optional — the Studio adds them later */
     }
   }
+    // an ad with several hooks: one edit with interchangeable hooks
+  const q = take.recording.question;
+  const kind = effectiveKind(q.kind, project.format);
+  let adDoc: EditorDocument = doc;
+  if (kind === "HOOK_PROMPTER" && isMultiHook(kind, q) && markers.adParts?.length) {
+    adDoc = tightenAdTake(splitAdTake(doc, markers.adParts, q.text), words);
+  } else if (kind === "QUESTION_PROMPTER" && isMultiHook(kind, q) && narration) {
+    // the narrator's other questions: their own narration (same voice as the first) and its subtitles
+    const versions: Parameters<typeof withTitleHooks>[1] = [];
+    const voiceId = (narration.meta as { voiceId?: string } | null)?.voiceId ?? null;
+    for (const text of hookList(kind, q).slice(1)) {
+      try {
+        const id = await questionNarration(project, { id: q.id, text }, { text, voiceId });
+        const a = await prisma.mediaAsset.findUniqueOrThrow({ where: { id } });
+        const nw = await narrationWords(id).catch(() => null);
+        versions.push({ text, title: q.text, narration: { assetId: id, duration: a.durationSec ?? 3, subs: nw?.words.length ? { baseAssetId: nw.baseAssetId, segments: buildSegments(nw.baseAssetId, nw.words) } : null } });
+      } catch (e) {
+        console.error("[ad] narration of a question version", (e as Error).message);
+      }
+    }
+    if (versions.length) adDoc = withTitleHooks(doc, versions);
+  }
   return prisma.videoComposition.create({
     data: {
       projectId: project.id,
@@ -339,7 +366,7 @@ export async function ensureComposition(takeId: string) {
       takeId,
       name: `${take.recording.question.text.slice(0, 80)} — ujęcie ${take.takeNumber}`,
       status: "READY_TO_EDIT",
-      document: doc as unknown as Prisma.InputJsonValue,
+            document: adDoc as unknown as Prisma.InputJsonValue,
     },
   });
 }

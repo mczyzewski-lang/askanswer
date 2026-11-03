@@ -29,7 +29,7 @@ export const PATCH = route(async (req: Request, ctx: Ctx) => {
   }
   if (data.expertId) await ensureProjectExpert(current.projectId, data.expertId);
   // the expert accepted another version of the content: ask again
-  const changed = (["text", "spokenText", "script"] as const).some((k) => data[k] !== undefined && (data[k] ?? null) !== (current[k] ?? null));
+  const changed = (["text", "spokenText", "script"] as const).some((k) => data[k] !== undefined && (data[k] ?? null) !== (current[k] ?? null)) || (data.hooks !== undefined && data.hooks.join("\n") !== current.hooks.join("\n"));
   // …and the script score no longer applies to it
   if (changed) Object.assign(data, { contentApprovedAt: null, review: Prisma.DbNull, reviewedAt: null });
   return json(await prisma.question.update({ where: { id }, data }));

@@ -48,3 +48,19 @@ export function kindFromCsv(v: string): QuestionKind | null {
   if (k === "pytania" || k === "pytanie" || k === "question" || k === "questions") return "QUESTION";
   return null;
 }
+
+/** Kinds that can carry several hooks (an ad: one body, interchangeable hooks). */
+export const kindHasHooks = (k: QuestionKind) => k === "HOOK_PROMPTER" || k === "QUESTION_PROMPTER";
+
+/**
+ * The hooks of an item: hook + prompter — what the expert reads first; question + prompter — the
+ * questions the narrator reads. Without a list: the single hook (spokenText, else the title).
+ */
+export function hookList(k: QuestionKind, q: { text: string; spokenText?: string | null; hooks?: string[] | null }): string[] {
+  const list = (q.hooks ?? []).map((h) => h.trim()).filter(Boolean);
+  if (kindHasHooks(k) && list.length) return list;
+  return [q.spokenText?.trim() || q.text];
+}
+
+/** An ad recorded with several hooks (each becomes a version of one edit). */
+export const isMultiHook = (k: QuestionKind, q: { hooks?: string[] | null }) => kindHasHooks(k) && (q.hooks ?? []).filter((h) => h.trim()).length >= 2;

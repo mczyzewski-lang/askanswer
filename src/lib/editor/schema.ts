@@ -238,6 +238,7 @@ export const EditorDocumentSchema = z.object({
       .optional(),
     autoVisuals: z.string().max(20).optional(),
     autoPolish: z.string().max(20).optional(),
+    adSplit: z.enum(["markers", "words"]).optional(),
     bgVariants: z.array(z.string().max(64)).max(24).optional(),
     narrationSubs: z.string().max(64).nullable().optional(),
     defaults: z.object({ blur: z.boolean().optional(), speed: z.boolean().optional(), subs: z.string().max(40).optional() }).optional(),

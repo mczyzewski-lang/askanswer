@@ -5,11 +5,12 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { ArrowUpRight, FolderPlus, Users } from "lucide-react";
 import { Badge, Button, Card, Dialog, DialogContent, DialogTrigger, EmptyState, Input, Label, NativeSelect, Progress, Textarea, useToast } from "@/components/ui";
-import { api, formatDate } from "@/lib/utils";
+import { api, cn, formatDate } from "@/lib/utils";
 import { THEME_PRESETS } from "@/lib/themes";
 import type { DashboardProject } from "@/lib/server/project-data";
 
-export function Dashboard({ projects }: { projects: DashboardProject[] }) {
+/** `ads`: the "Reklamy" tab — expert projects for ads read from the prompter, several hooks per reel */
+export function Dashboard({ projects, ads = false }: { projects: DashboardProject[]; ads?: boolean }) {
   const totals = projects.reduce(
     (t, p) => ({ q: t.q + p.questionCount, r: t.r + p.recorded, e: t.e + p.edited, x: t.x + p.exported }),
     { q: 0, r: 0, e: 0, x: 0 },
@@ -18,10 +19,14 @@ export function Dashboard({ projects }: { projects: DashboardProject[] }) {
     <div>
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="font-display text-[28px] font-semibold">Projekty</h1>
-          <p className="mt-1 text-sm text-muted">Od pytania do zmontowanego wideo eksperta w kilka minut.</p>
+                    <h1 className="font-display text-[28px] font-semibold">{ads ? "Reklamy" : "Projekty"}</h1>
+          <p className="mt-1 text-sm text-muted">
+            {ads
+              ? "Reklamy nagrywane przez eksperta z promptera: hook + treść albo pytanie lektora + odpowiedź — kilka hooków na reklamę, sklejane w Studio w jeden montaż z wymiennymi hookami."
+              : "Od pytania do zmontowanego wideo eksperta w kilka minut."}
+          </p>
         </div>
-        <NewProjectDialog />
+        <NewProjectDialog ads={ads} />
       </div>
       <div className="mt-8 grid grid-cols-2 gap-3 md:grid-cols-4">
         <Kpi label="Pytania" value={totals.q} />
@@ -87,7 +92,7 @@ function Metric({ label, value, tone }: { label: string; value: number; tone?: "
   );
 }
 
-function NewProjectDialog() {
+function NewProjectDialog({ ads = false }: { ads?: boolean }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
@@ -101,17 +106,18 @@ function NewProjectDialog() {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogTrigger asChild>
           <Button>
-            <FolderPlus /> Nowy projekt
+            <FolderPlus /> {ads ? "Nowe reklamy" : "Nowy projekt"}
           </Button>
         </DialogTrigger>
-        <DialogContent title="Nowy projekt" description="Projekt grupuje pytania, ekspertów i gotowe filmy.">
+        <DialogContent title={ads ? "Nowy projekt reklam" : "Nowy projekt"} description={ads ? "Motyw, eksperci, CSV z treściami reklam i link do nagrywania — jak w zwykłym projekcie." : "Projekt grupuje pytania, ekspertów i gotowe filmy."}>
           <form
             className="space-y-4"
             onSubmit={async (e) => {
               e.preventDefault();
               setBusy(true);
               try {
-                const p = await api<{ id: string }>("/api/admin/projects", { method: "POST", json: { name, description: description || null, preset, format } });
+                // an ads project: items of mixed kinds (hook + prompter by default), several hooks each
+                const p = await api<{ id: string }>("/api/admin/projects", { method: "POST", json: { name, description: description || null, preset, format: ads ? "HYBRID" : format, ...(ads ? { adsRecording: true } : {}) } });
                 router.push(`/admin/projects/${p.id}`);
               } catch (err) {
                 toast((err as Error).message, "err");
@@ -127,7 +133,12 @@ function NewProjectDialog() {
               <Label htmlFor="pdesc">Opis (opcjonalnie)</Label>
               <Textarea id="pdesc" value={description} onChange={(e) => setDescription(e.target.value)} />
             </div>
-            <div className="space-y-1.5">
+                        {ads ? (
+              <p className="rounded-lg bg-black/[.03] p-2.5 text-xs text-muted">
+                Każda reklama: <b>hook + prompter</b> (ekspert czyta po kolei wszystkie hooki, potem treść) albo <b>pytanie + prompter</b> (lektor czyta po kolei wersje pytania, ekspert odpowiada raz). W CSV hooki w kolumnach „Hook”, „Hook 2”, „Hook 3”… (albo „Pytanie”, „Pytanie 2”…).
+              </p>
+            ) : null}
+            <div className={cn("space-y-1.5", ads && "hidden")}>
               <Label htmlFor="pformat">Format</Label>
               <NativeSelect id="pformat" value={format} onChange={(e) => setFormat(e.target.value as ProjectFormat)}>
                 {(Object.keys(FORMAT_LABELS) as ProjectFormat[]).map((k) => (

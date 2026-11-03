@@ -769,7 +769,7 @@ function switchTitleHook(doc: EditorDocument, index: number): EditorDocument {
  * Start an A/B test of the hook on this edit: version 1 is the current title (and narration), the others
  * the given texts — each with its own narration when one was made. Replaces an earlier A/B test.
  */
-export function withTitleHooks(doc: EditorDocument, versions: Array<{ text: string; narration?: { assetId: string; duration: number; speed?: number; baseAssetId?: string; subs: { baseAssetId: string; segments: SubtitleSegment[] } | null } | null }>): EditorDocument {
+export function withTitleHooks(doc: EditorDocument, versions: Array<{ text: string; /** the title on screen (default: the text) */ title?: string; narration?: { assetId: string; duration: number; speed?: number; baseAssetId?: string; subs: { baseAssetId: string; segments: SubtitleSegment[] } | null } | null }>): EditorDocument {
   if (doc.hooks?.clipId) return doc;
   const base = doc.hooks && doc.hooks.active !== 0 ? switchTitleHook(doc, 0) : doc;
   const q = base.overlays.find((o): o is TextOverlay => o.kind === "text" && o.role === "question");
@@ -784,7 +784,7 @@ export function withTitleHooks(doc: EditorDocument, versions: Array<{ text: stri
   };
   const variants: HookVariant[] = [
     { id: uid("hook"), code: letter(0), title: q?.text ?? base.meta.questionText, narration: null },
-    ...versions.map((v, i) => ({ id: uid("hook"), code: letter(i + 1), title: v.text.trim(), narration: v.narration ? narrationOf(v.narration) : null })),
+    ...versions.map((v, i) => ({ id: uid("hook"), code: letter(i + 1), title: (v.title ?? v.text).trim(), narration: v.narration ? narrationOf(v.narration) : null })),
   ];
   return { ...base, hooks: { clipId: null, narrationClipId: narr && variants.some((v) => v.narration) ? narr.id : null, active: 0, variants } };
 }

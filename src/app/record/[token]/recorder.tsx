@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { terms } from "@/lib/project-terms";
-import { kindHasNarration, prompterHook } from "@/lib/question-kinds";
+import { hookList, isMultiHook, kindHasNarration, prompterHook } from "@/lib/question-kinds";
 import { primeAudio, Prompter } from "./prompter";
 import { ReviewScreen, type ReviewItem } from "./review";
 import { AlertTriangle, Camera, Expand, Shrink, ZoomIn, Check, CheckCircle2, ChevronLeft, ChevronRight, CloudUpload, Loader2, Mic, Pause, Play, RefreshCw, RotateCcw, Square, SwitchCamera, Volume2, WifiOff } from "lucide-react";
@@ -20,8 +20,10 @@ interface Question {
   /** Prompter projects: the script read after the hook (text) */
   script?: string | null;
   status: string;
-  /** hook + prompter: the hook the expert reads (empty = the title) */
+    /** hook + prompter: the hook the expert reads (empty = the title) */
   spokenText?: string | null;
+  /** an ad with several hooks: the expert reads each (hook + prompter) or the narrator reads each question */
+  hooks?: string[];
   /** QUESTION (narrator) | PROMPTER | QUESTION_PROMPTER (narrator + prompter) | HOOK_PROMPTER (expert reads hook + script) */
   kind?: "QUESTION" | "PROMPTER" | "QUESTION_PROMPTER" | "HOOK_PROMPTER";
   takes: Array<{ id: string; takeNumber: number; status: string }>;
@@ -479,8 +481,9 @@ export function Recorder({ token }: { token: string }) {
                           <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-white/45">{[q.category, q.subcategory].filter(Boolean).join(" · ")}</span>
                           {/* mixed projects: what kind of recording this is, said quietly */}
                           {session.project.format === "HYBRID" && q.kind ? (
-                            <span className="rounded-full border border-white/15 px-2 py-px text-[10.5px] font-medium text-white/55" data-testid="item-kind">
+                                                        <span className="rounded-full border border-white/15 px-2 py-px text-[10.5px] font-medium text-white/55" data-testid="item-kind">
                               {ITEM_KIND[q.kind]}
+                              {(q.hooks ?? []).filter((h) => h.trim()).length >= 2 ? ` · reklama, ${q.hooks!.length} ${q.kind === "QUESTION_PROMPTER" ? "pytania" : "hooki"}` : ""}
                             </span>
                           ) : null}
                         </span>
@@ -634,8 +637,18 @@ function RecordScreen(props: {
   // what this item is: the narrator reads the question and/or the expert reads from the prompter
   const kind = question.kind ?? (session.project.format === "PROMPTER" ? "PROMPTER" : "QUESTION");
   const isPrompter = kind !== "QUESTION";
-  const withNarrator = kindHasNarration(kind) && session.narrationAvailable;
+    const withNarrator = kindHasNarration(kind) && session.narrationAvailable;
   const [takeKey, setTakeKey] = useState(0);
+  // an ad with several hooks: hook + prompter — the expert reads hook 1, 2… (tapping "Dalej"), then the body;
+  // question + prompter — the narrator reads every question in turn, then the expert answers once
+  const multi = isMultiHook(kind, question);
+  const hooks = hookList(kind, question);
+  const multiRead = multi && kind === "HOOK_PROMPTER";
+  const multiListen = multi && kind === "QUESTION_PROMPTER";
+  const [part, setPart] = useState(0);
+  const adParts = useRef<Array<{ kind: "hook" | "body"; i: number; start: number; end?: number }>>([]);
+  const [narrations, setNarrations] = useState<Array<{ url: string; assetId: string; duration: number }>>([]);
+  const [listening, setListening] = useState(0);
 
   const now = () => (clock.current.running ? clock.current.acc + (performance.now() - clock.current.since) / 1000 : clock.current.acc);
 
@@ -645,7 +658,19 @@ function RecordScreen(props: {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(`/api/record/${props.token}/narration`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ questionId: question.id }) });
+                if (multiListen) {
+          // every question of the ad, read one after another before the answer
+          const all = [];
+          for (let i = 0; i < hooks.length; i++) {
+            const r = await fetch(`/api/record/${props.token}/narration`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ questionId: question.id, hook: i }) });
+            const d = await r.json();
+            if (!r.ok) throw Object.assign(new Error(d.error ?? "lektor"), { code: d.code });
+            all.push({ url: d.url, assetId: d.assetId, duration: d.duration });
+          }
+          if (cancelled) return;
+          setNarrations(all);
+        }
+        const res = await fetch(`/api/record/${props.token}/narration`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ questionId: question.id, ...(multiListen ? { hook: 0 } : {}) }) });
         const data = await res.json();
         if (cancelled) return;
         if (!res.ok) {
@@ -698,9 +723,11 @@ function RecordScreen(props: {
       void props.onRestartCamera();
       return false;
     }
-    chunks.current = [];
+        chunks.current = [];
     clientId.current = newClientId();
     markers.current = { narrationStart: null, narrationEnd: null };
+    adParts.current = [];
+    setPart(0);
     let rec: MediaRecorder;
     try {
       rec = new MediaRecorder(s, { mimeType: support.mimeType, videoBitsPerSecond: 6_000_000, audioBitsPerSecond: 128_000 });
@@ -750,7 +777,7 @@ function RecordScreen(props: {
         mode: modeRef.current,
         narrationAssetId: narration?.assetId ?? null,
         // the picture as the camera delivered it at the end (the server checks the file against it)
-        markers: { ...markers.current, mirrored: props.mirrored, ...cameraSize() },
+                markers: { ...markers.current, mirrored: props.mirrored, ...cameraSize(), ...(adParts.current.length ? { adParts: adParts.current.map((p, k, all) => ({ ...p, end: p.end ?? (k === all.length - 1 ? duration : all[k + 1].start) })) } : {}) },
         durationSec: duration,
         blob,
         createdAt: Date.now(),
@@ -792,7 +819,22 @@ function RecordScreen(props: {
     setPhase("recording");
   };
 
-  const onNarrationEnded = () => {
+    const onNarrationEnded = () => {
+    // several questions: the next one, until all were read
+    if (multiListen && phase === "narrating" && listening < narrations.length - 1) {
+      const a = audioRef.current;
+      const next = narrations[listening + 1];
+      setListening(listening + 1);
+      if (a) {
+        a.src = next.url;
+        a.currentTime = 0;
+        void a.play().catch(() => onNarrationEndedAll());
+      }
+      return;
+    }
+    onNarrationEndedAll();
+  };
+  const onNarrationEndedAll = () => {
     if (phase === "narrating" && modeRef.current === "CONTINUOUS" && isPrompter) {
       // the camera keeps rolling; if the prompter is still connecting, that wait is cut out later
       markers.current.narrationEnd = now();
@@ -820,8 +862,9 @@ function RecordScreen(props: {
       await new Promise((r) => setTimeout(r, 1000));
       if (cancelCountdown.current) return;
     }
-    if (startRecorder()) {
+        if (startRecorder()) {
       setMic(true);
+      if (multiRead) adParts.current = [{ kind: "hook", i: 0, start: now() }];
       setPhase("recording");
       if (!isPrompter) setAnswerCue(true);
       setTimeout(() => setAnswerCue(false), 2000);
@@ -842,7 +885,17 @@ function RecordScreen(props: {
       if (session.voiceFollow) primeAudio();
       // question + prompter: like Mode A — the camera rolls while the narrator reads the client's
       // question (the expert listening is in the video), mic muted; meanwhile the prompter connects
-      if (kind === "QUESTION_PROMPTER" && narrationState === "ready" && narration) {
+            if (multiListen && narrationState === "ready" && narrations.length) {
+        modeRef.current = "ANSWER_ONLY";
+        setListening(0);
+        const a = audioRef.current;
+        if (a) a.src = narrations[0].url;
+        if (await playNarration()) {
+          setPhase("narrating");
+          return;
+        }
+      }
+      if (kind === "QUESTION_PROMPTER" && narrationState === "ready" && narration && !multiListen) {
         modeRef.current = "CONTINUOUS";
         prompterReady.current = false;
         setTakeKey((k) => k + 1);
@@ -947,6 +1000,17 @@ function RecordScreen(props: {
     setPhase("idle");
   };
 
+    /** hook + prompter ad: this hook is done — the next one (or the body) on the prompter */
+  const nextPart = () => {
+    const t = now();
+    const cur = adParts.current[adParts.current.length - 1];
+    if (cur) cur.end = t;
+    const n = part + 1;
+    adParts.current.push(n < hooks.length ? { kind: "hook", i: n, start: t } : { kind: "body", i: 0, start: t });
+    setPart(n);
+  };
+  const onBody = multiRead && part >= hooks.length;
+
   const limit = question.maxDurationSec ?? null;
   const over = limit != null && elapsed > limit;
   const up = lastClientId ? props.uploads[lastClientId] : null;
@@ -958,7 +1022,8 @@ function RecordScreen(props: {
         <ChevronLeft className="h-5 w-5" /> {isPrompter ? "Lista" : "Pytania"}
       </button>
       <span className="tabular text-xs font-medium text-white/60">
-        {isPrompter ? "Skrypt" : "Pytanie"} {props.index + 1} z {props.total}
+                {multi ? "Reklama #" : isPrompter ? "Skrypt " : "Pytanie "}
+        {props.index + 1} z {props.total}
       </span>
       {recordingLike ? (
         <span className="flex items-center gap-1.5 rounded-full bg-black/40 px-2.5 py-1 text-xs font-semibold tabular backdrop-blur">
@@ -994,14 +1059,19 @@ function RecordScreen(props: {
           {isPrompter ? null : headerRow}
           {isPrompter ? (
             <div className="h-[46dvh]">
-              {kind === "QUESTION_PROMPTER" ? (
+                            {kind === "QUESTION_PROMPTER" ? (
                 <p className="px-2 pb-1 pt-1 text-center text-[13px] font-semibold uppercase leading-snug text-white/75" data-testid="qp-question">
-                  {question.text}
+                  {multiListen ? (phase === "narrating" ? `Pytanie ${listening + 1}/${hooks.length}: ${hooks[listening]}` : `Odpowiedź na ${hooks.length} wersje pytania`) : question.text}
+                </p>
+              ) : null}
+              {multiRead ? (
+                <p className="px-2 pb-1 pt-1 text-center text-[12px] font-semibold uppercase tracking-[0.08em] text-white/70" data-testid="ad-part">
+                  {onBody ? "Treść reklamy" : `Hook ${Math.min(part, hooks.length - 1) + 1} z ${hooks.length}`}
                 </p>
               ) : null}
               <Prompter
-                hook={prompterHook(kind, question)}
-                script={question.script ?? null}
+                hook={multiRead ? (onBody ? "" : hooks[Math.min(part, hooks.length - 1)]) : prompterHook(kind, question)}
+                script={multiRead && !onBody ? null : (question.script ?? null)}
                 takeKey={takeKey}
                 armed={phase === "connecting" || phase === "countdown" || recordingLike}
                 onReady={onPrompterReady}
@@ -1054,6 +1124,19 @@ function RecordScreen(props: {
           {narrationMsg && phase === "idle" ? <p className="mb-3 text-center text-xs text-white/60">{narrationMsg}</p> : null}
           {phase === "idle" ? (
             <div className="flex flex-col items-center gap-3">
+                            {multi ? (
+                <div className="w-full rounded-2xl bg-white/10 p-3 text-left text-[13px] backdrop-blur" data-testid="ad-plan">
+                  <p className="mb-1 font-semibold">Reklama · {hooks.length} {multiRead ? "hooki" : "wersje pytania"}</p>
+                  <ol className="list-decimal space-y-0.5 pl-5 text-white/80">
+                    {hooks.map((h, i) => (
+                      <li key={i} className="line-clamp-2">
+                        {h}
+                      </li>
+                    ))}
+                  </ol>
+                  <p className="mt-1.5 text-white/60">{multiRead ? "Czytasz hooki po kolei — po każdym stuknij „Następny hook”. Potem treść reklamy z promptera. Wszystko w jednym nagraniu." : "Lektor przeczyta wszystkie wersje pytania po kolei, potem odpowiadasz raz z promptera."}</p>
+                </div>
+              ) : null}
               <p className="text-center text-[13px] text-white/70">
                 {kind === "QUESTION_PROMPTER"
                   ? narrationState === "ready"
@@ -1094,6 +1177,11 @@ function RecordScreen(props: {
                 {recordingLike ? "Zatrzymaj" : "Anuluj"}
               </button>
             </div>
+          ) : null}
+                    {multiRead && phase === "recording" && !onBody ? (
+            <button className="mb-3 h-14 w-full rounded-2xl font-semibold text-black active:scale-[.98]" style={{ background: accent }} onClick={nextPart} data-testid="ad-next">
+              {part < hooks.length - 1 ? `Następny hook (${part + 2}/${hooks.length}) →` : "Dalej: treść reklamy →"}
+            </button>
           ) : null}
           {phase === "narrating" || phase === "recording" || phase === "paused" ? (
             <div className="flex items-center justify-center gap-6 pb-2">

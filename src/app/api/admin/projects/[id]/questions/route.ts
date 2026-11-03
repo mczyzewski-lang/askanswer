@@ -27,9 +27,9 @@ export const POST = route(async (req: Request, ctx: { params: Promise<{ id: stri
     for (const e of await prisma.expert.findMany({ select: { id: true, name: true } })) if (names.includes(e.name.trim().toLowerCase())) byName.set(e.name.trim().toLowerCase(), e.id);
   }
   // re-import: existing items by title (first unmatched one wins when titles repeat)
-  const existing = new Map<string, Array<{ id: string; text: string; spokenText: string | null; script: string | null; kind: string | null; instructions: string | null }>>();
+  const existing = new Map<string, Array<{ id: string; text: string; spokenText: string | null; script: string | null; kind: string | null; instructions: string | null; hooks: string[] }>>();
   if (raw?.upsert === true) {
-    for (const q of await prisma.question.findMany({ where: { projectId }, orderBy: { order: "asc" }, select: { id: true, text: true, spokenText: true, script: true, kind: true, instructions: true } })) {
+    for (const q of await prisma.question.findMany({ where: { projectId }, orderBy: { order: "asc" }, select: { id: true, text: true, spokenText: true, script: true, kind: true, instructions: true, hooks: true } })) {
       const k = norm(q.text);
       existing.set(k, [...(existing.get(k) ?? []), q]);
     }
@@ -42,8 +42,8 @@ export const POST = route(async (req: Request, ctx: { params: Promise<{ id: stri
     for (const it of items) {
       const same = existing.get(norm(it.text))?.shift();
       if (same) {
-        const next = { kind: it.kind ?? same.kind, spokenText: it.spokenText || null, script: it.script ?? null, instructions: it.instructions ?? same.instructions };
-        const contentChanged = next.spokenText !== same.spokenText || next.script !== same.script;
+        const next = { kind: it.kind ?? same.kind, spokenText: it.spokenText || null, script: it.script ?? null, instructions: it.instructions ?? same.instructions, hooks: it.hooks ?? same.hooks };
+        const contentChanged = next.spokenText !== same.spokenText || next.script !== same.script || next.hooks.join("\n") !== same.hooks.join("\n");
         if (contentChanged || next.kind !== same.kind || next.instructions !== same.instructions) {
           // content changed → the expert's approval no longer applies
           await tx.question.update({ where: { id: same.id }, data: { ...next, ...(contentChanged ? { contentApprovedAt: null, review: Prisma.DbNull, reviewedAt: null } : {}) } });
@@ -84,7 +84,7 @@ export const POST = route(async (req: Request, ctx: { params: Promise<{ id: stri
       }
       out.push(
         await tx.question.create({
-          data: { projectId, text: it.text, script: it.script ?? null, kind: it.kind ?? null, spokenText: it.spokenText || null, categoryId, subcategoryId, instructions: it.instructions ?? null, maxDurationSec: it.maxDurationSec ?? null, expertId: it.expertId ?? (it.expertName ? byName.get(it.expertName.toLowerCase()) : undefined) ?? defaultExpertId ?? soleMember, order: order++ },
+          data: { projectId, text: it.text, script: it.script ?? null, kind: it.kind ?? null, spokenText: it.spokenText || null, hooks: it.hooks ?? [], categoryId, subcategoryId, instructions: it.instructions ?? null, maxDurationSec: it.maxDurationSec ?? null, expertId: it.expertId ?? (it.expertName ? byName.get(it.expertName.toLowerCase()) : undefined) ?? defaultExpertId ?? soleMember, order: order++ },
         }),
       );
     }

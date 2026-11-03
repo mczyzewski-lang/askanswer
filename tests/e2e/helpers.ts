@@ -43,10 +43,10 @@ export async function waitForTakes(request: APIRequestContext, questionId: strin
 }
 
 /** Upload the clearly-labelled TEST FIXTURE through the real expert upload API (chunked, resumable). */
-export async function uploadFixtureTake(request: APIRequestContext, token: string, questionId: string, mode: "CONTINUOUS" | "ANSWER_ONLY" = "ANSWER_ONLY") {
+export async function uploadFixtureTake(request: APIRequestContext, token: string, questionId: string, mode: "CONTINUOUS" | "ANSWER_ONLY" = "ANSWER_ONLY", markers: Record<string, unknown> = {}) {
   const buf = fs.readFileSync("tests/fixtures/generated/sample-take.mp4");
   const clientId = `fixture${Date.now()}`;
-  const created = await request.post(`/api/record/${token}/takes`, { data: { questionId, clientId, mimeType: "video/mp4", mode, markers: {} } });
+  const created = await request.post(`/api/record/${token}/takes`, { data: { questionId, clientId, mimeType: "video/mp4", mode, markers } });
   expect(created.ok()).toBeTruthy();
   const { takeId } = await created.json();
   const SLICE = 2 * 1024 * 1024;

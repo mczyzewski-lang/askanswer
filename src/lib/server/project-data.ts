@@ -3,10 +3,11 @@ import { invitationUrl } from "./invitations";
 import { signedUrl } from "./storage";
 import { elevenLabsConfigured } from "./env";
 
-export async function dashboardData() {
+/** `adsRecording`: the "Reklamy" tab (true) or the regular projects (false) */
+export async function dashboardData(opts: { adsRecording?: boolean } = {}) {
   const projects = await prisma.project.findMany({
     // ad campaigns live in the Ads Studio
-    where: { format: { not: "ADS" } },
+    where: { format: { not: "ADS" }, ...(opts.adsRecording != null ? { adsRecording: opts.adsRecording } : {}) },
     orderBy: { updatedAt: "desc" },
     include: {
       questions: { select: { id: true, status: true, updatedAt: true, expert: { select: { name: true } }, recording: { select: { updatedAt: true, _count: { select: { takes: true } } } } } },
@@ -70,8 +71,9 @@ export async function projectData(id: string) {
       id: q.id,
       text: q.text,
       script: q.script,
-      kind: q.kind,
+            kind: q.kind,
       spokenText: q.spokenText,
+      hooks: q.hooks,
       contentApproved: !!q.contentApprovedAt,
       review: q.review,
       reviewedAt: q.reviewedAt?.toISOString() ?? null,
@@ -136,7 +138,8 @@ export async function projectData(id: string) {
       autoBlur: p.autoBlur,
       blurStrength: p.blurStrength,
       narrationSpeed: p.narrationSpeed,
-      adsBrief: p.adsBrief,
+            adsBrief: p.adsBrief,
+      adsRecording: p.adsRecording,
       leadMagnets: p.leadMagnets,
       subtitlePreset: p.subtitlePreset,
       autoVoice: p.autoVoice,

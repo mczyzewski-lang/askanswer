@@ -13,7 +13,7 @@ const Body = z.object({
   mimeType: z.string().max(120),
   mode: z.enum(["CONTINUOUS", "ANSWER_ONLY"]),
   narrationAssetId: z.string().nullable().optional(),
-  markers: z.object({ narrationStart: z.number().nullable().optional(), narrationEnd: z.number().nullable().optional(), answerStart: z.number().nullable().optional(), mirrored: z.boolean().optional(), camera: z.object({ w: z.number().int().min(1).max(10000), h: z.number().int().min(1).max(10000) }).optional() }).optional(),
+  markers: z.object({ narrationStart: z.number().nullable().optional(), narrationEnd: z.number().nullable().optional(), answerStart: z.number().nullable().optional(), mirrored: z.boolean().optional(), camera: z.object({ w: z.number().int().min(1).max(10000), h: z.number().int().min(1).max(10000) }).optional(), adParts: z.array(z.object({ kind: z.enum(["hook", "body"]), i: z.number().int().min(0).max(20), start: z.number().min(0), end: z.number().min(0) })).max(25).optional() }).optional(),
   durationSec: z.number().optional(),
 });
 

@@ -188,6 +188,8 @@ model Project {
   adsBrollPerReel    Int                @default(2)
   /// Ads Studio: the Studio edit where the B-roll videos are cut — each clip on its timeline is a cutaway of the basket
   adsBrollCompositionId String?
+  /// "Reklamy" tab: an expert project for ads recorded from the prompter, several hooks per reel
+  adsRecording       Boolean            @default(false)
   /// right after processing: voice "podcast + ElevenLabs" (voice isolation + mastering)
   autoVoice          Boolean            @default(true)
   /// right after processing: dynamic zooms on sentence boundaries
@@ -264,6 +266,9 @@ model Question {
   kind              String?
   /// what the narrator reads when it differs from the video title (text); null = the title
   spokenText        String?
+  /// an ad with several hooks (hook + prompter: the expert reads each; question + prompter: the narrator
+  /// reads each question) — one edit with interchangeable hooks; empty = a single hook (spokenText / text)
+  hooks             String[]           @default([])
   /// the expert accepted the content (title / question / script) in "Przejrzyj treści"
   contentApprovedAt DateTime?
   /// script review by the reel editor guidelines (OpenAI), prompter items; { error } when it failed

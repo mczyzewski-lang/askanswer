@@ -13,6 +13,8 @@ export const QuestionInput = z.object({
   kind: z.enum(["QUESTION", "PROMPTER", "QUESTION_PROMPTER", "HOOK_PROMPTER"]).nullable().optional(),
   /** the question the narrator reads, when it differs from the video title */
   spokenText: z.string().trim().max(1000).nullable().optional(),
+  /** an ad with several hooks (hook + prompter / question + prompter) */
+  hooks: z.array(z.string().trim().min(1).max(1000)).max(12).optional(),
   maxDurationSec: z.number().int().min(5).max(1800).nullable().optional(),
   expertId: z.string().nullable().optional(),
   /** CSV "Ekspert" column: matched by name to an existing expert */
@@ -46,7 +48,9 @@ export const ProjectInput = z.object({
   autoImageEnhance: z.boolean().optional(),
   recordingMode: z.enum(["CONTINUOUS", "ANSWER_ONLY"]).optional(),
   sequential: z.boolean().optional(),
-  format: z.enum(["ANSWERS", "PROMPTER", "HYBRID"]).optional(),
+    format: z.enum(["ANSWERS", "PROMPTER", "HYBRID"]).optional(),
+  /** the "Reklamy" tab: ads read from the prompter, several hooks per reel */
+  adsRecording: z.boolean().optional(),
   ctaEnabled: z.boolean().optional(),
   ctaUrl: z.string().trim().max(200).nullable().optional(),
   ctaText: z.string().trim().max(200).nullable().optional(),

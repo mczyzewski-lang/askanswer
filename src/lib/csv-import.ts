@@ -18,6 +18,8 @@ export interface ImportRow {
   text: string;
   /** the question the narrator reads, when different from the video title */
   spokenText?: string | null;
+  /** an ad with several hooks: "Hook 2", "Hook 3"… (or "Pytanie 2"…) columns, or hooks joined with "||" */
+  hooks?: string[];
   script?: string | null;
   categoryName?: string;
   subcategoryName?: string;
@@ -99,12 +101,12 @@ export function parseHybridCsv(text: string): ImportRow[] | null {
   const rows = res.data.filter((r) => r.some((c) => String(c ?? "").trim()));
   if (!rows.length) return null;
   const clean = (v: unknown) => String(v ?? "").replace(/\r/g, "").trim();
-  let col: { kind: number; cat: number; sub: number; title: number; spoken: number; body: number; expert: number };
+  let col: { kind: number; cat: number; sub: number; title: number; spoken: number; body: number; expert: number; more: number[] };
   let body = rows;
   if (kindFromCsv(clean(rows[0][0]))) {
     // no header: 6+ columns = with the narrator's question; 5 = the older layout
     const wide = rows.some((r) => r.length >= 6);
-    col = wide ? { kind: 0, cat: 1, sub: 2, title: 3, spoken: 4, body: 5, expert: 6 } : { kind: 0, cat: 1, sub: 2, title: 3, spoken: -1, body: 4, expert: -1 };
+    col = wide ? { kind: 0, cat: 1, sub: 2, title: 3, spoken: 4, body: 5, expert: 6, more: [] } : { kind: 0, cat: 1, sub: 2, title: 3, spoken: -1, body: 4, expert: -1, more: [] };
   } else {
     // header row: find the columns by name
     const h = rows[0].map((c) => key(clean(c)));
@@ -122,6 +124,8 @@ export function parseHybridCsv(text: string): ImportRow[] | null {
       spoken: -1,
       body: find("treść", "tresc", "script", "skrypt", "content", "tekst", "odpowiedź", "odpowiedz"),
       expert: find("ekspert", "expert"),
+      // "Hook 2", "Hook 3"… / "Pytanie 2"…: more hooks of the same ad
+      more: h.map((x, i) => (/^(hook|pytanie|question)\d+$/.test(x) && !/^(hook|pytanie|question)1$/.test(x) ? i : -1)).filter((i) => i >= 0),
     };
     col.spoken = h.findIndex((x, i) => i !== col.title && (x.startsWith("pytanie") || x.includes("lektor") || x === "question" || x.startsWith("hook")));
     body = rows.slice(1);
@@ -134,16 +138,25 @@ export function parseHybridCsv(text: string): ImportRow[] | null {
       const title = at(r, col.title);
       const spoken = at(r, col.spoken);
       const content = at(r, col.body);
+      // all hooks of an ad: the hook / question column ("||" separates several) + the "Hook 2…" columns
+      const hooks = [...spoken.split("||"), ...col.more.flatMap((i) => at(r, i).split("||"))].map((x) => x.trim()).filter(Boolean);
+      const multi = (kind === "HOOK_PROMPTER" || kind === "QUESTION_PROMPTER") && hooks.length >= 2;
+      const spokenFirst = multi ? hooks[0] : spoken;
       const base = { kind, categoryName: at(r, col.cat) || undefined, subcategoryName: at(r, col.sub) || undefined, expertName: at(r, col.expert) || undefined, maxDurationSec: null };
       if (kind === "PROMPTER") return { ...base, text: title || content.split(/\n/)[0], script: content || null, instructions: null, spokenText: null };
       // narrator kinds: the title on the video, the question the narrator reads (if different)
       const shown = title || spoken;
       const read = spoken && spoken !== shown ? spoken : null;
       if (kind === "HOOK_PROMPTER") {
-        const shownTitle = title || spoken || content.split(/\n/)[0];
-        return { ...base, text: shownTitle, spokenText: spoken && spoken !== shownTitle ? spoken : null, script: content || null, instructions: null };
+        const shownTitle = title || spokenFirst || content.split(/\n/)[0];
+        return { ...base, text: shownTitle, spokenText: spokenFirst && spokenFirst !== shownTitle ? spokenFirst : null, script: content || null, instructions: null, hooks: multi ? hooks : [] };
       }
       if (kind === "QUESTION") return { ...base, text: shown || content, spokenText: read, script: null, instructions: shown && content ? content : null };
+      if (multi) {
+        // question + prompter ad: every question is read by the narrator, one at a time
+        const shownQ = title || hooks[0];
+        return { ...base, text: shownQ, spokenText: hooks[0] !== shownQ ? hooks[0] : null, script: content || null, instructions: null, hooks };
+      }
       return { ...base, text: shown || content.split(/\n/)[0], spokenText: read, script: content || null, instructions: null };
     })
     .filter((r): r is ImportRow => !!r && r.text.length >= 3);
@@ -157,6 +170,16 @@ export function hybridCsvTemplate(): string {
     [KIND_LABELS.PROMPTER.csv, "Growth", "sprzedaż", "3 błędy, które kosztują Cię klientów", "", "Pierwszy błąd to brak odpowiedzi w ciągu 24 godzin.\nDrugi błąd to oferta bez konkretnej ceny."],
     [KIND_LABELS.QUESTION_PROMPTER.csv, "Growth", "ceny", "Jak podnieść ceny i nie stracić klientów?", "Chcę podnieść ceny, ale boję się, że klienci odejdą. Jak to zrobić?", "Zacznij od klientów, którzy najbardziej cenią Twoją pracę.\nPodnieś cenę dla nowych zleceń, nie dla trwających."],
     [KIND_LABELS.HOOK_PROMPTER.csv, "Długi", "rodzina", "Czy mówić mężowi o długach?", "Masz długi i nie wiesz, czy powiedzieć o nich mężowi?", "Krótko: tak, i lepiej wcześniej niż później.\nDługi zaciągnięte w trakcie małżeństwa mogą dotyczyć Was obojga."],
+  ];
+  return "\uFEFF" + Papa.unparse(rows, { delimiter: ";", newline: "\r\n", quotes: true });
+}
+
+/** Example of an ads file: several hooks per ad ("Hook", "Hook 2", "Hook 3"…; for questions the narrator reads them). */
+export function adsCsvTemplate(): string {
+  const rows = [
+    ["Typ", "Kategoria", "Podkategoria", "Tytuł wideo", "Hook", "Hook 2", "Hook 3", "Treść"],
+    [KIND_LABELS.HOOK_PROMPTER.csv, "Długi", "rodzina", "Czy mówić mężowi o długach?", "Masz długi i nie wiesz, czy powiedzieć o nich mężowi?", "3 rzeczy, które musisz wiedzieć, zanim powiesz mężowi o długach", "Mąż nie wie o Twoich długach?", "Krótko: tak, i lepiej wcześniej niż później.\nDługi zaciągnięte w trakcie małżeństwa mogą dotyczyć Was obojga.\nNapisz PLAN w komentarzu albo w wiadomości."],
+    [KIND_LABELS.QUESTION_PROMPTER.csv, "Długi", "rodzina", "Mąż i długi", "Czy mam powiedzieć mężowi o długach?", "Mąż nie wie o moich długach. Co robić?", "", "To zależy od tego, kiedy powstały długi.\nZacznij od spokojnej rozmowy, z planem spłaty w ręku."],
   ];
   return "\uFEFF" + Papa.unparse(rows, { delimiter: ";", newline: "\r\n", quotes: true });
 }

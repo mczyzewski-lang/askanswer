@@ -51,6 +51,7 @@ export async function recordSession(token: string) {
       id: q.id,
       text: q.text,
       spokenText: q.spokenText,
+      hooks: q.hooks,
       script: q.script,
       instructions: q.instructions,
       maxDurationSec: q.maxDurationSec,

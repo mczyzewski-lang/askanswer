@@ -351,6 +351,8 @@ export interface EditorDocument {
     autoVisuals?: string;
     /** set once the automatic finishing (blur, voice, zooms, picture) has been applied */
     autoPolish?: string;
+    /** an ad take split into hook versions + body: "markers" (by the expert's taps), "words" (fitted to the transcript) */
+    adSplit?: "markers" | "words";
     /** AI background plates generated for this video (to switch between) */
     bgVariants?: string[];
     /** narration file whose words are already in the subtitles (the question read by the narrator) */
