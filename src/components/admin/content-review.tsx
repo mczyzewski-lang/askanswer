@@ -42,11 +42,56 @@ export function ScoreBadge({ review: rv, onOpen, onReview, disabled, testid = "a
   );
 }
 
+/** What the script says now, to set against the version to swap in (hook, then everything after it). */
+export interface CurrentScript {
+  hook: string;
+  rest: string;
+  /** e.g. "Hook (czyta lektor)" */
+  hookLabel?: string;
+}
+
+const joinRest = (...xs: Array<string | null | undefined>) => xs.map((x) => x?.trim()).filter(Boolean).join("\n\n");
+const same = (a: string, b: string) => a.trim().replace(/\s+/g, " ") === b.trim().replace(/\s+/g, " ");
+
+/** Before → after, side by side, per part. */
+function Compare({ current, next }: { current: CurrentScript; next: { hook: string; rest: string } }) {
+  const rows = [
+    { key: "hook", label: current.hookLabel ?? "Hook", before: current.hook, after: next.hook },
+    { key: "rest", label: "Treść (z CTA)", before: current.rest, after: next.rest },
+  ];
+  return (
+    <div className="space-y-2" data-testid="review-compare">
+      <div className="hidden grid-cols-2 gap-2 text-[11px] font-semibold uppercase tracking-[0.08em] sm:grid">
+        <p className="text-muted">Obecnie</p>
+        <p className="text-emerald-800">Po podmianie</p>
+      </div>
+      {rows.map((r) => (
+        <div key={r.key} className="space-y-1">
+          <p className="text-xs font-semibold">
+            {r.label}
+            {same(r.before, r.after) ? <span className="ml-2 font-normal text-muted">bez zmian</span> : null}
+          </p>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <div className="whitespace-pre-line rounded-lg border border-line bg-black/[.03] p-2.5 text-[13px] leading-relaxed text-ink/75" data-testid={`compare-before-${r.key}`}>
+              <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted sm:hidden">Obecnie</p>
+              {r.before.trim() || <span className="text-muted">— brak —</span>}
+            </div>
+            <div className="whitespace-pre-line rounded-lg border border-emerald-200 bg-emerald-50/60 p-2.5 text-[13px] leading-relaxed" data-testid={`compare-after-${r.key}`}>
+              <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-emerald-800 sm:hidden">Po podmianie</p>
+              {r.after.trim() || <span className="text-muted">— brak —</span>}
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /**
  * The full review of one script (a reel, or a project item read from the prompter): scores, red flags,
  * the version to swap in and the A/B hooks. The caller swaps the text in (`onApply`).
  */
-export function ReviewDialog({ title, review, reviewedAt, onClose, onReview, reviewing, onApply }: { title: string; review: Review | { error: string } | null | undefined; reviewedAt: string | null; onClose: () => void; onReview: () => void; reviewing: boolean; onApply: (body: { mode: "all" } | { mode: "hook"; text: string }) => Promise<void> }) {
+export function ReviewDialog({ title, review, reviewedAt, onClose, onReview, reviewing, onApply, current }: { title: string; review: Review | { error: string } | null | undefined; reviewedAt: string | null; onClose: () => void; onReview: () => void; reviewing: boolean; onApply: (body: { mode: "all" } | { mode: "hook"; text: string }) => Promise<void>; current?: CurrentScript }) {
   const rv = review && "score" in review ? (review as Review) : null;
   const apply = (body: { mode: "all" } | { mode: "hook"; text: string }) => onApply(body);
   const nv = rv?.newVersion;
@@ -111,6 +156,8 @@ export function ReviewDialog({ title, review, reviewedAt, onClose, onReview, rev
                     Podmień treść
                   </Button>
                 </div>
+                {current ? <Compare current={current} next={{ hook: nv.hook, rest: joinRest(nv.body, nv.cta) }} /> : null}
+                <p className="pt-1 text-xs font-semibold uppercase tracking-[0.08em] text-muted">Plan rolki</p>
                 <p>
                   <span className="text-xs text-muted">Napis na ekranie (0–2 s): </span>
                   <b>{nv.onScreen}</b>
@@ -122,14 +169,16 @@ export function ReviewDialog({ title, review, reviewedAt, onClose, onReview, rev
                     </li>
                   ))}
                 </ul>
-                <div className="grid gap-2 text-xs sm:grid-cols-3">
-                  {(["hook", "body", "cta"] as const).map((k) => (
-                    <div key={k} className="rounded-lg bg-black/[.03] p-2">
-                      <p className="mb-0.5 font-semibold uppercase text-muted">{k}</p>
-                      <p>{nv[k]}</p>
-                    </div>
-                  ))}
-                </div>
+                {current ? null : (
+                  <div className="grid gap-2 text-xs sm:grid-cols-3">
+                    {(["hook", "body", "cta"] as const).map((k) => (
+                      <div key={k} className="rounded-lg bg-black/[.03] p-2">
+                        <p className="mb-0.5 font-semibold uppercase text-muted">{k}</p>
+                        <p>{nv[k]}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
                 {nv.shots.length ? (
                   <p className="text-xs">
                     <span className="text-muted">Ujęcia / B-roll: </span>
@@ -145,7 +194,13 @@ export function ReviewDialog({ title, review, reviewedAt, onClose, onReview, rev
 
             {rv.altHooks.length ? (
               <div className="space-y-1.5">
-                <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted">Alternatywne hooki (A/B)</p>
+                <p className="text-xs font-semibold uppercase tracking-[0.08em] text-muted">Alternatywne hooki (A/B) — „Użyj” podmienia tylko hook</p>
+                {current ? (
+                  <p className="rounded-lg bg-black/[.03] p-2 text-xs">
+                    <span className="text-muted">Obecny hook: </span>
+                    {current.hook.trim() || "—"}
+                  </p>
+                ) : null}
                 {rv.altHooks.map((h, i) => (
                   <div key={i} className="flex items-start justify-between gap-3 rounded-lg border border-line p-2">
                     <p>

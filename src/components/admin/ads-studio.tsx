@@ -835,5 +835,7 @@ function ReelReviewDialog({ reel, siblings, onClose, onReview, reviewing, reload
     }
   };
   const title = `Ocena · ${reel.groupCode ? `${reel.groupCode} · ${reel.code.slice(reel.groupCode.length + 1)}` : reel.code}${reel.title ? ` — ${reel.title}` : ""}`;
-  return <ReviewDialog title={title} review={reel.review} reviewedAt={reel.reviewedAt} onClose={onClose} onReview={onReview} reviewing={reviewing} onApply={apply} />;
+  const part = (role: string) => reel.parts.filter((p) => p.role === role).map((p) => p.text.trim()).join("\n");
+  const current = { hook: part("hook"), rest: [part("body"), part("cta")].filter(Boolean).join("\n\n") };
+  return <ReviewDialog title={title} review={reel.review} reviewedAt={reel.reviewedAt} onClose={onClose} onReview={onReview} reviewing={reviewing} onApply={apply} current={current} />;
 }

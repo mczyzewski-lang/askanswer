@@ -52,7 +52,7 @@ import { parseBulk, parseBulkScripts } from "@/lib/bulk-questions";
 import { terms } from "@/lib/project-terms";
 import { csvTemplate, decodeCsv, hybridCsvTemplate, parseHybridCsv, parseImportCsv } from "@/lib/csv-import";
 import { effectiveKind, kindHasNarration, kindHasPrompter, KIND_LABELS, QUESTION_KINDS, type QuestionKind } from "@/lib/question-kinds";
-import { type Review, ReviewDialog, ScoreBadge, scoreTone } from "./content-review";
+import { type CurrentScript, type Review, ReviewDialog, ScoreBadge, scoreTone } from "./content-review";
 
 type Q = PanelProps["data"]["questions"][number];
 type Take = Q["takes"][number];
@@ -455,6 +455,7 @@ export function QuestionsPanel({ data, refresh, toast }: PanelProps) {
           onReview={() => void review({ questionIds: [openReview] })}
           reviewing={reviewing}
           onApply={(b) => applyReview(items.find((x) => x.id === openReview)!, b)}
+          current={currentScript(items.find((x) => x.id === openReview)!, data.project.format)}
         />
       ) : null}
       <QuestionDialog open={editing !== null} question={editing === "new" ? null : editing} data={data} onClose={() => setEditing(null)} refresh={refresh} toast={toast} />
@@ -551,6 +552,16 @@ function UnassignedBanner({ data, refresh, toast }: PanelProps) {
 
 /** Items the expert reads from the prompter (script filled in) can be scored. */
 const isScorable = (q: Q, format: string) => effectiveKind(q.kind, format) !== "QUESTION" && !!q.script?.trim();
+/** The item's text as the review's "swap" would replace it: the hook (the narrator's question / the hook the expert reads / the title), then the script. */
+const currentScript = (q: Q, format: string): CurrentScript => {
+  const k = effectiveKind(q.kind, format);
+  const spoken = (k === "QUESTION_PROMPTER" || k === "HOOK_PROMPTER") && q.spokenText?.trim();
+  return {
+    hook: spoken || q.text,
+    rest: q.script ?? "",
+    hookLabel: k === "QUESTION_PROMPTER" ? "Hook — pytanie klienta (czyta lektor)" : k === "HOOK_PROMPTER" ? "Hook — pytanie eksperta" : "Hook (tytuł wideo)",
+  };
+};
 
 /**
  * Scoring of the prompter scripts before recording: target group / service as context, score the ones

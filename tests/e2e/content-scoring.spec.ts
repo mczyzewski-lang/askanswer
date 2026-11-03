@@ -30,6 +30,12 @@ test("content scoring: prompter scripts are scored and the new version swapped i
   // PROMPTER: the hook is the title, body + CTA the script
   await page.getByTestId("content-score").first().click();
   await expect(page.getByTestId("ads-review")).toContainText("Hook ogólny");
+  // what is there now, next to what the swap puts in
+  await expect(page.getByTestId("compare-before-hook")).toContainText("Masz długi i komornika?");
+  await expect(page.getByTestId("compare-before-rest")).toContainText("Stary skrypt eksperta.");
+  await expect(page.getByTestId("compare-after-rest")).toContainText("Nowe body z propozycji.");
+  await page.getByTestId("review-compare").screenshot({ path: test.info().outputPath("compare.png") });
+  if (process.env.COMPARE_SHOT) await page.getByRole("dialog").screenshot({ path: process.env.COMPARE_SHOT });
   await page.getByTestId("ads-apply-all").click();
   await expect.poll(async () => (await items()).find((q) => q.text.startsWith("Nowy hook"))?.script).toBe("Nowe body z propozycji.\n\nWyślij to komuś, kto ma komornika.");
   await page.keyboard.press("Escape");
