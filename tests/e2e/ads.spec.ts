@@ -81,6 +81,26 @@ test("ads studio: script + footage → reels laid out from the transcript", asyn
   await expect(page.getByTestId("ads-broll-item").first()).toHaveAttribute("data-picked", "true");
   await expect.poll(async () => (await (await request.get(`/api/admin/ads/${projectId}/broll`)).json()).items.filter((i: { picked: boolean }) => i.picked).length).toBe(1);
 
+  // large camera files: the page sends B-roll videos in slices, the worker converts them
+  await page.getByTestId("ads-broll-input").setInputFiles({ name: "P1016420.MP4", mimeType: "video/mp4", buffer: buf });
+  await expect(page.getByTestId("ads-broll-item")).toHaveCount(3, { timeout: 120_000 });
+  // the same through the API in two slices of any size (assembled in order)
+  const sess = await (await request.post(`/api/admin/ads/${projectId}/broll/uploads`, { data: { name: "dwie-czesci.mp4", size: buf.length } })).json();
+  const half = Math.ceil(buf.length / 2);
+  // out of order, and the first slice sent twice (a retry) — idempotent
+  expect((await request.put(`/api/admin/uploads/${sess.id}/chunks/1`, { data: buf.subarray(half) })).ok()).toBeTruthy();
+  expect((await request.put(`/api/admin/uploads/${sess.id}/chunks/0`, { data: buf.subarray(0, half) })).ok()).toBeTruthy();
+  expect((await request.put(`/api/admin/uploads/${sess.id}/chunks/0`, { data: buf.subarray(0, half) })).ok()).toBeTruthy();
+  expect((await request.post(`/api/admin/uploads/${sess.id}/complete`, { data: { totalChunks: 3 } })).status()).toBe(409);
+  expect((await request.post(`/api/admin/uploads/${sess.id}/complete`, { data: { totalChunks: 2 } })).status()).toBe(202);
+  await expect.poll(async () => (await (await request.get(`/api/admin/uploads/${sess.id}/complete`)).json()).status, { timeout: 120_000 }).toBe("DONE");
+  await expect.poll(async () => (await (await request.get(`/api/admin/ads/${projectId}/broll`)).json()).items.length).toBe(4);
+  // not a video: refused by its content, not by its name
+  const bad = await (await request.post(`/api/admin/ads/${projectId}/broll/uploads`, { data: { name: "film.mp4", size: 20 } })).json();
+  await request.put(`/api/admin/uploads/${bad.id}/chunks/0`, { data: Buffer.from("to nie jest wideo :)") });
+  await request.post(`/api/admin/uploads/${bad.id}/complete`, { data: { totalChunks: 1 } });
+  await expect.poll(async () => (await (await request.get(`/api/admin/uploads/${bad.id}/complete`)).json()).error, { timeout: 60_000 }).toBe("To nie jest plik wideo (MP4 / MOV / WEBM)");
+
   // the Studio: switch the hook version — the rest of the edit stays, the title follows the version
   await page.getByTestId("ads-open-studio").first().click();
   await expect(page.getByTestId("timeline")).toBeVisible({ timeout: 60_000 });

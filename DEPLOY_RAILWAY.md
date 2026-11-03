@@ -105,3 +105,4 @@ Otwórz `https://twoja-domena.up.railway.app/login` i zaloguj się danymi `ADMIN
 ## Koszty i wydajność
 - **Rendery** obciążają procesor. `RENDER_CONCURRENCY=2` ogranicza ich równoległość. Przy większym planie Railway możesz ustawić 3–4, żeby przyspieszyć eksport.
 - **Nagrania** zajmują ok. 50–150 MB na minutę (oryginał + kopia robocza). Rozmiar Volume możesz powiększyć w jego ustawieniach.
+- **Ads Studio, duże pliki z aparatu** (nagrania i przebitki): każdy plik idzie w częściach po 8 MB (2 pliki naraz, każda część ponawiana przy zerwanym połączeniu). Na czas przetwarzania plik potrzebuje ok. 2,2× swojego rozmiaru wolnego miejsca — przy braku miejsca wysyłka nie startuje i pokazuje, ile brakuje. Przy kampanii rzędu 30–40 GB materiału zaplanuj Volume z co najmniej ok. 2× tyle wolnego miejsca (oryginały + kopie robocze) albo przejdź na zewnętrzny magazyn (S3 / R2).

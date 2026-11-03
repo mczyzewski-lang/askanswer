@@ -11,6 +11,7 @@ import { SUBTITLE_PRESETS } from "@/lib/editor/subtitles";
 import { THEME_PRESETS } from "@/lib/themes";
 import { type Review, ReviewDialog, ScoreBadge, ScoringCounts, scoreTone } from "./content-review";
 import { LeadMagnetsEditor } from "./lead-magnets-editor";
+import { formatBytes, sendChunks, uploadQueue } from "@/lib/client/chunked-upload";
 import type { LeadMagnet } from "@/lib/lead-magnets";
 
 // ---------------------------------------------------------------------------
@@ -117,10 +118,16 @@ interface AdsData {
 interface UploadState {
   name: string;
   progress: number;
+  size?: number;
+  /** waiting for its turn in the queue */
+  waiting?: boolean;
   error?: string;
+  /** kept for "Ponów" */
+  file?: File;
 }
 
-const CHUNK = 8 * 1024 * 1024;
+/** one queue for the page: footage and B-roll files go two at a time */
+const runUpload = uploadQueue(2);
 
 export function AdsProject({ id }: { id: string }) {
   const [data, setData] = useState<AdsData | null>(null);
@@ -158,27 +165,14 @@ export function AdsProject({ id }: { id: string }) {
   const uploadOne = async (file: File) => {
     const key = `${file.name}-${file.size}-${Date.now()}`;
     const set = (p: Partial<UploadState>) => setUploads((u) => ({ ...u, [key]: { ...(u[key] ?? { name: file.name, progress: 0 }), ...p } }));
-    set({ progress: 0 });
+    set({ progress: 0, waiting: true, size: file.size, file });
     try {
+      await runUpload(async () => {
+      set({ waiting: false });
       const { id: fid } = await api<{ id: string }>(`/api/admin/ads/${id}/footage`, { method: "POST", json: { name: file.name, size: file.size } });
-      const total = Math.max(1, Math.ceil(file.size / CHUNK));
-      let done = 0;
-      const send = async (i: number) => {
-        for (let attempt = 0; ; attempt++) {
-          const res = await fetch(`/api/admin/ads/footage/${fid}/chunks/${i}`, { method: "PUT", body: file.slice(i * CHUNK, Math.min(file.size, (i + 1) * CHUNK)) }).catch(() => null);
-          if (res?.ok) break;
-          if (attempt >= 4) throw new Error("Nie udało się wysłać części pliku — sprawdź połączenie i spróbuj ponownie.");
-          await new Promise((r) => setTimeout(r, 1000 * 2 ** attempt));
-        }
-        done++;
-        set({ progress: done / total });
-      };
-      // three slices in parallel
-      let next = 0;
-      await Promise.all(Array.from({ length: Math.min(3, total) }, async () => {
-        while (next < total) await send(next++);
-      }));
+      const total = await sendChunks(file, (i) => `/api/admin/ads/footage/${fid}/chunks/${i}`, (progress) => set({ progress }));
       await api(`/api/admin/ads/footage/${fid}/complete`, { method: "POST", json: { totalChunks: total } });
+      });
       setUploads((u) => {
         const { [key]: _done, ...rest } = u;
         void _done;
@@ -331,9 +325,29 @@ export function AdsProject({ id }: { id: string }) {
               <li key={k} className="rounded-lg border border-line p-2 text-sm">
                 <div className="flex justify-between gap-2">
                   <span className="truncate">{u.name}</span>
-                  <span className="text-muted">{u.error ? "błąd" : `wysyłanie ${Math.round(u.progress * 100)}%`}</span>
+                  <span className="shrink-0 text-muted">
+                    {u.size ? `${formatBytes(u.size)} · ` : ""}
+                    {u.error ? "błąd" : u.waiting ? "w kolejce" : u.progress >= 1 ? "składanie pliku…" : `wysyłanie ${Math.round(u.progress * 100)}%`}
+                  </span>
                 </div>
-                {u.error ? <p className="text-xs text-red-600">{u.error}</p> : <Progress value={u.progress * 100} className="mt-1.5" />}
+                {u.error ? (
+                  <p className="flex items-center justify-between gap-2 text-xs text-red-600">
+                    {u.error}
+                    {u.file ? (
+                      <button
+                        className="shrink-0 underline"
+                        onClick={() => {
+                          setUploads(({ [k]: _gone, ...rest }) => (void _gone, rest));
+                          void uploadOne(u.file!);
+                        }}
+                      >
+                        Ponów
+                      </button>
+                    ) : null}
+                  </p>
+                ) : (
+                  <Progress value={u.progress * 100} className="mt-1.5" />
+                )}
               </li>
             ))}
             {data.footage.map((f) => (
@@ -672,28 +686,56 @@ interface BrollItem {
 /** B-roll (cutaways): upload clips, pick the ones to use — they are offered in the Studio of every reel. */
 function BrollCard({ projectId, toast }: { projectId: string; toast: (t: string, tone?: "ok" | "err") => void }) {
   const [items, setItems] = useState<BrollItem[] | null>(null);
-  const [uploading, setUploading] = useState<string[]>([]);
+  const [pending, setPending] = useState<Array<{ id: string; name: string; status: string; error: string | null; sizeBytes: number }>>([]);
+  const [uploads, setUploads] = useState<Record<string, UploadState>>({});
   const ref = useRef<HTMLInputElement>(null);
-  const load = useCallback(async () => setItems((await api<{ items: BrollItem[] }>(`/api/admin/ads/${projectId}/broll`)).items), [projectId]);
+  const load = useCallback(async () => {
+    const d = await api<{ items: BrollItem[]; pending?: typeof pending }>(`/api/admin/ads/${projectId}/broll`);
+    setItems(d.items);
+    setPending(d.pending ?? []);
+  }, [projectId]);
   useEffect(() => {
     void load();
   }, [load]);
-  const upload = async (files: File[]) => {
-    for (const f of files) {
-      setUploading((u) => [...u, f.name]);
-      try {
-        const fd = new FormData();
-        fd.set("file", f);
-        const res = await fetch(`/api/admin/ads/${projectId}/broll`, { method: "POST", body: fd });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data.error ?? `Błąd HTTP ${res.status}`);
-      } catch (e) {
-        toast(`${f.name}: ${(e as Error).message}`, "err");
-      } finally {
-        setUploading((u) => u.filter((n) => n !== f.name));
-        await load();
-      }
+  // converting on the server: refresh until done
+  const converting = pending.some((p) => p.status === "PROCESSING");
+  useEffect(() => {
+    if (!converting) return;
+    const t = setInterval(() => void load(), 3000);
+    return () => clearInterval(t);
+  }, [converting, load]);
+  const uploadOne = async (f: File) => {
+    const key = `${f.name}-${f.size}-${Date.now()}`;
+    const set = (p: Partial<UploadState>) => setUploads((u) => ({ ...u, [key]: { ...(u[key] ?? { name: f.name, progress: 0 }), ...p } }));
+    const drop = () => setUploads(({ [key]: _gone, ...rest }) => (void _gone, rest));
+    set({ progress: 0, waiting: true, size: f.size, file: f });
+    try {
+      await runUpload(async () => {
+        set({ waiting: false });
+        if (!f.type.startsWith("video/")) {
+          // a still image: one request
+          const fd = new FormData();
+          fd.set("file", f);
+          const res = await fetch(`/api/admin/ads/${projectId}/broll`, { method: "POST", body: fd });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(data.error ?? `Błąd HTTP ${res.status}`);
+          return;
+        }
+        // a video of any size: in slices, converted by the worker afterwards
+        const { id: sid } = await api<{ id: string }>(`/api/admin/ads/${projectId}/broll/uploads`, { method: "POST", json: { name: f.name, size: f.size } });
+        const total = await sendChunks(f, (i) => `/api/admin/uploads/${sid}/chunks/${i}`, (progress) => set({ progress }));
+        await api(`/api/admin/uploads/${sid}/complete`, { method: "POST", json: { totalChunks: total } });
+      });
+      drop();
+    } catch (e) {
+      set({ error: (e as Error).message });
+      toast(`${f.name}: ${(e as Error).message}`, "err");
+    } finally {
+      await load();
     }
+  };
+  const upload = async (files: File[]) => {
+    await Promise.all(files.map((f) => uploadOne(f)));
   };
   const pick = async (it: BrollItem) => {
     setItems((xs) => xs?.map((x) => (x.id === it.id ? { ...x, picked: !x.picked } : x)) ?? null);
@@ -707,10 +749,10 @@ function BrollCard({ projectId, toast }: { projectId: string; toast: (t: string,
           <p className="flex items-center gap-2 font-medium">
             <Clapperboard className="h-4 w-4" /> B-roll (przebitki)
           </p>
-          <p className="text-sm text-muted">Wgraj przebitki (MP4, MOV, WEBM do 5 min lub zdjęcia) i zaznacz gwiazdką te do montażu — w Studio każdego reelsa są w Grafika → B-roll, do wstawienia jednym kliknięciem.</p>
+          <p className="text-sm text-muted">Wgraj przebitki (MP4, MOV, WEBM do 10 min — także duże pliki z aparatu, wysyłane w częściach — lub zdjęcia) i zaznacz gwiazdką te do montażu — w Studio każdego reelsa są w Grafika → B-roll, do wstawienia jednym kliknięciem.</p>
         </div>
-        <Button onClick={() => ref.current?.click()} disabled={uploading.length > 0} data-testid="ads-broll-button">
-          {uploading.length ? <Loader2 className="animate-spin" /> : <Upload />} {uploading.length ? `Wysyłanie i konwersja (${uploading.length})…` : "Wgraj przebitki"}
+        <Button onClick={() => ref.current?.click()} data-testid="ads-broll-button">
+          {Object.keys(uploads).length || converting ? <Loader2 className="animate-spin" /> : <Upload />} Wgraj przebitki
         </Button>
         <input
           ref={ref}
@@ -725,6 +767,53 @@ function BrollCard({ projectId, toast }: { projectId: string; toast: (t: string,
           }}
         />
       </div>
+      {Object.keys(uploads).length || pending.length ? (
+        <ul className="space-y-1.5" data-testid="ads-broll-uploads">
+          {Object.entries(uploads).map(([k, u]) => (
+            <li key={k} className="rounded-lg border border-line p-2 text-sm">
+              <div className="flex justify-between gap-2">
+                <span className="truncate">{u.name}</span>
+                <span className="shrink-0 text-muted">
+                  {u.size ? `${formatBytes(u.size)} · ` : ""}
+                  {u.error ? "błąd" : u.waiting ? "w kolejce" : `wysyłanie ${Math.round(u.progress * 100)}%`}
+                </span>
+              </div>
+              {u.error ? (
+                <p className="flex items-center justify-between gap-2 text-xs text-red-600">
+                  {u.error}
+                  {u.file ? (
+                    <button
+                      className="shrink-0 underline"
+                      onClick={() => {
+                        setUploads(({ [k]: _gone, ...rest }) => (void _gone, rest));
+                        void uploadOne(u.file!);
+                      }}
+                    >
+                      Ponów
+                    </button>
+                  ) : null}
+                </p>
+              ) : (
+                <Progress value={u.progress * 100} className="mt-1.5" />
+              )}
+            </li>
+          ))}
+          {pending
+            .filter((p) => p.status !== "UPLOADING")
+            .map((p) => (
+              <li key={p.id} className="flex items-center justify-between gap-2 rounded-lg border border-line p-2 text-sm" data-testid="ads-broll-pending" data-status={p.status}>
+                <span className="truncate">{p.name}</span>
+                <span className={cn("shrink-0 text-xs", p.status === "FAILED" ? "text-red-600" : "text-muted")}>
+                  {p.status === "FAILED" ? (p.error ?? "Błąd przetwarzania") : (
+                    <span className="inline-flex items-center gap-1">
+                      <Loader2 className="h-3 w-3 animate-spin" /> konwersja na serwerze · {formatBytes(p.sizeBytes)}
+                    </span>
+                  )}
+                </span>
+              </li>
+            ))}
+        </ul>
+      ) : null}
       {items?.length ? (
         <>
           <p className="text-xs text-muted">
@@ -762,7 +851,7 @@ function BrollCard({ projectId, toast }: { projectId: string; toast: (t: string,
             ))}
           </div>
         </>
-      ) : items ? (
+      ) : items && !Object.keys(uploads).length && !pending.length ? (
         <p className="text-sm text-muted">Brak przebitek.</p>
       ) : null}
     </Card>

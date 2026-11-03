@@ -42,6 +42,10 @@ async function handle(job: { id: string; type: string; payload: unknown }) {
       const { segmentAsset } = await import("../lib/server/segment");
       return segmentAsset(p.assetId);
     }
+    case "ads-broll": {
+      const { ingestBrollUpload } = await import("../lib/server/broll-library");
+      return ingestBrollUpload(p.sessionId, Number(p.totalChunks));
+    }
     case "ads-footage": {
       const { processFootage } = await import("../lib/server/ads");
       return processFootage(p.footageId);

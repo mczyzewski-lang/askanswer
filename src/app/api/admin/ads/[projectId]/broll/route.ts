@@ -8,7 +8,7 @@ import { ingestOverlayVideo, storeUpload } from "@/lib/server/uploads";
 import { makeTempDir } from "@/lib/server/storage";
 import { probe } from "@/lib/server/ffmpeg";
 import { assetInfo } from "@/lib/server/assets";
-import { brollLibrary } from "@/lib/server/broll-library";
+import { brollLibrary, brollPending } from "@/lib/server/broll-library";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -19,10 +19,14 @@ const IMAGE: Record<string, string> = { "image/png": "png", "image/jpeg": "jpg",
 export const GET = route(async (_req: Request, ctx: { params: Promise<{ projectId: string }> }) => {
   await requireAdmin();
   const { projectId } = await ctx.params;
-  return json({ items: await brollLibrary(projectId) });
+  const [items, pending] = await Promise.all([brollLibrary(projectId), brollPending(projectId)]);
+  return json({ items, pending });
 });
 
-/** Add a cutaway (video up to 5 min / 300 MB, or a still image) to the campaign's B-roll library. */
+/**
+ * Add a still image (or a small video) to the campaign's B-roll library in one request. Videos are
+ * sent in slices by the browser (broll/uploads) — this path stays for small files and older clients.
+ */
 export const POST = route(async (req: Request, ctx: { params: Promise<{ projectId: string }> }) => {
   await requireAdmin();
   const { projectId } = await ctx.params;
@@ -30,7 +34,7 @@ export const POST = route(async (req: Request, ctx: { params: Promise<{ projectI
   const form = await req.formData();
   const file = form.get("file");
   if (!(file instanceof File)) return json({ error: "Brak pliku" }, 400);
-  if (file.size > 300 * 1024 * 1024) return json({ error: "Plik jest za duży (max 300 MB)" }, 413);
+  if (file.size > 100 * 1024 * 1024) return json({ error: "Plik jest za duży na jedno wysłanie — odśwież stronę (duże pliki idą w częściach)" }, 413);
   if (VIDEO[file.type]) {
     const dir = await makeTempDir("broll");
     try {

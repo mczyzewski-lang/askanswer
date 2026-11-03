@@ -2,6 +2,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/server/db";
 import { requireAdmin } from "@/lib/server/auth";
 import { json, route } from "@/lib/server/http";
+import { ensureDiskFor } from "@/lib/server/chunked";
 
 /** Start a (chunked) upload of a raw footage file. */
 export const POST = route(async (req: Request, ctx: { params: Promise<{ projectId: string }> }) => {
@@ -11,6 +12,7 @@ export const POST = route(async (req: Request, ctx: { params: Promise<{ projectI
   const maxBytes = Number(process.env.ADS_MAX_UPLOAD_MB ?? 8192) * 1024 * 1024;
   if (b.size > maxBytes) return json({ error: `Plik jest za duży (max ${Math.round(maxBytes / 1024 / 1024 / 1024)} GB)` }, 413);
   await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { id: true } });
+  await ensureDiskFor(b.size);
   const order = await prisma.adFootage.count({ where: { projectId } });
   const f = await prisma.adFootage.create({ data: { projectId, name: b.name, sizeBytes: BigInt(b.size), order } });
   return json({ id: f.id }, 201);

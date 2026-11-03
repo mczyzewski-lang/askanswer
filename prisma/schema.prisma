@@ -1220,3 +1220,22 @@ model DemoProviderRecord {
 
   @@index([kind])
 }
+
+/// A file sent in slices (large B-roll videos): assembled and converted by the worker
+model UploadSession {
+  id             String    @id @default(cuid())
+  projectId      String
+  /// broll
+  purpose        String
+  name           String
+  sizeBytes      BigInt
+  receivedChunks Int[]     @default([])
+  /// UPLOADING | PROCESSING | DONE | FAILED
+  status         String    @default("UPLOADING")
+  error          String?
+  assetId        String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([projectId, purpose, status])
+}
