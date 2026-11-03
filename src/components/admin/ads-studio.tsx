@@ -10,6 +10,8 @@ import { QUESTION_POSITIONS, QUESTION_STYLES } from "@/lib/question-styles";
 import { SUBTITLE_PRESETS } from "@/lib/editor/subtitles";
 import { THEME_PRESETS } from "@/lib/themes";
 import { type Review, ReviewDialog, ScoreBadge, scoreTone } from "./content-review";
+import { LeadMagnetsEditor } from "./lead-magnets-editor";
+import type { LeadMagnet } from "@/lib/lead-magnets";
 
 // ---------------------------------------------------------------------------
 // List of ad campaigns
@@ -104,6 +106,7 @@ interface AdsLook {
   autoBlur: boolean;
   blurStrength: number;
   adsBrief: string | null;
+  leadMagnets: LeadMagnet[] | null;
   adsFormat: string;
 }
 interface AdsData {
@@ -815,6 +818,9 @@ function ScoringBar({ project, reels, reviewing, review, reload, toast }: { proj
           <Label htmlFor="ads-brief">Grupa docelowa i usługa</Label>
           <Textarea id="ads-brief" rows={2} value={brief} placeholder="np. osoby z długami powyżej 30 tys. zł, które nie dają rady spłacać rat — usługa: upadłość konsumencka" onChange={(e) => setBrief(e.target.value)} onBlur={() => brief !== (project.adsBrief ?? "") && void save({ adsBrief: brief.trim() || null })} />
         </div>
+      </div>
+      <div className="mt-3">
+        <LeadMagnetsEditor value={project.leadMagnets} onSave={(leadMagnets) => save({ leadMagnets })} />
       </div>
     </div>
   );

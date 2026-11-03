@@ -137,6 +137,7 @@ export async function projectData(id: string) {
       blurStrength: p.blurStrength,
       narrationSpeed: p.narrationSpeed,
       adsBrief: p.adsBrief,
+      leadMagnets: p.leadMagnets,
       subtitlePreset: p.subtitlePreset,
       autoVoice: p.autoVoice,
       autoZooms: p.autoZooms,

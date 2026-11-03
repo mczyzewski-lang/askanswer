@@ -15,6 +15,7 @@ export interface Review {
   altHooks: Array<{ mechanism: string; text: string }>;
   predicted: { score: number; limits: string };
   compliance: string[];
+  leadMagnet?: { keyword: string; name: string; why: string } | null;
   model?: string;
   error?: undefined;
 }
@@ -157,6 +158,14 @@ export function ReviewDialog({ title, review, reviewedAt, onClose, onReview, rev
                   </Button>
                 </div>
                 {current ? <Compare current={current} next={{ hook: nv.hook, rest: joinRest(nv.body, nv.cta) }} /> : null}
+                {rv.leadMagnet ? (
+                  <p className="rounded-lg border border-sky-200 bg-sky-50 p-2.5 text-xs text-sky-950" data-testid="review-lead-magnet">
+                    <span className="font-semibold">Lead magnet w CTA: </span>
+                    {rv.leadMagnet.name}
+                    {rv.leadMagnet.keyword ? <span className="ml-1 rounded bg-white px-1.5 py-0.5 font-mono">{rv.leadMagnet.keyword}</span> : null}
+                    {rv.leadMagnet.why ? <span className="block pt-0.5 text-sky-900/80">{rv.leadMagnet.why}</span> : null}
+                  </p>
+                ) : null}
                 <p className="pt-1 text-xs font-semibold uppercase tracking-[0.08em] text-muted">Plan rolki</p>
                 <p>
                   <span className="text-xs text-muted">Napis na ekranie (0–2 s): </span>

@@ -6,11 +6,12 @@ import { rateLimit } from "@/lib/server/ratelimit";
 import { effectiveKind, kindHasNarration } from "@/lib/question-kinds";
 import { reviewInputOf } from "@/lib/server/question-review";
 import { openaiConfigured } from "@/lib/server/env";
+import type { LeadMagnet } from "@/lib/lead-magnets";
 
 type Ctx = { params: Promise<{ id: string }> };
 
 async function load(id: string) {
-  const comp = await prisma.videoComposition.findUniqueOrThrow({ where: { id }, include: { question: true, project: { select: { format: true, adsBrief: true } } } });
+  const comp = await prisma.videoComposition.findUniqueOrThrow({ where: { id }, include: { question: true, project: { select: { format: true, adsBrief: true, leadMagnets: true } } } });
   const q = comp.question;
   const kind = q ? effectiveKind(q.kind, comp.project.format) : null;
   return { comp, q, kind };
@@ -41,6 +42,6 @@ export const POST = route(async (req: Request, ctx: Ctx) => {
   const { suggestHooks } = await import("@/lib/server/reel-review");
   // a free answer (narrator only) has no script: the hook is written from the question alone
   const input = kind === "QUESTION" ? { title: q.text, parts: [{ role: "hook (pytanie klienta, czyta lektor)", text: q.spokenText?.trim() || q.text }], format: "[PYTANIE KLIENTA]" } : reviewInputOf(q, kind);
-  const ideas = await suggestHooks({ ...input, brief: comp.project.adsBrief }, count);
+  const ideas = await suggestHooks({ ...input, brief: comp.project.adsBrief, leadMagnets: (comp.project.leadMagnets as unknown as LeadMagnet[] | null) ?? null }, count);
   return json({ ideas: ideas.map((h) => ({ ...h, source: "nowe" as const })) });
 });

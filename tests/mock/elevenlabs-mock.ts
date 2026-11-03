@@ -178,6 +178,13 @@ const server = http.createServer(async (req, res) => {
           predicted: { score: 78, limits: "Brak liczby w payoffie." },
           compliance: ["Unikaj „pozbędziesz się długów”."],
         };
+        // with the brand's lead magnets: the CTA points to the one matching "kłót…" (else the first one)
+        const magnets = [...user.matchAll(/^- (\S+) \| ([^|\n]+?)(?: \||$)/gm)].map((m) => ({ keyword: m[1], name: m[2].trim() }));
+        if (magnets.length) {
+          const pick = magnets.find((m) => /kłót/i.test(m.name)) ?? magnets[0];
+          Object.assign(review, { leadMagnet: { ...pick, why: "Pasuje do tematu rolki." } });
+          review.newVersion.cta = `Napisz ${pick.keyword} w wiadomości, a wyślę Ci „${pick.name}”.`;
+        }
         return json(200, { id: "chatcmpl-mock", object: "chat.completion", model: body.model, choices: [{ index: 0, message: { role: "assistant", content: JSON.stringify(review) }, finish_reason: "stop" }] });
       }
       return json(404, { error: { message: "unknown endpoint" } });

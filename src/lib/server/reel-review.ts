@@ -3,6 +3,7 @@
  * rewritten into a stronger version to swap in — by an OpenAI text model, as structured JSON.
  */
 import { env, openaiConfigured, openaiKeyDiagnostics } from "./env";
+import { foreignKeywords, type LeadMagnet } from "../lead-magnets";
 
 export const REEL_EDITOR_GUIDELINES = `ROLA
 Jesteś redaktorem rolek (Instagram Reels / TikTok / YouTube Shorts) dla marki usług prawno-finansowych. Oceniasz istniejący scenariusz rolki, a potem piszesz mocniejszą wersję do podmiany. Piszesz po polsku, prostym językiem, bez żargonu prawniczego.
@@ -24,6 +25,7 @@ KRYTERIA OCENY (każde 0–10, z wagą; wynik końcowy 0–100)
    Czy widz pomyśli o konkretnej osobie, której to wyśle („to o moim bracie / mamie / znajomym z długami”)? Relatywność, emocja, „to musisz wiedzieć”.
 6. CTA (waga 5%)
    CTA pod sygnał: „wyślij komuś, kto…”, „zapisz, zanim…”, „napisz SŁOWO w wiadomości”. Minus za „daj lajka / obserwuj”.
+   SŁOWO do wiadomości i nazwy materiałów (checklista, arkusz, plan…) tylko z listy LEAD MAGNETY; bez listy nie wymyślaj ich — wtedy „zapisz” / „wyślij komuś” / „napisz do nas”.
 7. AUTENTYCZNOŚĆ (waga 5%)
    Naturalny język mówiony, ludzki, surowy. Minus za czytanie z kartki, korpo-ton, tekst brzmiący jak AI.
 8. DOPASOWANIE DO KLIENTA I OFERTY (waga 5%)
@@ -75,6 +77,13 @@ ZASADY PISANIA NOWEJ WERSJI
 - Ostatnie zdanie, jeśli się da, nawiązuje do pierwszego (pętla → powtórki).
 - Opisuj proces i możliwości, nigdy nie gwarantuj wyniku.
 
+LEAD MAGNETY (gdy podano listę LEAD MAGNETY)
+- Dobierz JEDEN materiał z listy, który najlepiej pasuje do tematu i problemu widza tej rolki (nie najpopularniejszy, tylko najbliższy treści).
+- CTA prowadzi do niego: „Napisz SŁOWO w wiadomości” ze SŁOWEM z listy (albo nazwa materiału + „link w bio”). Nazwę możesz wpleść naturalnie.
+- Używaj WYŁĄCZNIE słów i nazw z listy. Nie wymyślaj innych materiałów, arkuszy, checklist ani słów do DM.
+- Jeśli żaden materiał nie pasuje — CTA bez materiału (zapisz / wyślij komuś) i "leadMagnet": null.
+- Ton CTA spokojny, bez presji czasu i bez obietnic efektu.
+
 Jeśli podano statystyki: najpierw zdiagnozuj, gdzie rolka traci widzów (niski średni czas = hook/tempo; dobre oglądanie, mało udostępnień = brak relatywności/CTA; dużo zasięgu, brak wiadomości = złe dopasowanie do oferty) i ustaw dźwignie pod tę diagnozę.`;
 
 /** The answer as data (the guideline's output sections, plus the new hook / body / CTA to swap in). */
@@ -97,7 +106,8 @@ const OUTPUT = `FORMAT ODPOWIEDZI: wyłącznie JSON (bez markdown), dokładnie w
   },
   "altHooks": [{"mechanism": "lęk", "text": "…"}, {"mechanism": "liczba", "text": "…"}, {"mechanism": "kontrowersja", "text": "…"}],
   "predicted": {"score": liczba 0–100, "limits": "co jeszcze ogranicza wynik"},
-  "compliance": ["uwagi compliance: zgody, ryzykowne sformułowania"]
+  "compliance": ["uwagi compliance: zgody, ryzykowne sformułowania"],
+  "leadMagnet": {"keyword": "SŁOWO z listy", "name": "nazwa z listy", "why": "dlaczego pasuje do tej rolki"} albo null (gdy nie podano listy lub żaden nie pasuje)
 }
 hook + body + cta w "newVersion" to pełny tekst mówiony nowej wersji (do podmiany w scenariuszu nagrania).`;
 
@@ -112,6 +122,8 @@ export interface ReelReview {
   altHooks: Array<{ mechanism: string; text: string }>;
   predicted: { score: number; limits: string };
   compliance: string[];
+  /** the lead magnet the CTA points to (from the project's list) */
+  leadMagnet?: { keyword: string; name: string; why: string } | null;
 }
 
 export interface ReviewInput {
@@ -120,6 +132,7 @@ export interface ReviewInput {
   format: string;
   brief: string | null;
   stats?: string | null;
+  leadMagnets?: LeadMagnet[] | null;
 }
 
 /** Who says the hook — spelled out so the new version keeps the right voice. */
@@ -138,6 +151,7 @@ export function reviewUserMessage(p: ReviewInput): string {
     "SCENARIUSZ:",
     ...p.parts.map((x) => `[${x.role.toUpperCase()}] ${x.text}`),
     p.stats ? `STATYSTYKI: ${p.stats}` : "",
+    p.leadMagnets?.length ? `LEAD MAGNETY (SŁOWO do DM | nazwa | o czym):\n${p.leadMagnets.map((m) => `- ${m.keyword || "—"} | ${m.name}${m.about ? ` | ${m.about}` : ""}`).join("\n")}` : "",
   ]
     .filter(Boolean)
     .join("\n");
@@ -167,6 +181,7 @@ function asReview(raw: unknown): ReelReview {
     altHooks: (Array.isArray(r.altHooks) ? r.altHooks : []).map((h) => ({ mechanism: String(h?.mechanism ?? ""), text: String(h?.text ?? "") })).filter((h) => h.text),
     predicted: { score: num(r.predicted?.score, 100), limits: String(r.predicted?.limits ?? "") },
     compliance: strs(r.compliance),
+    leadMagnet: r.leadMagnet && typeof r.leadMagnet === "object" && r.leadMagnet.name ? { keyword: String(r.leadMagnet.keyword ?? ""), name: String(r.leadMagnet.name), why: String(r.leadMagnet.why ?? "") } : null,
   };
 }
 
@@ -236,7 +251,15 @@ export async function reviewReel(p: ReviewInput): Promise<ReelReview & { model: 
   } catch {
     throw new Error("OpenAI zwrócił odpowiedź, której nie da się odczytać — spróbuj ponownie.");
   }
-  return { ...asReview(parsed), model };
+  const review = asReview(parsed);
+  // the CTA may only use the brand's lead magnets: flag a DM keyword that is not on the list
+  if (p.leadMagnets?.length) {
+    const foreign = foreignKeywords(`${review.newVersion.cta} ${review.newVersion.body}`, p.leadMagnets);
+    if (foreign.length) review.compliance.unshift(`CTA używa słowa spoza listy lead magnetów: ${foreign.join(", ")} — zamień na słowo z listy przed podmianą.`);
+    const known = review.leadMagnet && p.leadMagnets.find((m) => m.name === review.leadMagnet!.name || (m.keyword && m.keyword === review.leadMagnet!.keyword));
+    if (review.leadMagnet && !known) review.leadMagnet = null;
+  } else review.leadMagnet = null;
+  return { ...review, model };
 }
 
 /**

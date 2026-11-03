@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "./db";
 import { effectiveKind, type QuestionKind } from "@/lib/question-kinds";
+import type { LeadMagnet } from "@/lib/lead-magnets";
 
 /**
  * Script scoring for the items of a regular project that the expert reads from the prompter
@@ -32,7 +33,7 @@ export function reviewInputOf(q: Item, kind: QuestionKind) {
 
 export async function reviewQuestions(projectId: string, questionIds?: string[]) {
   const { reviewReel } = await import("./reel-review");
-  const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { adsBrief: true, format: true } });
+  const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { adsBrief: true, format: true, leadMagnets: true } });
   const items = await prisma.question.findMany({ where: { projectId, ...(questionIds?.length ? { id: { in: questionIds } } : {}) }, orderBy: { order: "asc" } });
   let done = 0;
   let failed = 0;
@@ -40,7 +41,7 @@ export async function reviewQuestions(projectId: string, questionIds?: string[])
   for (const q of items) {
     if (!reviewable(q, project.format)) continue;
     try {
-      const review = await reviewReel({ ...reviewInputOf(q, effectiveKind(q.kind, project.format)), brief: project.adsBrief });
+      const review = await reviewReel({ ...reviewInputOf(q, effectiveKind(q.kind, project.format)), brief: project.adsBrief, leadMagnets: (project.leadMagnets as unknown as LeadMagnet[] | null) ?? null });
       await prisma.question.update({ where: { id: q.id }, data: { review: review as unknown as Prisma.InputJsonValue, reviewedAt: new Date() } });
       done++;
     } catch (e) {

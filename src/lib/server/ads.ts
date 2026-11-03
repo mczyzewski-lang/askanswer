@@ -2,6 +2,7 @@
  * Ads Studio: raw footage (the expert reading hooks, bodies and CTAs, with retakes) + a script file
  * → one ready-to-edit reel per script row, cut from the transcripts.
  */
+import type { LeadMagnet } from "../lead-magnets";
 import fsp from "node:fs/promises";
 import path from "node:path";
 import { Prisma } from "@prisma/client";
@@ -343,14 +344,14 @@ export async function ownTheme(name: string, from: { presetKey?: string | null; 
 /** Score the reels' scripts (one after another) and keep each review with its reel. */
 export async function reviewReels(projectId: string, reelIds?: string[]) {
   const { reviewReel } = await import("./reel-review");
-  const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { adsBrief: true, adsFormat: true } });
+  const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { adsBrief: true, adsFormat: true, leadMagnets: true } });
   const reels = await prisma.adReel.findMany({ where: { projectId, ...(reelIds?.length ? { id: { in: reelIds } } : {}) }, orderBy: { order: "asc" } });
   let done = 0;
   let failed = 0;
   let error: string | null = null;
   for (const r of reels) {
     try {
-      const review = await reviewReel({ title: r.title, parts: r.parts as unknown as Array<{ role: string; text: string }>, format: project.adsFormat || "[EKSPERT]", brief: project.adsBrief });
+      const review = await reviewReel({ title: r.title, parts: r.parts as unknown as Array<{ role: string; text: string }>, format: project.adsFormat || "[EKSPERT]", brief: project.adsBrief, leadMagnets: (project.leadMagnets as unknown as LeadMagnet[] | null) ?? null });
       await prisma.adReel.update({ where: { id: r.id }, data: { review: review as unknown as Prisma.InputJsonValue, reviewedAt: new Date() } });
       done++;
     } catch (e) {

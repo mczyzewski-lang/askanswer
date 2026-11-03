@@ -182,6 +182,8 @@ model Project {
   /// Ads Studio scoring: target group and service, and the reels' format ([EKSPERT], [PYTANIE]…)
   adsBrief           String?
   adsFormat          String?            @default("[EKSPERT]")
+  /// scoring: the brand's lead magnets [{keyword, name, about, url}] — a CTA may only point to these
+  leadMagnets        Json?
   /// right after processing: voice "podcast + ElevenLabs" (voice isolation + mastering)
   autoVoice          Boolean            @default(true)
   /// right after processing: dynamic zooms on sentence boundaries

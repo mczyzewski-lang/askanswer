@@ -51,3 +51,29 @@ test("content scoring: prompter scripts are scored and the new version swapped i
   await request.patch(`/api/admin/questions/${q.id}`, { data: { script: "Zupełnie nowa odpowiedź." } });
   expect((await items()).find((x) => x.id === q.id)!.reviewedAt).toBeNull();
 });
+
+test("content scoring: the CTA points to a lead magnet from the project's list", async ({ page, request }) => {
+  test.setTimeout(120_000);
+  await adminRequest(request);
+  const project = await (await request.post("/api/admin/projects", { data: { name: "DUO — lead magnety", format: "PROMPTER", preset: "duo-terapia" } })).json();
+  await request.post(`/api/admin/projects/${project.id}/questions`, { data: { text: "Ciągle się kłócimy o głupoty", script: "Każda kłótnia wygląda tak samo." } });
+
+  await login(page);
+  await page.goto(`/admin/projects/${project.id}`);
+  const lm = page.getByTestId("lead-magnets");
+  await lm.getByRole("button", { name: /Wczytaj: DUO Terapia/ }).click();
+  await expect(page.getByText("Zapisano lead magnety (10)")).toBeVisible();
+  const saved = (await (await request.get(`/api/admin/projects/${project.id}`)).json()).project.leadMagnets;
+  expect(saved).toHaveLength(10);
+
+  await page.getByTestId("content-review-missing").click();
+  await expect(page.getByTestId("content-score")).toHaveCount(1, { timeout: 60_000 });
+  // the scoring prompt carries the list; the model's choice is shown with its DM keyword
+  const stats = await (await request.get("http://127.0.0.1:4010/__stats", { headers: { "xi-api-key": "mock-key" } })).json();
+  const prompt = (stats.openai as Array<{ prompt: string }>).map((c) => c.prompt).reverse().find((p) => p.includes("Ciągle się kłócimy"))!;
+  expect(prompt).toContain("- PLAN | Trudna rozmowa bez kłótni |");
+  await page.getByTestId("content-score").click();
+  await expect(page.getByTestId("review-lead-magnet")).toContainText("Trudna rozmowa bez kłótni");
+  await expect(page.getByTestId("review-lead-magnet")).toContainText("PLAN");
+  await expect(page.getByTestId("compare-after-rest")).toContainText("Napisz PLAN w wiadomości");
+});

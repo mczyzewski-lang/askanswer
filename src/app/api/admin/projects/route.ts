@@ -11,7 +11,7 @@ const DEFAULT_CATEGORIES = ["Znaki towarowe", "Upadłość konsumencka", "Restru
 export const POST = route(async (req: Request) => {
   await requireAdmin();
   const raw = await req.json();
-  const body = ProjectInput.parse(raw);
+  const { leadMagnets, ...body } = ProjectInput.parse(raw);
   // each project gets its own editable theme, initialised from a preset
   const presetKey = typeof raw?.preset === "string" ? raw.preset : undefined;
   const preset = THEME_PRESETS.find((t) => t.key === presetKey) ?? THEME_PRESETS[0];
@@ -31,7 +31,7 @@ export const POST = route(async (req: Request) => {
     },
   });
   const project = await prisma.project.create({
-    data: { ...body, themeId: theme.id, categories: { create: DEFAULT_CATEGORIES.map((name, order) => ({ name, order })) } },
+    data: { ...body, ...(leadMagnets ? { leadMagnets } : {}), themeId: theme.id, categories: { create: DEFAULT_CATEGORIES.map((name, order) => ({ name, order })) } },
   });
   const logoAssetId = await presetLogoAssetId(preset.key, project.id);
   if (logoAssetId) await prisma.theme.update({ where: { id: theme.id }, data: { logoAssetId } });

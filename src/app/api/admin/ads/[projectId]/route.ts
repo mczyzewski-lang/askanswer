@@ -32,6 +32,7 @@ export const GET = route(async (_req: Request, ctx: { params: Promise<{ projectI
     autoBlur: p.autoBlur,
     blurStrength: p.blurStrength,
     adsBrief: p.adsBrief,
+    leadMagnets: p.leadMagnets,
     adsFormat: p.adsFormat ?? "[EKSPERT]",
   };
   const footage = await prisma.adFootage.findMany({

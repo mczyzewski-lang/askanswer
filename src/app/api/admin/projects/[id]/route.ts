@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/server/db";
 import { requireAdmin } from "@/lib/server/auth";
 import { json, route } from "@/lib/server/http";
@@ -15,8 +16,8 @@ export const GET = route(async (_req: Request, ctx: Ctx) => {
 export const PATCH = route(async (req: Request, ctx: Ctx) => {
   await requireAdmin();
   const { id } = await ctx.params;
-  const body = ProjectInput.partial().parse(await req.json());
-  return json(await prisma.project.update({ where: { id }, data: body }));
+  const { leadMagnets, ...body } = ProjectInput.partial().parse(await req.json());
+  return json(await prisma.project.update({ where: { id }, data: { ...body, ...(leadMagnets !== undefined ? { leadMagnets: leadMagnets ?? Prisma.DbNull } : {}) } }));
 });
 
 export const DELETE = route(async (_req: Request, ctx: Ctx) => {

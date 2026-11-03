@@ -53,6 +53,8 @@ import { terms } from "@/lib/project-terms";
 import { csvTemplate, decodeCsv, hybridCsvTemplate, parseHybridCsv, parseImportCsv } from "@/lib/csv-import";
 import { effectiveKind, kindHasNarration, kindHasPrompter, KIND_LABELS, QUESTION_KINDS, type QuestionKind } from "@/lib/question-kinds";
 import { type CurrentScript, type Review, ReviewDialog, ScoreBadge, scoreTone } from "./content-review";
+import { LeadMagnetsEditor } from "./lead-magnets-editor";
+import type { LeadMagnet } from "@/lib/lead-magnets";
 
 type Q = PanelProps["data"]["questions"][number];
 type Take = Q["takes"][number];
@@ -602,6 +604,18 @@ function ContentScoringBar({ data, items, reviewing, review, refresh, toast }: {
         <Label htmlFor="content-brief">Grupa docelowa i usługa (kontekst oceny)</Label>
         <Textarea id="content-brief" rows={2} value={brief} placeholder="np. osoby z długami powyżej 30 tys. zł, które nie dają rady spłacać rat — usługa: upadłość konsumencka" onChange={(e) => setBrief(e.target.value)} onBlur={() => void saveBrief()} />
       </div>
+      <LeadMagnetsEditor
+        value={data.project.leadMagnets as LeadMagnet[] | null}
+        onSave={async (leadMagnets) => {
+          try {
+            await api(`/api/admin/projects/${data.project.id}`, { method: "PATCH", json: { leadMagnets } });
+            toast(leadMagnets ? `Zapisano lead magnety (${leadMagnets.length})` : "Usunięto lead magnety");
+            refresh();
+          } catch (e) {
+            toast((e as Error).message, "err");
+          }
+        }}
+      />
     </div>
   );
 }
