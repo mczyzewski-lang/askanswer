@@ -184,6 +184,8 @@ model Project {
   adsFormat          String?            @default("[EKSPERT]")
   /// scoring: the brand's lead magnets [{keyword, name, about, url}] — a CTA may only point to these
   leadMagnets        Json?
+  /// Ads Studio: how many cutaways from the B-roll basket go into each reel when it is laid out (0 = none)
+  adsBrollPerReel    Int                @default(2)
   /// right after processing: voice "podcast + ElevenLabs" (voice isolation + mastering)
   autoVoice          Boolean            @default(true)
   /// right after processing: dynamic zooms on sentence boundaries
@@ -1238,4 +1240,16 @@ model UploadSession {
   updatedAt      DateTime  @updatedAt
 
   @@index([projectId, purpose, status])
+}
+
+/// Ads Studio: a cutaway cut out of an uploaded B-roll video — the basket reels draw from at random
+model BrollFragment {
+  id        String   @id @default(cuid())
+  projectId String
+  assetId   String
+  sourceIn  Float
+  sourceOut Float
+  createdAt DateTime @default(now())
+
+  @@index([projectId])
 }

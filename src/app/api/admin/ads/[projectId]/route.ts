@@ -34,6 +34,7 @@ export const GET = route(async (_req: Request, ctx: { params: Promise<{ projectI
     adsBrief: p.adsBrief,
     leadMagnets: p.leadMagnets,
     adsFormat: p.adsFormat ?? "[EKSPERT]",
+    adsBrollPerReel: p.adsBrollPerReel,
   };
   const footage = await prisma.adFootage.findMany({
     where: { projectId },

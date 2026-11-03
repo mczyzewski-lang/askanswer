@@ -42,8 +42,11 @@ test("ads studio: script + footage → reels laid out from the transcript", asyn
 
   // 3. lay out the reels: the hooks of reel P01 are ONE edit with hook versions;
   // h03 was never recorded → reported, not laid out
-  await page.getByTestId("ads-build").click();
+  // first a test reel (with its hook versions) — the rest only after checking it
+  await expect(page.getByTestId("ads-build")).toContainText("Od razu wszystkie");
+  await page.getByTestId("ads-build-test").click();
   await expect(page.getByTestId("ads-open-studio")).toHaveCount(2, { timeout: 60_000 });
+  await expect(page.getByTestId("ads-test-reel")).toContainText("Reels testowy gotowy: P01");
   const data = await (await request.get(`/api/admin/ads/${projectId}`)).json();
   const [r1, r2, r3] = ["P01-h01", "P01-h02", "P01-h03"].map((c) => data.reels.find((r: { code: string }) => r.code === c));
   expect(r1.matches.map((m: { missing?: boolean }) => !!m.missing)).toEqual([false, false, false]);
@@ -80,6 +83,38 @@ test("ads studio: script + footage → reels laid out from the transcript", asyn
   await page.getByTestId("ads-broll-item").first().getByTestId("ads-broll-pick").click();
   await expect(page.getByTestId("ads-broll-item").first()).toHaveAttribute("data-picked", "true");
   await expect.poll(async () => (await (await request.get(`/api/admin/ads/${projectId}/broll`)).json()).items.filter((i: { picked: boolean }) => i.picked).length).toBe(1);
+
+  // the basket: pieces cut out of a B-roll video (by hand and automatically), drawn into reels at random
+  await page.getByTestId("broll-cut").first().click();
+  const ed = page.getByTestId("broll-fragment-editor");
+  await ed.getByLabel("Początek (s)").fill("0.5");
+  await ed.getByLabel("Koniec (s)").fill("2");
+  await ed.getByTestId("fragment-add").click();
+  await expect(ed.getByTestId("fragment-list").locator("li")).toHaveCount(1);
+  await ed.getByLabel("Długość (s)").fill("1");
+  await ed.getByLabel("Co ile (s)").fill("2");
+  await ed.getByTestId("fragment-auto").click();
+  await expect.poll(async () => (await ed.getByTestId("fragment-list").locator("li").count()) > 1).toBe(true);
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("broll-basket")).toContainText(/Koszyk przebitek: \d+/);
+  await page.getByLabel("Przebitek na reels").selectOption("2");
+  await expect.poll(async () => (await (await request.get(`/api/admin/ads/${projectId}/broll`)).json()).perReel).toBe(2);
+  const basket = (await (await request.get(`/api/admin/ads/${projectId}/broll`)).json()).fragments as Array<{ id: string; assetId: string }>;
+  expect(basket.length).toBeGreaterThan(1);
+  // laid out again: cutaways from the basket in the body only (not over the hook, not over the CTA), muted
+  const rb = await (await request.post(`/api/admin/ads/${projectId}/build`, { data: { rebuild: true, reelIds: [r1.id] } })).json();
+  await expect.poll(async () => (await (await request.get(`/api/admin/jobs/${rb.jobId}`)).json()).status, { timeout: 60_000 }).toBe("SUCCEEDED");
+  const laidDoc = (await (await request.get(`/api/admin/compositions/${r1.compositionId}`)).json()).composition.document;
+  const cuts = laidDoc.overlays.filter((o: { id: string }) => o.id.startsWith("basket_")) as Array<{ start: number; end: number; volume: number; assetId: string }>;
+  const hookEnd = laidDoc.clips[0].start + laidDoc.clips[0].sourceOut - laidDoc.clips[0].sourceIn;
+  const ctaStart = laidDoc.clips[2].start;
+  expect(cuts.length).toBeLessThanOrEqual(2);
+  for (const c of cuts) {
+    expect(c.start).toBeGreaterThanOrEqual(hookEnd);
+    expect(c.end).toBeLessThanOrEqual(ctaStart);
+    expect(c.volume).toBe(0);
+    expect(basket.some((f) => f.assetId === c.assetId)).toBe(true);
+  }
 
   // large camera files: the page sends B-roll videos in slices, the worker converts them
   await page.getByTestId("ads-broll-input").setInputFiles({ name: "P1016420.MP4", mimeType: "video/mp4", buffer: buf });

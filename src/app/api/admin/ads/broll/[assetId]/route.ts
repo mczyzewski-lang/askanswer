@@ -23,6 +23,8 @@ export const DELETE = route(async (_req: Request, ctx: { params: Promise<{ asset
   // used in an edit? then it stays in storage (only leaves the library)
   const rows = await prisma.$queryRaw<Array<{ n: bigint }>>`SELECT count(*) AS n FROM "VideoComposition" WHERE "projectId" = ${a.projectId ?? ""} AND document::text LIKE ${"%" + assetId + "%"}`;
   const used = Number(rows[0]?.n ?? 0);
+  // its pieces leave the basket too
+  await prisma.brollFragment.deleteMany({ where: { assetId } });
   if (used) await prisma.mediaAsset.update({ where: { id: assetId }, data: { meta: { ...((a.meta as object) ?? {}), library: "broll-removed" } } });
   else await deleteAssets([assetId]);
   return json({ ok: true });

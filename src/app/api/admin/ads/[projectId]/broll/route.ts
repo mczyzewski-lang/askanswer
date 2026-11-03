@@ -19,8 +19,13 @@ const IMAGE: Record<string, string> = { "image/png": "png", "image/jpeg": "jpg",
 export const GET = route(async (_req: Request, ctx: { params: Promise<{ projectId: string }> }) => {
   await requireAdmin();
   const { projectId } = await ctx.params;
-  const [items, pending] = await Promise.all([brollLibrary(projectId), brollPending(projectId)]);
-  return json({ items, pending });
+  const [items, pending, fragments, project] = await Promise.all([
+    brollLibrary(projectId),
+    brollPending(projectId),
+    prisma.brollFragment.findMany({ where: { projectId }, orderBy: [{ assetId: "asc" }, { sourceIn: "asc" }], select: { id: true, assetId: true, sourceIn: true, sourceOut: true } }),
+    prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { adsBrollPerReel: true } }),
+  ]);
+  return json({ items, pending, fragments, perReel: project.adsBrollPerReel });
 });
 
 /**

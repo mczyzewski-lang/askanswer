@@ -33,6 +33,7 @@ export const ProjectInput = z.object({
   blurStrength: z.number().int().min(5).max(100).optional(),
   narrationSpeed: z.number().min(0.9).max(1.4).optional(),
   adsBrief: z.string().trim().max(2000).nullable().optional(),
+  adsBrollPerReel: z.number().int().min(0).max(8).optional(),
   leadMagnets: z
     .array(z.object({ keyword: z.string().trim().max(40), name: z.string().trim().min(1).max(200), about: z.string().trim().max(600), url: z.string().trim().max(300).nullable().optional() }))
     .max(30)

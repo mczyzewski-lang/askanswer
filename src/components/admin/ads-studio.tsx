@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowUpRight, Clapperboard, Download, FileText, Film, Loader2, RefreshCw, Star, Trash2, Upload, Wand2 } from "lucide-react";
+import { ArrowUpRight, Clapperboard, Download, FileText, Film, Loader2, RefreshCw, Scissors, Star, Trash2, Upload, Wand2 } from "lucide-react";
 import { Badge, Button, Card, EmptyState, Input, Label, NativeSelect, Progress, Switch, Textarea, useToast } from "@/components/ui";
 import { api, cn, formatDate } from "@/lib/utils";
 import { decodeCsv } from "@/lib/csv-import";
@@ -12,6 +12,7 @@ import { THEME_PRESETS } from "@/lib/themes";
 import { type Review, ReviewDialog, ScoreBadge, ScoringCounts, scoreTone } from "./content-review";
 import { LeadMagnetsEditor } from "./lead-magnets-editor";
 import { formatBytes, sendChunks, uploadQueue } from "@/lib/client/chunked-upload";
+import { FragmentEditor, type Fragment } from "./broll-fragments";
 import type { LeadMagnet } from "@/lib/lead-magnets";
 
 // ---------------------------------------------------------------------------
@@ -236,6 +237,11 @@ export function AdsProject({ id }: { id: string }) {
   const groupSize = new Map<string, number>();
   for (const r of data.reels) if (r.compositionId) groupSize.set(r.compositionId, (groupSize.get(r.compositionId) ?? 0) + 1);
   const edits = groupSize.size;
+  // before laying out everything: one test reel (with its hook versions) to check the look
+  const plannedEdits = new Set(data.reels.map((r) => r.groupCode ?? r.code)).size;
+  const extraHooks = data.reels.length - plannedEdits;
+  const testReel = data.reels.find((r) => r.compositionId) ?? null;
+  const allLabel = `${plannedEdits} ${plannedEdits === 1 ? "reels" : "reelsów"}${extraHooks ? ` z ${extraHooks} dodatkowymi hookami` : ""}`;
 
   return (
     <div className="space-y-6" data-testid="ads-studio">
@@ -417,9 +423,19 @@ export function AdsProject({ id }: { id: string }) {
               {laid}/{data.reels.length} ułożonych{edits && edits < laid ? ` w ${edits} montażach (reelsy różniące się tylko hookiem montujesz raz)` : ""}{missingParts ? ` · ${missingParts} fragmentów nie znaleziono w nagraniach` : ""}. Fragmenty są wycinane z transkrypcji — ze słowami, które ekspert dodał od siebie.
             </p>
           </div>
-          <div className="flex gap-2">
-            <Button onClick={() => void build(false)} disabled={building || !ready || !data.reels.length} data-testid="ads-build">
-              {building ? <Loader2 className="animate-spin" /> : <Wand2 />} {laid ? "Ułóż brakujące" : "Ułóż reelsy"}
+          <div className="flex flex-wrap gap-2">
+            {!laid ? (
+              <Button onClick={() => void build(false, [data.reels[0].id])} disabled={building || !ready || !data.reels.length} data-testid="ads-build-test">
+                {building ? <Loader2 className="animate-spin" /> : <Wand2 />} Ułóż reels testowy
+              </Button>
+            ) : null}
+            <Button
+              variant={laid ? undefined : "outline"}
+              onClick={() => (laid || confirm(`Ułożyć od razu wszystkie ${allLabel}, bez sprawdzenia reelsa testowego?`)) && void build(false)}
+              disabled={building || !ready || !data.reels.length || (laid > 0 && laid === data.reels.length)}
+              data-testid="ads-build"
+            >
+              {building && laid ? <Loader2 className="animate-spin" /> : laid ? <Wand2 /> : null} {laid ? (laid === data.reels.length ? "Wszystkie ułożone" : `Generuj wszystkie: ${allLabel}`) : `Od razu wszystkie (${allLabel})`}
             </Button>
             {laid ? (
               <Button variant="outline" disabled={building || !ready} onClick={() => confirm("Ułożyć wszystkie od nowa? Zmiany wprowadzone w Studio w tych reelsach przepadną.") && void build(true)}>
@@ -428,6 +444,16 @@ export function AdsProject({ id }: { id: string }) {
             ) : null}
           </div>
         </div>
+        {testReel && laid < data.reels.length ? (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-950" data-testid="ads-test-reel">
+            <span>
+              <b>Reels testowy gotowy: {testReel.groupCode ?? testReel.code}</b> — sprawdź w Studio wygląd, napisy, przebitki i ekran końcowy. Jeśli jest dobrze, wygeneruj wszystkie; jeśli nie — popraw ustawienia wyglądu i ułóż go „od nowa”.
+            </span>
+            <Link href={`/studio/${testReel.compositionId}${testReel.hookIndex != null ? `?hook=${testReel.hookIndex}` : ""}`} className="inline-flex items-center gap-1 rounded-lg bg-ink px-3 py-1.5 text-xs font-medium text-white">
+              Otwórz w Studio <ArrowUpRight className="h-3 w-3" />
+            </Link>
+          </div>
+        ) : null}
         {data.reels.length ? <ScoringBar project={data.project} reels={data.reels} reviewing={reviewing} review={review} reload={load} toast={toast} /> : null}
         {data.reels.length ? (
           <div className="overflow-x-auto">
@@ -693,12 +719,21 @@ function BrollCard({ projectId, toast }: { projectId: string; toast: (t: string,
   const [uploads, setUploads] = useState<Record<string, UploadState>>({});
   // failed conversions the user chose to upload again (hidden from the list)
   const [dismissed, setDismissed] = useState<string[]>([]);
+  const [fragments, setFragments] = useState<Fragment[]>([]);
+  const [perReel, setPerReel] = useState(2);
+  const [cutting, setCutting] = useState<BrollItem | null>(null);
   const ref = useRef<HTMLInputElement>(null);
   const load = useCallback(async () => {
-    const d = await api<{ items: BrollItem[]; pending?: typeof pending }>(`/api/admin/ads/${projectId}/broll`);
+    const d = await api<{ items: BrollItem[]; pending?: typeof pending; fragments?: Fragment[]; perReel?: number }>(`/api/admin/ads/${projectId}/broll`);
     setItems(d.items);
     setPending(d.pending ?? []);
+    setFragments(d.fragments ?? []);
+    if (d.perReel != null) setPerReel(d.perReel);
   }, [projectId]);
+  const savePerReel = async (n: number) => {
+    setPerReel(n);
+    await api(`/api/admin/projects/${projectId}`, { method: "PATCH", json: { adsBrollPerReel: n } }).catch((e) => toast((e as Error).message, "err"));
+  };
   useEffect(() => {
     void load();
   }, [load]);
@@ -837,6 +872,23 @@ function BrollCard({ projectId, toast }: { projectId: string; toast: (t: string,
           <p className="text-xs text-muted">
             {items.length} przebitek · {picked} wybranych do montażu
           </p>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-line bg-black/[.015] p-3 text-sm" data-testid="broll-basket">
+            <span>
+              <b>Koszyk przebitek: {fragments.length}</b> {fragments.length === 1 ? "fragment" : "fragmentów"} z {new Set(fragments.map((f) => f.assetId)).size} wideo
+            </span>
+            <label className="flex items-center gap-2">
+              W każdym reelsie losowo
+              <NativeSelect value={String(perReel)} onChange={(e) => void savePerReel(Number(e.target.value))} aria-label="Przebitek na reels" className="h-8 w-16">
+                {[0, 1, 2, 3, 4, 5, 6].map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
+              </NativeSelect>
+              przebitek
+            </label>
+            <span className="text-xs text-muted">{fragments.length ? "Wstawiane przy układaniu reelsów w treść (nie na hook i nie na CTA), wyciszone, do 3,5 s. Już ułożone reelsy zmienia „od nowa”." : "Kliknij „Wytnij” na wideo, żeby dodać fragmenty."}</span>
+          </div>
           <div className="grid grid-cols-3 gap-2 sm:grid-cols-5 lg:grid-cols-6">
             {items.map((it) => (
               <div key={it.id} className={cn("group relative overflow-hidden rounded-lg border-2 bg-black", it.picked ? "border-amber-400" : "border-transparent")} data-testid="ads-broll-item" data-picked={it.picked}>
@@ -850,6 +902,11 @@ function BrollCard({ projectId, toast }: { projectId: string; toast: (t: string,
                   {it.name}
                   {it.durationSec ? ` · ${it.durationSec.toFixed(1)} s` : ""}
                 </span>
+                {it.isVideo ? (
+                  <button type="button" onClick={() => setCutting(it)} className="absolute bottom-6 left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-full bg-white/90 px-2 py-0.5 text-[11px] font-medium text-ink shadow" data-testid="broll-cut">
+                    <Scissors className="h-3 w-3" /> Wytnij{fragments.some((f) => f.assetId === it.id) ? ` (${fragments.filter((f) => f.assetId === it.id).length})` : ""}
+                  </button>
+                ) : null}
                 <button type="button" onClick={() => void pick(it)} aria-pressed={it.picked} aria-label={it.picked ? "Odznacz" : "Wybierz do montażu"} className={cn("absolute left-1 top-1 rounded-full p-1", it.picked ? "bg-amber-400 text-black" : "bg-black/50 text-white")} data-testid="ads-broll-pick">
                   <Star className="h-3.5 w-3.5" fill={it.picked ? "currentColor" : "none"} />
                 </button>
@@ -872,6 +929,7 @@ function BrollCard({ projectId, toast }: { projectId: string; toast: (t: string,
       ) : items && !Object.keys(uploads).length && !pending.filter((p) => !dismissed.includes(p.id)).length ? (
         <p className="text-sm text-muted">Brak przebitek.</p>
       ) : null}
+      {cutting ? <FragmentEditor projectId={projectId} item={cutting} fragments={fragments} onClose={() => setCutting(null)} reload={load} toast={toast} /> : null}
     </Card>
   );
 }

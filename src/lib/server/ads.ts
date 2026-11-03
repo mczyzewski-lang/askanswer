@@ -2,6 +2,7 @@
  * Ads Studio: raw footage (the expert reading hooks, bodies and CTAs, with retakes) + a script file
  * → one ready-to-edit reel per script row, cut from the transcripts.
  */
+import { placeBasketBroll, type BasketFragment } from "../editor/broll-basket";
 import type { LeadMagnet } from "../lead-magnets";
 import fsp from "node:fs/promises";
 import path from "node:path";
@@ -150,6 +151,7 @@ export async function buildReels(projectId: string, opts: { reelIds?: string[]; 
   const assets = await prisma.mediaAsset.findMany({ where: { id: { in: footage.map((f) => f.assetId) } }, select: { id: true, waveform: true } });
   const waveOf = new Map(assets.map((a) => [a.id, a.waveform as unknown as Waveform | null]));
   const theme = project.theme ? themeFromRow(project.theme) : DEFAULT_THEME;
+  const basket = await brollBasket(projectId);
   const toStored = (p: { role: string; text: string }): StoredMatch => {
     const m = found.get(p.text);
     const f = m ? footage.find((x) => x.id === m.footageId) : null;
@@ -188,6 +190,8 @@ export async function buildReels(projectId: string, opts: { reelIds?: string[]; 
     } else {
       const lead = group.find((r) => hookOf(r)) ?? group[0];
       doc = reelDocument(title(lead), msOf.get(lead.id)!, footage, waveOf, theme, project);
+      // cutaways from the basket, drawn at random per reel (the same ones when laid out again)
+      if (doc) doc = placeBasketBroll(doc, basket, project.adsBrollPerReel, lead.code);
       if (doc) {
         const hookClip = doc.clips.find((c) => c.label === "HOOK");
         if (isGroup && hookClip) {
@@ -220,6 +224,14 @@ export async function buildReels(projectId: string, opts: { reelIds?: string[]; 
     }
   }
   return { reels: todo.reduce((n, g) => n + g.length, 0), built, groups: todo.length };
+}
+
+/** The B-roll basket: fragments of the campaign's B-roll videos that still exist. */
+export async function brollBasket(projectId: string): Promise<BasketFragment[]> {
+  const rows = await prisma.brollFragment.findMany({ where: { projectId }, orderBy: { createdAt: "asc" } });
+  const assets = await prisma.mediaAsset.findMany({ where: { id: { in: [...new Set(rows.map((r) => r.assetId))] } }, select: { id: true, originalName: true } });
+  const nameOf = new Map(assets.map((a) => [a.id, a.originalName ?? ""]));
+  return rows.filter((r) => nameOf.has(r.assetId)).map((r) => ({ id: r.id, assetId: r.assetId, sourceIn: r.sourceIn, sourceOut: r.sourceOut, name: nameOf.get(r.assetId) }));
 }
 
 function groupKeyIsSolo(r: { code: string; parts: unknown; groupCode: string | null }, parts: (r: never) => Array<{ role: string; text: string }>) {
