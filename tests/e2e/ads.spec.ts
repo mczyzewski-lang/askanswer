@@ -84,23 +84,35 @@ test("ads studio: script + footage → reels laid out from the transcript", asyn
   await expect(page.getByTestId("ads-broll-item").first()).toHaveAttribute("data-picked", "true");
   await expect.poll(async () => (await (await request.get(`/api/admin/ads/${projectId}/broll`)).json()).items.filter((i: { picked: boolean }) => i.picked).length).toBe(1);
 
-  // the basket: pieces cut out of a B-roll video (by hand and automatically), drawn into reels at random
-  await page.getByTestId("broll-cut").first().click();
-  const ed = page.getByTestId("broll-fragment-editor");
-  await ed.getByLabel("Początek (s)").fill("0.5");
-  await ed.getByLabel("Koniec (s)").fill("2");
-  await ed.getByTestId("fragment-add").click();
-  await expect(ed.getByTestId("fragment-list").locator("li")).toHaveCount(1);
-  await ed.getByLabel("Długość (s)").fill("1");
-  await ed.getByLabel("Co ile (s)").fill("2");
-  await ed.getByTestId("fragment-auto").click();
-  await expect.poll(async () => (await ed.getByTestId("fragment-list").locator("li").count()) > 1).toBe(true);
-  await page.keyboard.press("Escape");
-  await expect(page.getByTestId("broll-basket")).toContainText(/Koszyk przebitek: \d+/);
+  // the basket: all B-roll videos in one Studio edit, cut like a reel — every clip left is a cutaway
+  await page.getByTestId("broll-open-studio").click();
+  await page.waitForURL(/\/studio\//);
+  const brollComp = page.url().split("/studio/")[1].split("?")[0];
+  if (process.env.BROLL_SHOT) {
+    await expect(page.getByTestId("timecode")).toBeVisible({ timeout: 30_000 });
+    await page.waitForTimeout(2500);
+    await page.keyboard.press("Space");
+    await page.waitForTimeout(2500);
+    await page.keyboard.press("Space");
+    await page.screenshot({ path: process.env.BROLL_SHOT });
+  }
+  const bc = (await (await request.get(`/api/admin/compositions/${brollComp}`)).json()).composition;
+  expect(bc.document.clips.length).toBe(2);
+  expect(bc.document.overlays).toHaveLength(0);
+  // a cut in the Studio: the first video split into two pieces with a gap (the bit in between thrown away)
+  const [c0, ...rest] = bc.document.clips;
+  const cut = { ...bc.document, clips: [{ ...c0, sourceOut: c0.sourceIn + 1.2 }, { ...c0, id: `${c0.id}_b`, start: c0.start + 1.2, sourceIn: c0.sourceIn + 2, sourceOut: c0.sourceIn + 3.2 }, ...rest.map((c: { start: number }) => ({ ...c, start: c.start - (c0.sourceOut - c0.sourceIn) + 2.4 }))] };
+  expect((await request.put(`/api/admin/compositions/${brollComp}`, { data: { version: bc.version, document: cut } })).ok()).toBeTruthy();
+  await page.goto(`/admin/ads/${projectId}`);
+  await expect(page.getByTestId("broll-basket")).toContainText("Koszyk przebitek: 3");
+  // opened again: the cut stays, nothing is duplicated
+  const again = (await (await request.post(`/api/admin/ads/${projectId}/broll/studio`)).json()).compositionId;
+  expect(again).toBe(brollComp);
+  expect((await (await request.get(`/api/admin/compositions/${brollComp}`)).json()).composition.document.clips.length).toBe(3);
   await page.getByLabel("Przebitek na reels").selectOption("2");
   await expect.poll(async () => (await (await request.get(`/api/admin/ads/${projectId}/broll`)).json()).perReel).toBe(2);
   const basket = (await (await request.get(`/api/admin/ads/${projectId}/broll`)).json()).fragments as Array<{ id: string; assetId: string }>;
-  expect(basket.length).toBeGreaterThan(1);
+  expect(basket.length).toBe(3);
   // laid out again: cutaways from the basket in the body only (not over the hook, not over the CTA), muted
   const rb = await (await request.post(`/api/admin/ads/${projectId}/build`, { data: { rebuild: true, reelIds: [r1.id] } })).json();
   await expect.poll(async () => (await (await request.get(`/api/admin/jobs/${rb.jobId}`)).json()).status, { timeout: 60_000 }).toBe("SUCCEEDED");

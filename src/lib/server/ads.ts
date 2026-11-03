@@ -13,6 +13,7 @@ import { makeTempDir, putFile, toLocalFile } from "./storage";
 import { transcribe } from "./elevenlabs";
 import { elevenLabsConfigured } from "./env";
 import { enqueue } from "./jobs";
+import { HttpError } from "./errors";
 import { computeWaveform, detectPauses } from "../editor/silence";
 import { buildSegments } from "../editor/subtitles";
 import { buildInitialDocument } from "../editor/factory";
@@ -226,12 +227,53 @@ export async function buildReels(projectId: string, opts: { reelIds?: string[]; 
   return { reels: todo.reduce((n, g) => n + g.length, 0), built, groups: todo.length };
 }
 
-/** The B-roll basket: fragments of the campaign's B-roll videos that still exist. */
+/**
+ * The B-roll basket: every clip left on the timeline of the campaign's B-roll edit in the Studio (cut
+ * there like a reel), plus pieces added in the older "Wytnij" window. Only videos still in the library.
+ */
 export async function brollBasket(projectId: string): Promise<BasketFragment[]> {
+  const project = await prisma.project.findUnique({ where: { id: projectId }, select: { adsBrollCompositionId: true } });
   const rows = await prisma.brollFragment.findMany({ where: { projectId }, orderBy: { createdAt: "asc" } });
-  const assets = await prisma.mediaAsset.findMany({ where: { id: { in: [...new Set(rows.map((r) => r.assetId))] } }, select: { id: true, originalName: true } });
-  const nameOf = new Map(assets.map((a) => [a.id, a.originalName ?? ""]));
-  return rows.filter((r) => nameOf.has(r.assetId)).map((r) => ({ id: r.id, assetId: r.assetId, sourceIn: r.sourceIn, sourceOut: r.sourceOut, name: nameOf.get(r.assetId) }));
+  const comp = project?.adsBrollCompositionId ? await prisma.videoComposition.findUnique({ where: { id: project.adsBrollCompositionId }, select: { document: true } }) : null;
+  const clips = ((comp?.document as unknown as EditorDocument | null)?.clips ?? []).filter((c) => c.sourceOut - c.sourceIn >= 0.5);
+  const ids = [...new Set([...rows.map((r) => r.assetId), ...clips.map((c) => c.assetId)])];
+  const assets = await prisma.mediaAsset.findMany({ where: { id: { in: ids }, kind: "OVERLAY_VIDEO" }, select: { id: true, originalName: true, meta: true } });
+  const live = new Map(assets.filter((a) => (a.meta as { library?: string } | null)?.library === "broll").map((a) => [a.id, a.originalName ?? ""]));
+  return [
+    ...clips.filter((c) => live.has(c.assetId)).map((c) => ({ id: c.id, assetId: c.assetId, sourceIn: c.sourceIn, sourceOut: c.sourceOut, name: live.get(c.assetId) })),
+    ...rows.filter((r) => live.has(r.assetId)).map((r) => ({ id: r.id, assetId: r.assetId, sourceIn: r.sourceIn, sourceOut: r.sourceOut, name: live.get(r.assetId) })),
+  ];
+}
+
+/**
+ * The Studio edit for cutting the B-roll: all the campaign's B-roll videos one after another (muted,
+ * no title, no captions). Cut it like a reel; every clip that stays on the timeline is one cutaway.
+ * Opening it again appends videos uploaded since (what was cut stays as it is).
+ */
+export async function brollStudio(projectId: string): Promise<string> {
+  const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, include: { theme: true } });
+  const videos = await prisma.mediaAsset.findMany({ where: { projectId, kind: "OVERLAY_VIDEO", meta: { path: ["library"], equals: "broll" } }, orderBy: { createdAt: "asc" } });
+  if (!videos.length) throw new HttpError(400, "Najpierw wgraj przebitki wideo.");
+  const existing = project.adsBrollCompositionId ? await prisma.videoComposition.findUnique({ where: { id: project.adsBrollCompositionId } }) : null;
+  const theme = project.theme ? themeFromRow(project.theme) : DEFAULT_THEME;
+  const fresh = buildInitialDocument({ questionText: "B-roll", theme, mode: "ANSWER_ONLY", recording: { assetId: videos[0].id, duration: videos[0].durationSec ?? 5 }, narration: null, segments: [], pauses: [], visibility: "FULL", questionSeconds: 0, logo: false });
+  // clips start from the factory's clip (all fields set), then point to each video
+  const template = fresh.clips[0];
+  const doc: EditorDocument = (existing?.document as unknown as EditorDocument | undefined) ?? { ...fresh, clips: [], overlays: [], subtitles: { ...fresh.subtitles, enabled: false, segments: [] }, pauses: [], zooms: [], meta: { ...fresh.meta, questionText: "B-roll: koszyk przebitek" } };
+  const have = new Set(doc.clips.map((c) => c.assetId));
+  let t = doc.clips.reduce((m, c) => Math.max(m, c.start + (c.sourceOut - c.sourceIn)), 0);
+  for (const v of videos) {
+    if (have.has(v.id) || !v.durationSec) continue;
+    doc.clips.push({ ...template, id: `broll_${v.id.slice(-8)}`, assetId: v.id, sourceIn: 0, sourceOut: v.durationSec, start: Math.round(t * 30) / 30, volume: 0, muted: false, label: (v.originalName ?? "B-roll").slice(0, 40), framing: { scale: 1, cx: 0.5, cy: 0.5 } });
+    t = Math.round((t + v.durationSec) * 30) / 30;
+  }
+  if (existing) {
+    await prisma.videoComposition.update({ where: { id: existing.id }, data: { document: doc as unknown as Prisma.InputJsonValue, version: { increment: 1 } } });
+    return existing.id;
+  }
+  const comp = await prisma.videoComposition.create({ data: { projectId, name: "B-roll: koszyk przebitek", status: "READY_TO_EDIT", document: doc as unknown as Prisma.InputJsonValue } });
+  await prisma.project.update({ where: { id: projectId }, data: { adsBrollCompositionId: comp.id } });
+  return comp.id;
 }
 
 function groupKeyIsSolo(r: { code: string; parts: unknown; groupCode: string | null }, parts: (r: never) => Array<{ role: string; text: string }>) {

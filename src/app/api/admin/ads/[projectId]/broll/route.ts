@@ -9,6 +9,7 @@ import { makeTempDir } from "@/lib/server/storage";
 import { probe } from "@/lib/server/ffmpeg";
 import { assetInfo } from "@/lib/server/assets";
 import { brollLibrary, brollPending } from "@/lib/server/broll-library";
+import { brollBasket } from "@/lib/server/ads";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -19,13 +20,14 @@ const IMAGE: Record<string, string> = { "image/png": "png", "image/jpeg": "jpg",
 export const GET = route(async (_req: Request, ctx: { params: Promise<{ projectId: string }> }) => {
   await requireAdmin();
   const { projectId } = await ctx.params;
-  const [items, pending, fragments, project] = await Promise.all([
+  const [items, pending, basket, project] = await Promise.all([
     brollLibrary(projectId),
     brollPending(projectId),
-    prisma.brollFragment.findMany({ where: { projectId }, orderBy: [{ assetId: "asc" }, { sourceIn: "asc" }], select: { id: true, assetId: true, sourceIn: true, sourceOut: true } }),
-    prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { adsBrollPerReel: true } }),
+    brollBasket(projectId),
+    prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { adsBrollPerReel: true, adsBrollCompositionId: true } }),
   ]);
-  return json({ items, pending, fragments, perReel: project.adsBrollPerReel });
+  // the basket = the clips of the B-roll edit in the Studio (+ older pieces cut in the "Wytnij" window)
+  return json({ items, pending, fragments: basket.map(({ id, assetId, sourceIn, sourceOut }) => ({ id, assetId, sourceIn, sourceOut })), perReel: project.adsBrollPerReel, studioId: project.adsBrollCompositionId });
 });
 
 /**

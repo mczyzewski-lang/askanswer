@@ -186,6 +186,8 @@ model Project {
   leadMagnets        Json?
   /// Ads Studio: how many cutaways from the B-roll basket go into each reel when it is laid out (0 = none)
   adsBrollPerReel    Int                @default(2)
+  /// Ads Studio: the Studio edit where the B-roll videos are cut — each clip on its timeline is a cutaway of the basket
+  adsBrollCompositionId String?
   /// right after processing: voice "podcast + ElevenLabs" (voice isolation + mastering)
   autoVoice          Boolean            @default(true)
   /// right after processing: dynamic zooms on sentence boundaries

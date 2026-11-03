@@ -12,7 +12,13 @@ import { THEME_PRESETS } from "@/lib/themes";
 import { type Review, ReviewDialog, ScoreBadge, ScoringCounts, scoreTone } from "./content-review";
 import { LeadMagnetsEditor } from "./lead-magnets-editor";
 import { formatBytes, sendChunks, uploadQueue } from "@/lib/client/chunked-upload";
-import { FragmentEditor, type Fragment } from "./broll-fragments";
+/** a cutaway of the basket (a clip of the B-roll edit in the Studio) */
+interface Fragment {
+  id: string;
+  assetId: string;
+  sourceIn: number;
+  sourceOut: number;
+}
 import { DropZone } from "@/components/drop-zone";
 import type { LeadMagnet } from "@/lib/lead-magnets";
 
@@ -726,15 +732,28 @@ function BrollCard({ projectId, toast }: { projectId: string; toast: (t: string,
   const [dismissed, setDismissed] = useState<string[]>([]);
   const [fragments, setFragments] = useState<Fragment[]>([]);
   const [perReel, setPerReel] = useState(2);
-  const [cutting, setCutting] = useState<BrollItem | null>(null);
+  const [studioId, setStudioId] = useState<string | null>(null);
+  const [opening, setOpening] = useState(false);
   const ref = useRef<HTMLInputElement>(null);
   const load = useCallback(async () => {
-    const d = await api<{ items: BrollItem[]; pending?: typeof pending; fragments?: Fragment[]; perReel?: number }>(`/api/admin/ads/${projectId}/broll`);
+    const d = await api<{ items: BrollItem[]; pending?: typeof pending; fragments?: Fragment[]; perReel?: number; studioId?: string | null }>(`/api/admin/ads/${projectId}/broll`);
+    setStudioId(d.studioId ?? null);
     setItems(d.items);
     setPending(d.pending ?? []);
     setFragments(d.fragments ?? []);
     if (d.perReel != null) setPerReel(d.perReel);
   }, [projectId]);
+  /** all B-roll videos in one Studio edit: cut there, every clip left on the timeline is a cutaway */
+  const openStudio = async () => {
+    setOpening(true);
+    try {
+      const { compositionId } = await api<{ compositionId: string }>(`/api/admin/ads/${projectId}/broll/studio`, { method: "POST" });
+      window.location.href = `/studio/${compositionId}`;
+    } catch (e) {
+      toast((e as Error).message, "err");
+      setOpening(false);
+    }
+  };
   const savePerReel = async (n: number) => {
     setPerReel(n);
     await api(`/api/admin/projects/${projectId}`, { method: "PATCH", json: { adsBrollPerReel: n } }).catch((e) => toast((e as Error).message, "err"));
@@ -880,8 +899,13 @@ function BrollCard({ projectId, toast }: { projectId: string; toast: (t: string,
             </p>
             <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-line bg-black/[.015] p-3 text-sm" data-testid="broll-basket">
               <span>
-                <b>Koszyk przebitek: {fragments.length}</b> {fragments.length === 1 ? "fragment" : "fragmentów"} z {new Set(fragments.map((f) => f.assetId)).size} wideo
+                <b>Koszyk przebitek: {fragments.length}</b> z {new Set(fragments.map((f) => f.assetId)).size} wideo
               </span>
+              {items.some((i) => i.isVideo) ? (
+                <Button size="sm" onClick={() => void openStudio()} disabled={opening} data-testid="broll-open-studio">
+                  {opening ? <Loader2 className="animate-spin" /> : <Scissors />} {studioId ? "Potnij w Studio" : "Potnij w Studio (wszystkie wideo w jednym ciągu)"}
+                </Button>
+              ) : null}
               <label className="flex items-center gap-2">
                 W każdym reelsie losowo
                 <NativeSelect value={String(perReel)} onChange={(e) => void savePerReel(Number(e.target.value))} aria-label="Przebitek na reels" className="h-8 w-16">
@@ -893,7 +917,9 @@ function BrollCard({ projectId, toast }: { projectId: string; toast: (t: string,
                 </NativeSelect>
                 przebitek
               </label>
-              <span className="text-xs text-muted">{fragments.length ? "Wstawiane przy układaniu reelsów w treść (nie na hook i nie na CTA), wyciszone, do 3,5 s. Już ułożone reelsy zmienia „od nowa”." : "Kliknij „Wytnij” na wideo, żeby dodać fragmenty."}</span>
+              <span className="basis-full text-xs text-muted">
+                W Studio wszystkie wideo B-roll leżą w jednym ciągu — tnij je jak reels (dziel, usuwaj zbędne kawałki). <b>Każdy klip, który zostanie na osi czasu, to osobna przebitka.</b> Nowo wgrane wideo dopisują się na końcu. Przebitki trafiają losowo w treść reelsów (nie na hook i nie na CTA), wyciszone, do 3,5 s; już ułożone reelsy zmienia „od nowa”.
+              </span>
             </div>
             <div className="grid grid-cols-3 gap-2 sm:grid-cols-5 lg:grid-cols-6">
               {items.map((it) => (
@@ -908,11 +934,11 @@ function BrollCard({ projectId, toast }: { projectId: string; toast: (t: string,
                     {it.name}
                     {it.durationSec ? ` · ${it.durationSec.toFixed(1)} s` : ""}
                   </span>
-                  {it.isVideo ? (
-                    <button type="button" onClick={() => setCutting(it)} className="absolute bottom-6 left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-full bg-white/90 px-2 py-0.5 text-[11px] font-medium text-ink shadow" data-testid="broll-cut">
-                      <Scissors className="h-3 w-3" /> Wytnij{fragments.some((f) => f.assetId === it.id) ? ` (${fragments.filter((f) => f.assetId === it.id).length})` : ""}
-                    </button>
-                  ) : null}
+                  {it.isVideo && fragments.some((f) => f.assetId === it.id) ? (
+                  <span className="absolute bottom-6 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-white/90 px-2 py-0.5 text-[11px] font-medium text-ink shadow" data-testid="broll-cut-count">
+                    {fragments.filter((f) => f.assetId === it.id).length} w koszyku
+                  </span>
+                ) : null}
                   <button type="button" onClick={() => void pick(it)} aria-pressed={it.picked} aria-label={it.picked ? "Odznacz" : "Wybierz do montażu"} className={cn("absolute left-1 top-1 rounded-full p-1", it.picked ? "bg-amber-400 text-black" : "bg-black/50 text-white")} data-testid="ads-broll-pick">
                     <Star className="h-3.5 w-3.5" fill={it.picked ? "currentColor" : "none"} />
                   </button>
@@ -935,7 +961,7 @@ function BrollCard({ projectId, toast }: { projectId: string; toast: (t: string,
         ) : items && !Object.keys(uploads).length && !pending.filter((p) => !dismissed.includes(p.id)).length ? (
           <p className="text-sm text-muted">Brak przebitek.</p>
         ) : null}
-        {cutting ? <FragmentEditor projectId={projectId} item={cutting} fragments={fragments} onClose={() => setCutting(null)} reload={load} toast={toast} /> : null}
+        
       </Card>
     </DropZone>
   );

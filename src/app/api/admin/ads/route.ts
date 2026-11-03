@@ -10,9 +10,10 @@ export const GET = route(async () => {
   const projects = await prisma.project.findMany({
     where: { format: "ADS" },
     orderBy: { updatedAt: "desc" },
-    select: { id: true, name: true, updatedAt: true, _count: { select: { adFootage: true, adReels: true, compositions: true } } },
+    select: { id: true, name: true, updatedAt: true, adsBrollCompositionId: true, _count: { select: { adFootage: true, adReels: true, compositions: true } } },
   });
-  return json({ projects });
+  // the B-roll cutting edit is not a reel
+  return json({ projects: projects.map(({ adsBrollCompositionId, ...p }) => ({ ...p, _count: { ...p._count, compositions: p._count.compositions - (adsBrollCompositionId ? 1 : 0) } })) });
 });
 
 export const POST = route(async (req: Request) => {

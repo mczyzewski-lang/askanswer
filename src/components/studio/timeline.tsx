@@ -497,7 +497,8 @@ const WaveClip = memo(function WaveClip({ clip, left, width, top, height, wavefo
     if (!waveform || !waveform.peaks.length) {
       ctx.fillStyle = "rgba(255,255,255,.35)";
       ctx.font = `${11 * dpr}px Inter`;
-      ctx.fillText(waveform ? "brak dźwięku" : "ładowanie fali…", 6 * dpr, h / 2);
+      // a muted clip (e.g. B-roll being cut) has nothing to load
+      ctx.fillText(waveform ? "brak dźwięku" : "volume" in clip && clip.volume === 0 ? "wyciszone" : "ładowanie fali…", 6 * dpr, h / 2);
       return;
     }
     const { rate, peaks } = waveform;
