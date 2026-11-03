@@ -122,7 +122,7 @@ interface UploadState {
   /** waiting for its turn in the queue */
   waiting?: boolean;
   error?: string;
-  /** kept for "Ponów" */
+  /** kept for "Wgraj ponownie" */
   file?: File;
 }
 
@@ -334,19 +334,22 @@ export function AdsProject({ id }: { id: string }) {
                   <p className="flex items-center justify-between gap-2 text-xs text-red-600">
                     {u.error}
                     {u.file ? (
-                      <button
-                        className="shrink-0 underline"
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="shrink-0"
+                        data-testid="upload-retry"
                         onClick={() => {
                           setUploads(({ [k]: _gone, ...rest }) => (void _gone, rest));
                           void uploadOne(u.file!);
                         }}
                       >
-                        Ponów
-                      </button>
+                        <RefreshCw /> Wgraj ponownie
+                      </Button>
                     ) : null}
                   </p>
                 ) : (
-                  <Progress value={u.progress * 100} className="mt-1.5" />
+                  <Progress value={u.progress} className="mt-1.5" />
                 )}
               </li>
             ))}
@@ -688,6 +691,8 @@ function BrollCard({ projectId, toast }: { projectId: string; toast: (t: string,
   const [items, setItems] = useState<BrollItem[] | null>(null);
   const [pending, setPending] = useState<Array<{ id: string; name: string; status: string; error: string | null; sizeBytes: number }>>([]);
   const [uploads, setUploads] = useState<Record<string, UploadState>>({});
+  // failed conversions the user chose to upload again (hidden from the list)
+  const [dismissed, setDismissed] = useState<string[]>([]);
   const ref = useRef<HTMLInputElement>(null);
   const load = useCallback(async () => {
     const d = await api<{ items: BrollItem[]; pending?: typeof pending }>(`/api/admin/ads/${projectId}/broll`);
@@ -767,7 +772,7 @@ function BrollCard({ projectId, toast }: { projectId: string; toast: (t: string,
           }}
         />
       </div>
-      {Object.keys(uploads).length || pending.length ? (
+      {Object.keys(uploads).length || pending.some((p) => !dismissed.includes(p.id)) ? (
         <ul className="space-y-1.5" data-testid="ads-broll-uploads">
           {Object.entries(uploads).map(([k, u]) => (
             <li key={k} className="rounded-lg border border-line p-2 text-sm">
@@ -782,29 +787,42 @@ function BrollCard({ projectId, toast }: { projectId: string; toast: (t: string,
                 <p className="flex items-center justify-between gap-2 text-xs text-red-600">
                   {u.error}
                   {u.file ? (
-                    <button
-                      className="shrink-0 underline"
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="shrink-0"
+                      data-testid="upload-retry"
                       onClick={() => {
                         setUploads(({ [k]: _gone, ...rest }) => (void _gone, rest));
                         void uploadOne(u.file!);
                       }}
                     >
-                      Ponów
-                    </button>
+                      <RefreshCw /> Wgraj ponownie
+                    </Button>
                   ) : null}
                 </p>
               ) : (
-                <Progress value={u.progress * 100} className="mt-1.5" />
+                <Progress value={u.progress} className="mt-1.5" />
               )}
             </li>
           ))}
           {pending
-            .filter((p) => p.status !== "UPLOADING")
+            .filter((p) => p.status !== "UPLOADING" && !dismissed.includes(p.id))
             .map((p) => (
               <li key={p.id} className="flex items-center justify-between gap-2 rounded-lg border border-line p-2 text-sm" data-testid="ads-broll-pending" data-status={p.status}>
                 <span className="truncate">{p.name}</span>
-                <span className={cn("shrink-0 text-xs", p.status === "FAILED" ? "text-red-600" : "text-muted")}>
-                  {p.status === "FAILED" ? (p.error ?? "Błąd przetwarzania") : (
+                <span className={cn("flex shrink-0 items-center gap-2 text-xs", p.status === "FAILED" ? "text-red-600" : "text-muted")}>
+                  {p.status === "FAILED" ? (
+                    <>
+                      {p.error ?? "Błąd przetwarzania"}
+                      <Button size="sm" variant="outline" data-testid="upload-retry" onClick={() => {
+                        setDismissed((d) => [...d, p.id]);
+                        ref.current?.click();
+                      }}>
+                        <RefreshCw /> Wgraj ponownie
+                      </Button>
+                    </>
+                  ) : (
                     <span className="inline-flex items-center gap-1">
                       <Loader2 className="h-3 w-3 animate-spin" /> konwersja na serwerze · {formatBytes(p.sizeBytes)}
                     </span>
@@ -851,7 +869,7 @@ function BrollCard({ projectId, toast }: { projectId: string; toast: (t: string,
             ))}
           </div>
         </>
-      ) : items && !Object.keys(uploads).length && !pending.length ? (
+      ) : items && !Object.keys(uploads).length && !pending.filter((p) => !dismissed.includes(p.id)).length ? (
         <p className="text-sm text-muted">Brak przebitek.</p>
       ) : null}
     </Card>
