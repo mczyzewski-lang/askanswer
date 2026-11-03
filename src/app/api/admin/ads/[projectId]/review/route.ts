@@ -12,7 +12,8 @@ export const POST = route(async (req: Request, ctx: { params: Promise<{ projectI
   const b = z.object({ reelIds: z.array(z.string().max(64)).max(1000).optional(), onlyMissing: z.boolean().optional() }).parse(await req.json().catch(() => ({})));
   if (!openaiConfigured()) return json({ error: `Ocena treści wymaga klucza OpenAI. ${openaiKeyDiagnostics()}` }, 503);
   let reelIds = b.reelIds;
-  if (!reelIds?.length && b.onlyMissing) reelIds = (await prisma.adReel.findMany({ where: { projectId, reviewedAt: null }, select: { id: true } })).map((r) => r.id);
+  // "nieocenione": never scored, or the proposal was swapped in and the new script has no score yet
+  if (!reelIds?.length && b.onlyMissing) reelIds = (await prisma.adReel.findMany({ where: { projectId }, select: { id: true, reviewedAt: true, review: true } })).filter((r) => !r.reviewedAt || !!(r.review as { applied?: unknown } | null)?.applied).map((r) => r.id);
   if (b.onlyMissing && !reelIds?.length) return json({ jobId: null, reels: 0 });
   const job = await enqueue("ads-review", { projectId, reelIds }, { maxAttempts: 1 });
   return json({ jobId: job.id, reels: reelIds?.length ?? (await prisma.adReel.count({ where: { projectId } })) }, 202);

@@ -24,7 +24,7 @@ KRYTERIA OCENY (każde 0–10, z wagą; wynik końcowy 0–100)
 5. SHAREABILITY (waga 15%)
    Czy widz pomyśli o konkretnej osobie, której to wyśle („to o moim bracie / mamie / znajomym z długami”)? Relatywność, emocja, „to musisz wiedzieć”.
 6. CTA (waga 5%)
-   CTA pod sygnał: „wyślij komuś, kto…”, „zapisz, zanim…”, „napisz SŁOWO w wiadomości”. Minus za „daj lajka / obserwuj”.
+   CTA pod sygnał: „wyślij komuś, kto…”, „zapisz, zanim…”, „napisz SŁOWO w komentarzu albo w wiadomości”. Minus za „daj lajka / obserwuj”.
    SŁOWO do wiadomości i nazwy materiałów (checklista, arkusz, plan…) tylko z listy LEAD MAGNETY; bez listy nie wymyślaj ich — wtedy „zapisz” / „wyślij komuś” / „napisz do nas”.
 7. AUTENTYCZNOŚĆ (waga 5%)
    Naturalny język mówiony, ludzki, surowy. Minus za czytanie z kartki, korpo-ton, tekst brzmiący jak AI.
@@ -79,7 +79,7 @@ ZASADY PISANIA NOWEJ WERSJI
 
 LEAD MAGNETY (gdy podano listę LEAD MAGNETY)
 - Dobierz JEDEN materiał z listy, który najlepiej pasuje do tematu i problemu widza tej rolki (nie najpopularniejszy, tylko najbliższy treści).
-- CTA prowadzi do niego: „Napisz SŁOWO w wiadomości” ze SŁOWEM z listy (albo nazwa materiału + „link w bio”). Nazwę możesz wpleść naturalnie.
+- CTA prowadzi do niego: „Napisz SŁOWO w komentarzu albo w wiadomości” ze SŁOWEM z listy — zawsze oba kanały: komentarz działa na każdej platformie (nie wszędzie da się automatycznie odpisać w wiadomości), a odpowiedź z linkiem przychodzi automatycznie. Nazwę materiału możesz wpleść naturalnie, np. „…a wyślę Ci plan trudnej rozmowy”.
 - Używaj WYŁĄCZNIE słów i nazw z listy. Nie wymyślaj innych materiałów, arkuszy, checklist ani słów do DM.
 - Jeśli żaden materiał nie pasuje — CTA bez materiału (zapisz / wyślij komuś) i "leadMagnet": null.
 - Ton CTA spokojny, bez presji czasu i bez obietnic efektu.
@@ -230,6 +230,15 @@ async function chatOnce(model: string, user: string, system: string) {
 }
 
 /** Score a reel and write the version to swap in. */
+/** A new review of a text that took the previous review's proposal keeps the score from before the swap. */
+export function withBefore<T extends object>(review: T, old: unknown): T {
+  const o = old as { score?: unknown; applied?: { at?: string }; before?: unknown } | null;
+  if (o && typeof o.score === "number" && o.applied?.at) return { ...review, before: { score: o.score, appliedAt: o.applied.at } };
+  // re-scored again without a swap in between: the earlier "before" still describes this text's history
+  if (o?.before) return { ...review, before: o.before };
+  return review;
+}
+
 export async function reviewReel(p: ReviewInput): Promise<ReelReview & { model: string }> {
   if (!openaiConfigured()) throw new Error(`Ocena treści wymaga klucza OpenAI. ${openaiKeyDiagnostics()}`);
   let model = env.openaiTextModel;

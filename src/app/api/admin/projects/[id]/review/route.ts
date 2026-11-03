@@ -17,10 +17,12 @@ export const POST = route(async (req: Request, ctx: { params: Promise<{ id: stri
   if (!openaiConfigured()) return json({ error: `Ocena treści wymaga klucza OpenAI. ${openaiKeyDiagnostics()}` }, 503);
   const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { format: true } });
   const items = await prisma.question.findMany({
-    where: { projectId, ...(b.questionIds?.length ? { id: { in: b.questionIds } } : b.onlyMissing ? { reviewedAt: null, status: "TO_RECORD" } : { status: "TO_RECORD" }) },
-    select: { id: true, text: true, spokenText: true, script: true, kind: true },
+    where: { projectId, ...(b.questionIds?.length ? { id: { in: b.questionIds } } : { status: "TO_RECORD" }) },
+    select: { id: true, text: true, spokenText: true, script: true, kind: true, reviewedAt: true, review: true },
   });
-  const ids = items.filter((q) => reviewable(q, project.format)).map((q) => q.id);
+  // "nieocenione": never scored, or the proposal was swapped in and the new text has no score yet
+  const due = (q: (typeof items)[number]) => !q.reviewedAt || !!(q.review as { applied?: unknown } | null)?.applied;
+  const ids = items.filter((q) => reviewable(q, project.format) && (b.questionIds?.length || !b.onlyMissing || due(q))).map((q) => q.id);
   if (!ids.length) return json({ jobId: null, items: 0 });
   const job = await enqueue("question-review", { projectId, questionIds: ids }, { maxAttempts: 1 });
   return json({ jobId: job.id, items: ids.length }, 202);

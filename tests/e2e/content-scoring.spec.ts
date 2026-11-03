@@ -39,6 +39,17 @@ test("content scoring: prompter scripts are scored and the new version swapped i
   await page.getByTestId("ads-apply-all").click();
   await expect.poll(async () => (await items()).find((q) => q.text.startsWith("Nowy hook"))?.script).toBe("Nowe body z propozycji.\n\nWyślij to komuś, kto ma komornika.");
   await page.keyboard.press("Escape");
+  // the list shows it was swapped in, and "score unscored" now includes it (the new text has no score yet)
+  const first = page.getByTestId("content-score").first();
+  await expect(first).toHaveText("✓ Podmieniono treść · było 54");
+  await expect(first).toHaveAttribute("data-state", "applied");
+  await expect(page.getByTestId("scoring-counts")).toContainText("podmienione 1 (do ponownej oceny)");
+  await expect(page.getByTestId("content-review-missing")).toHaveText(/Oceń nieocenione do nagrania \(1\)/);
+  await page.getByTestId("content-score-again").first().click();
+  await expect(first).toHaveAttribute("data-state", "rescored", { timeout: 60_000 });
+  await expect(first).toContainText("· było 54");
+  await expect(page.getByTestId("scoring-counts")).toContainText("ocenione po podmianie 1");
+  if (process.env.LIST_SHOT) await page.screenshot({ path: process.env.LIST_SHOT, fullPage: true });
 
   // QUESTION_PROMPTER: an alternative hook goes to what the narrator reads, the title stays
   await page.getByTestId("content-score").nth(1).click();
@@ -75,5 +86,5 @@ test("content scoring: the CTA points to a lead magnet from the project's list",
   await page.getByTestId("content-score").click();
   await expect(page.getByTestId("review-lead-magnet")).toContainText("Trudna rozmowa bez kłótni");
   await expect(page.getByTestId("review-lead-magnet")).toContainText("PLAN");
-  await expect(page.getByTestId("compare-after-rest")).toContainText("Napisz PLAN w wiadomości");
+  await expect(page.getByTestId("compare-after-rest")).toContainText("Napisz PLAN w komentarzu albo w wiadomości");
 });

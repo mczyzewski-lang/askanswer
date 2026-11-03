@@ -32,7 +32,7 @@ export function reviewInputOf(q: Item, kind: QuestionKind) {
 }
 
 export async function reviewQuestions(projectId: string, questionIds?: string[]) {
-  const { reviewReel } = await import("./reel-review");
+  const { reviewReel, withBefore } = await import("./reel-review");
   const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { adsBrief: true, format: true, leadMagnets: true } });
   const items = await prisma.question.findMany({ where: { projectId, ...(questionIds?.length ? { id: { in: questionIds } } : {}) }, orderBy: { order: "asc" } });
   let done = 0;
@@ -42,7 +42,7 @@ export async function reviewQuestions(projectId: string, questionIds?: string[])
     if (!reviewable(q, project.format)) continue;
     try {
       const review = await reviewReel({ ...reviewInputOf(q, effectiveKind(q.kind, project.format)), brief: project.adsBrief, leadMagnets: (project.leadMagnets as unknown as LeadMagnet[] | null) ?? null });
-      await prisma.question.update({ where: { id: q.id }, data: { review: review as unknown as Prisma.InputJsonValue, reviewedAt: new Date() } });
+      await prisma.question.update({ where: { id: q.id }, data: { review: withBefore(review, q.review) as unknown as Prisma.InputJsonValue, reviewedAt: new Date() } });
       done++;
     } catch (e) {
       failed++;
@@ -67,13 +67,15 @@ export async function applyQuestionReview(id: string, what: { mode: "all" } | { 
     if (!t) return {};
     return (kind === "QUESTION_PROMPTER" || kind === "HOOK_PROMPTER") && q.spokenText ? { spokenText: t } : { text: t };
   };
+  // the review remembers that its proposal is now in the text (the list shows "podmieniono")
+  const applied = (mode: "all" | "hook", hook: string) => ({ review: { ...((q.review ?? {}) as Record<string, unknown>), applied: { at: new Date().toISOString(), mode, hook: hook.trim().slice(0, 500) } } as Prisma.InputJsonValue });
   if (what.mode === "hook") {
-    await prisma.question.update({ where: { id }, data: { ...hookData(what.text), contentApprovedAt: null } });
+    await prisma.question.update({ where: { id }, data: { ...hookData(what.text), contentApprovedAt: null, ...applied("hook", what.text) } });
     return { changed: 1 };
   }
   const nv = (q.review as unknown as { newVersion?: { hook: string; body: string; cta: string } } | null)?.newVersion;
   if (!nv) throw new Error("Brak propozycji do podmiany — najpierw oceń treść.");
   const script = [nv.body, nv.cta].map((x) => x?.trim()).filter(Boolean).join("\n\n");
-  await prisma.question.update({ where: { id }, data: { ...hookData(nv.hook), ...(script ? { script } : {}), contentApprovedAt: null } });
+  await prisma.question.update({ where: { id }, data: { ...hookData(nv.hook), ...(script ? { script } : {}), contentApprovedAt: null, ...applied("all", nv.hook) } });
   return { changed: 1 };
 }

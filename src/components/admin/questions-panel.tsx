@@ -52,7 +52,7 @@ import { parseBulk, parseBulkScripts } from "@/lib/bulk-questions";
 import { terms } from "@/lib/project-terms";
 import { csvTemplate, decodeCsv, hybridCsvTemplate, parseHybridCsv, parseImportCsv } from "@/lib/csv-import";
 import { effectiveKind, kindHasNarration, kindHasPrompter, KIND_LABELS, QUESTION_KINDS, type QuestionKind } from "@/lib/question-kinds";
-import { type CurrentScript, type Review, ReviewDialog, ScoreBadge, scoreTone } from "./content-review";
+import { type CurrentScript, type Review, ReviewDialog, ScoreBadge, ScoringCounts, scoreTone } from "./content-review";
 import { LeadMagnetsEditor } from "./lead-magnets-editor";
 import type { LeadMagnet } from "@/lib/lead-magnets";
 
@@ -574,7 +574,7 @@ function ContentScoringBar({ data, items, reviewing, review, refresh, toast }: {
   const scored = items.filter((q) => q.review && typeof (q.review as unknown as Review).score === "number");
   const avg = scored.length ? Math.round(scored.reduce((n, q) => n + (q.review as unknown as Review).score, 0) / scored.length) : null;
   const toRecord = items.filter((q) => q.status === "TO_RECORD");
-  const missing = toRecord.filter((q) => !q.reviewedAt).length;
+  const missing = toRecord.filter((q) => isScorable(q, data.project.format) && (!q.reviewedAt || (q.review as unknown as Review | null)?.applied)).length;
   const saveBrief = async () => {
     if (brief.trim() === (data.project.adsBrief ?? "")) return;
     try {
@@ -589,6 +589,7 @@ function ContentScoringBar({ data, items, reviewing, review, refresh, toast }: {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm font-medium">
           Scoring treści {avg != null ? <span className={cn("ml-1 rounded-full border px-2 py-0.5 text-xs", scoreTone(avg))}>średnio {avg}/100</span> : null}
+          <ScoringCounts reviews={items.map((q) => q.review as unknown as Review | null)} />
           <span className="block text-xs font-normal text-muted">Skrypty z prompterem przed nagraniem: ocena według wytycznych redaktora rolek i nowa wersja do podmiany — OpenAI.</span>
         </p>
         <div className="flex flex-wrap gap-2">

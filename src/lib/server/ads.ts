@@ -343,7 +343,7 @@ export async function ownTheme(name: string, from: { presetKey?: string | null; 
 
 /** Score the reels' scripts (one after another) and keep each review with its reel. */
 export async function reviewReels(projectId: string, reelIds?: string[]) {
-  const { reviewReel } = await import("./reel-review");
+  const { reviewReel, withBefore } = await import("./reel-review");
   const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { adsBrief: true, adsFormat: true, leadMagnets: true } });
   const reels = await prisma.adReel.findMany({ where: { projectId, ...(reelIds?.length ? { id: { in: reelIds } } : {}) }, orderBy: { order: "asc" } });
   let done = 0;
@@ -352,7 +352,7 @@ export async function reviewReels(projectId: string, reelIds?: string[]) {
   for (const r of reels) {
     try {
       const review = await reviewReel({ title: r.title, parts: r.parts as unknown as Array<{ role: string; text: string }>, format: project.adsFormat || "[EKSPERT]", brief: project.adsBrief, leadMagnets: (project.leadMagnets as unknown as LeadMagnet[] | null) ?? null });
-      await prisma.adReel.update({ where: { id: r.id }, data: { review: review as unknown as Prisma.InputJsonValue, reviewedAt: new Date() } });
+      await prisma.adReel.update({ where: { id: r.id }, data: { review: withBefore(review, r.review) as unknown as Prisma.InputJsonValue, reviewedAt: new Date() } });
       done++;
     } catch (e) {
       failed++;
@@ -379,8 +379,10 @@ export async function applyReview(reelId: string, what: { mode: "all" } | { mode
     if (!t) return ps;
     return ps.some((p) => p.role === role) ? ps.map((p) => (p.role === role ? { ...p, text: t } : p)) : [...ps, { role, text: t }];
   };
+  // the review remembers that its proposal is now in the script (the list shows "podmieniono")
+  const applied = (r: { review: unknown }, mode: "all" | "hook" | "body", hook: string) => ({ review: { ...((r.review ?? {}) as Record<string, unknown>), applied: { at: new Date().toISOString(), mode, hook: hook.trim().slice(0, 500), ...(mode === "body" ? { from: reel.code } : {}) } } as Prisma.InputJsonValue });
   if (what.mode === "hook") {
-    await prisma.adReel.update({ where: { id: reel.id }, data: { parts: setRole(parts, "hook", what.text) as unknown as Prisma.InputJsonValue, matches: Prisma.DbNull } });
+    await prisma.adReel.update({ where: { id: reel.id }, data: { parts: setRole(parts, "hook", what.text) as unknown as Prisma.InputJsonValue, matches: Prisma.DbNull, ...applied(reel, "hook", what.text) } });
     return { changed: 1 };
   }
   const nv = review?.newVersion;
@@ -394,7 +396,9 @@ export async function applyReview(reelId: string, what: { mode: "all" } | { mode
     // keep the order hook → body → cta
     const rank = (r: string) => (r === "hook" ? 0 : r.startsWith("body") ? 1 : r === "cta" ? 3 : 2);
     ps = [...ps].sort((a, b) => rank(a.role) - rank(b.role));
-    await prisma.adReel.update({ where: { id: s.id }, data: { parts: ps as unknown as Prisma.InputJsonValue, matches: Prisma.DbNull } });
+    // a sibling's own review (of its hook) stays; it is marked as having the new body / CTA
+    const mark = s.review && typeof (s.review as { score?: unknown }).score === "number" ? applied(s, s.id === reel.id ? "all" : "body", s.id === reel.id ? nv.hook : "") : {};
+    await prisma.adReel.update({ where: { id: s.id }, data: { parts: ps as unknown as Prisma.InputJsonValue, matches: Prisma.DbNull, ...mark } });
   }
   return { changed: siblings.length };
 }

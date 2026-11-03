@@ -9,7 +9,7 @@ import { adsScriptTemplate } from "@/lib/ads-script";
 import { QUESTION_POSITIONS, QUESTION_STYLES } from "@/lib/question-styles";
 import { SUBTITLE_PRESETS } from "@/lib/editor/subtitles";
 import { THEME_PRESETS } from "@/lib/themes";
-import { type Review, ReviewDialog, ScoreBadge, scoreTone } from "./content-review";
+import { type Review, ReviewDialog, ScoreBadge, ScoringCounts, scoreTone } from "./content-review";
 import { LeadMagnetsEditor } from "./lead-magnets-editor";
 import type { LeadMagnet } from "@/lib/lead-magnets";
 
@@ -776,7 +776,7 @@ function ScoringBar({ project, reels, reviewing, review, reload, toast }: { proj
   const [brief, setBrief] = useState(project.adsBrief ?? "");
   const scored = reels.filter((r) => r.review && "score" in r.review);
   const avg = scored.length ? Math.round(scored.reduce((n, r) => n + ((r.review as Review).score ?? 0), 0) / scored.length) : null;
-  const missing = reels.filter((r) => !r.reviewedAt).length;
+  const missing = reels.filter((r) => !r.reviewedAt || (r.review && "score" in r.review && r.review.applied)).length;
   const save = async (data: Record<string, unknown>) => {
     try {
       await api(`/api/admin/projects/${project.id}`, { method: "PATCH", json: data });
@@ -790,6 +790,7 @@ function ScoringBar({ project, reels, reviewing, review, reload, toast }: { proj
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm font-medium">
           Scoring treści {avg != null ? <span className={cn("ml-1 rounded-full border px-2 py-0.5 text-xs", scoreTone(avg))}>średnio {avg}/100</span> : null}
+          <ScoringCounts reviews={reels.map((r) => r.review)} />
           <span className="block text-xs font-normal text-muted">Ocena według wytycznych redaktora rolek (hook, napięcie, tempo, payoff, udostępnienia, CTA…) i nowa wersja do podmiany — OpenAI.</span>
         </p>
         <div className="flex flex-wrap gap-2">

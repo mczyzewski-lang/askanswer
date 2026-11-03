@@ -20,6 +20,7 @@ describe("lead magnets", () => {
     expect(msg).toContain("LEAD MAGNETY (SŁOWO do DM | nazwa | o czym):");
     expect(msg).toContain("- PĘTLA | Pętla konfliktu |");
     expect(REEL_EDITOR_GUIDELINES).toContain("Używaj WYŁĄCZNIE słów i nazw z listy");
+    expect(REEL_EDITOR_GUIDELINES).toContain("„Napisz SŁOWO w komentarzu albo w wiadomości”");
     expect(reviewUserMessage({ title: "T", parts: [], format: "[EKSPERT]", brief: null })).not.toContain("LEAD MAGNETY");
   });
 });

@@ -39,7 +39,7 @@ export function LeadMagnetsEditor({ value, onSave }: { value: LeadMagnet[] | nul
         </span>
       </div>
       <Textarea id="lead-magnets" rows={count ? Math.min(10, count + 1) : 2} value={text} onChange={(e) => setText(e.target.value)} onBlur={() => save(text)} placeholder={"SŁOWO | Nazwa materiału | o czym / dla kogo | link (opcjonalnie)\nnp. PLAN | Trudna rozmowa bez kłótni | plan trudnej rozmowy krok po kroku | /wiedza/trudna-rozmowa"} className="font-mono text-xs" />
-      <p className="text-xs text-muted">Przy ocenie AI dobiera materiał pasujący do treści, a CTA („Napisz SŁOWO w wiadomości”) używa tylko słów z tej listy. Słowo spoza listy zostanie oznaczone w uwagach.</p>
+      <p className="text-xs text-muted">Przy ocenie AI dobiera materiał pasujący do treści, a CTA („Napisz SŁOWO w komentarzu albo w wiadomości”) używa tylko słów z tej listy — pasuje do automatyzacji komentarzy w Social Media Studio. Słowo spoza listy zostanie oznaczone w uwagach.</p>
     </div>
   );
 }

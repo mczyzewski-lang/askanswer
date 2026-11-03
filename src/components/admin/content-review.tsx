@@ -16,14 +16,55 @@ export interface Review {
   predicted: { score: number; limits: string };
   compliance: string[];
   leadMagnet?: { keyword: string; name: string; why: string } | null;
+  /** the proposal was swapped into the text (mode "body": the body / CTA came from another hook version's review) */
+  applied?: { at: string; mode: "all" | "hook" | "body"; hook?: string; from?: string } | null;
+  /** this review is of a text that took an earlier proposal: the score before the swap */
+  before?: { score: number; appliedAt: string } | null;
   model?: string;
   error?: undefined;
 }
 
 export const scoreTone = (n: number) => (n >= 75 ? "border-emerald-200 bg-emerald-50 text-emerald-800" : n >= 50 ? "border-amber-200 bg-amber-50 text-amber-900" : "border-red-200 bg-red-50 text-red-700");
 
-/** The score of one script (or a button to score it). */
+/** "ocenione 12 · podmienione 3 (czekają na ponowną ocenę) · ocenione po podmianie 2" */
+export function ScoringCounts({ reviews }: { reviews: Array<Review | { error: string } | null | undefined> }) {
+  const scored = reviews.filter((r): r is Review => !!r && "score" in r && typeof r.score === "number");
+  if (!scored.length) return null;
+  const applied = scored.filter((r) => r.applied).length;
+  const rescored = scored.filter((r) => !r.applied && r.before).length;
+  return (
+    <span className="ml-2 text-xs font-normal text-muted" data-testid="scoring-counts">
+      ocenione {scored.length}
+      {applied ? ` · podmienione ${applied} (do ponownej oceny)` : ""}
+      {rescored ? ` · ocenione po podmianie ${rescored}` : ""}
+    </span>
+  );
+}
+
+const APPLIED: Record<NonNullable<Review["applied"]>["mode"], string> = { all: "Podmieniono treść", hook: "Podmieniono hook", body: "Nowe body i CTA" };
+
+/**
+ * The score of one script (or a button to score it). States: not scored → "Oceń"; scored → "54/100 → 78";
+ * proposal swapped in, not scored again → "✓ Podmieniono · było 54"; scored again after a swap → "81/100 · było 54".
+ */
 export function ScoreBadge({ review: rv, onOpen, onReview, disabled, testid = "ads-score" }: { review: Review | { error: string } | null | undefined; onOpen: () => void; onReview: () => void; disabled: boolean; testid?: string }) {
+  if (rv && "score" in rv && typeof rv.score === "number" && rv.applied)
+    return (
+      <span className="inline-flex items-center gap-1">
+        <button type="button" onClick={onOpen} className="rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-800" data-testid={testid} data-state="applied" title={`${APPLIED[rv.applied.mode]} ${formatDate(rv.applied.at)} — oceń ponownie, żeby zobaczyć nowy wynik`}>
+          ✓ {APPLIED[rv.applied.mode]} · było {rv.score}
+        </button>
+        <button type="button" onClick={onReview} disabled={disabled} className="rounded-full border border-line px-2 py-0.5 text-xs text-muted hover:text-ink" data-testid={`${testid}-again`}>
+          Oceń ponownie
+        </button>
+      </span>
+    );
+  if (rv && "score" in rv && typeof rv.score === "number" && rv.before)
+    return (
+      <button type="button" onClick={onOpen} className={cn("rounded-full border px-2 py-0.5 text-xs font-semibold tabular", scoreTone(rv.score))} data-testid={testid} data-state="rescored" title={`Nowa ocena po podmianie (przed: ${rv.before.score}/100)`}>
+        ✓ {rv.score}/100 <span className="font-normal opacity-70">· było {rv.before.score}</span>
+      </button>
+    );
   if (rv && "score" in rv && typeof rv.score === "number")
     return (
       <button type="button" onClick={onOpen} className={cn("rounded-full border px-2 py-0.5 text-xs font-semibold tabular", scoreTone(rv.score))} data-testid={testid} title={rv.verdict}>
@@ -108,6 +149,20 @@ export function ReviewDialog({ title, review, reviewedAt, onClose, onReview, rev
           </div>
         ) : (
           <div className="space-y-5 text-sm" data-testid="ads-review">
+            {rv.applied ? (
+              <p className="rounded-lg border border-emerald-200 bg-emerald-50 p-2.5 text-xs text-emerald-900" data-testid="review-applied">
+                <b>{APPLIED[rv.applied.mode]}</b> {formatDate(rv.applied.at)}
+                {rv.applied.mode === "body" && rv.applied.from ? ` (z oceny ${rv.applied.from})` : ""}. Poniższa ocena dotyczy tekstu sprzed podmiany —{" "}
+                <button className="underline" onClick={onReview} disabled={reviewing}>
+                  oceń ponownie
+                </button>
+                , żeby zobaczyć nowy wynik.
+              </p>
+            ) : rv.before ? (
+              <p className="rounded-lg border border-emerald-200 bg-emerald-50 p-2.5 text-xs text-emerald-900">
+                Nowa ocena po podmianie: <b>{rv.score}/100</b> (przed podmianą {rv.before.score}/100, podmieniono {formatDate(rv.before.appliedAt)}).
+              </p>
+            ) : null}
             <div className="flex flex-wrap items-center gap-3">
               <span className={cn("rounded-xl border px-3 py-1.5 text-lg font-semibold tabular", scoreTone(rv.score))}>{rv.score}/100</span>
               <p className="flex-1">{rv.verdict}</p>
@@ -153,8 +208,8 @@ export function ReviewDialog({ title, review, reviewedAt, onClose, onReview, rev
               <div className="space-y-2 rounded-xl border border-line p-3" data-testid="ads-new-version">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="font-medium">Nowa wersja do podmiany {rv.predicted?.score ? <span className={cn("ml-1 rounded-full border px-2 py-0.5 text-xs", scoreTone(rv.predicted.score))}>przewidywany wynik {rv.predicted.score}/100</span> : null}</p>
-                  <Button size="sm" onClick={() => void apply({ mode: "all" })} data-testid="ads-apply-all">
-                    Podmień treść
+                  <Button size="sm" variant={rv.applied?.mode === "all" ? "outline" : undefined} onClick={() => void apply({ mode: "all" })} data-testid="ads-apply-all">
+                    {rv.applied?.mode === "all" ? "Podmień ponownie" : "Podmień treść"}
                   </Button>
                 </div>
                 {current ? <Compare current={current} next={{ hook: nv.hook, rest: joinRest(nv.body, nv.cta) }} /> : null}

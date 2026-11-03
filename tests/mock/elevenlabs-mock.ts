@@ -183,7 +183,7 @@ const server = http.createServer(async (req, res) => {
         if (magnets.length) {
           const pick = magnets.find((m) => /kłót/i.test(m.name)) ?? magnets[0];
           Object.assign(review, { leadMagnet: { ...pick, why: "Pasuje do tematu rolki." } });
-          review.newVersion.cta = `Napisz ${pick.keyword} w wiadomości, a wyślę Ci „${pick.name}”.`;
+          review.newVersion.cta = `Napisz ${pick.keyword} w komentarzu albo w wiadomości, a wyślę Ci „${pick.name}”.`;
         }
         return json(200, { id: "chatcmpl-mock", object: "chat.completion", model: body.model, choices: [{ index: 0, message: { role: "assistant", content: JSON.stringify(review) }, finish_reason: "stop" }] });
       }
