@@ -29,6 +29,12 @@ describe("scoring keeps who speaks the hook", () => {
     expect(msg).toContain("FORMAT: [EKSPERT]");
     expect(msg).toMatch(/mówi ekspert/);
   });
+  it("hook + prompter: the expert asks the hook question", () => {
+    const msg = reviewUserMessage({ ...reviewInputOf({ ...q, text: "Tytuł", spokenText: "Masz długi i nie wiesz, czy powiedzieć mężowi?" }, "HOOK_PROMPTER"), brief: null });
+    expect(msg).toContain("FORMAT: [PYTANIE EKSPERTA]");
+    expect(msg).toContain("[HOOK (PYTANIE, CZYTA EKSPERT)] Masz długi i nie wiesz, czy powiedzieć mężowi?");
+    expect(REEL_EDITOR_GUIDELINES).toContain("ZASADY DLA FORMATU [PYTANIE EKSPERTA]");
+  });
   it("the guidelines define both voices", () => {
     expect(REEL_EDITOR_GUIDELINES).toContain("ZASADY DLA FORMATU [PYTANIE KLIENTA]");
     expect(REEL_EDITOR_GUIDELINES).toContain("ZASADY DLA FORMATU [EKSPERT]");

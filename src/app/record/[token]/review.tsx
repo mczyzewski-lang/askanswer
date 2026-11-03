@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 
 export interface ReviewItem {
   id: string;
-  kind: "QUESTION" | "PROMPTER" | "QUESTION_PROMPTER";
+  kind: "QUESTION" | "PROMPTER" | "QUESTION_PROMPTER" | "HOOK_PROMPTER";
   category: string;
   subcategory: string | null;
   text: string;
@@ -15,8 +15,10 @@ export interface ReviewItem {
   recorded: boolean;
 }
 
-const KIND: Record<ReviewItem["kind"], string> = { QUESTION: "Pytanie", PROMPTER: "Prompter", QUESTION_PROMPTER: "Pytanie + prompter" };
+const KIND: Record<ReviewItem["kind"], string> = { QUESTION: "Pytanie", PROMPTER: "Prompter", QUESTION_PROMPTER: "Pytanie + prompter", HOOK_PROMPTER: "Hook + prompter" };
+/** has a second text next to the title: the narrator's question, or (hook + prompter) the hook the expert reads */
 const hasNarrator = (k: ReviewItem["kind"]) => k !== "PROMPTER";
+const spokenLabel = (k: ReviewItem["kind"]) => (k === "HOOK_PROMPTER" ? "Hook — czytasz z promptera" : "Lektor przeczyta");
 const hasScript = (k: ReviewItem["kind"]) => k !== "QUESTION";
 
 type Patch = Partial<Pick<ReviewItem, "text" | "spokenText" | "script">> & { approve?: boolean };
@@ -218,7 +220,7 @@ function ItemBody({ it }: { it: ReviewItem }) {
       <p className="font-display text-[22px] font-semibold leading-snug">{it.text}</p>
       {hasNarrator(it.kind) ? (
         <>
-          <p className="mt-4 text-[11px] uppercase tracking-[0.1em] text-white/40">Lektor przeczyta</p>
+          <p className="mt-4 text-[11px] uppercase tracking-[0.1em] text-white/40">{spokenLabel(it.kind)}</p>
           <p className="text-[15px] leading-snug text-white/80">{it.spokenText || it.text}</p>
         </>
       ) : null}
@@ -259,7 +261,7 @@ function EditSheet({ it, onClose, onSave }: { it: ReviewItem; onClose: () => voi
         </label>
         {hasNarrator(it.kind) ? (
           <label className="block space-y-1.5">
-            <span className="text-[12px] text-white/55">Pytanie czytane przez lektora (puste = tytuł)</span>
+            <span className="text-[12px] text-white/55">{it.kind === "HOOK_PROMPTER" ? "Hook czytany z promptera (puste = tytuł)" : "Pytanie czytane przez lektora (puste = tytuł)"}</span>
             <textarea className={area} rows={3} value={spoken} onChange={(e) => setSpoken(e.target.value)} aria-label="Pytanie czytane przez lektora" />
           </label>
         ) : null}
@@ -319,7 +321,7 @@ function ReviewTable({ items, save }: { items: ReviewItem[]; save: (id: string, 
             <tr>
               <th className="w-[130px] px-3 py-2.5 font-medium">Typ · kategoria</th>
               <th className="px-3 py-2.5 font-medium">Tytuł wideo</th>
-              {showSpoken ? <th className="px-3 py-2.5 font-medium">Pytanie (lektor)</th> : null}
+              {showSpoken ? <th className="px-3 py-2.5 font-medium">Pytanie (lektor) / hook</th> : null}
               {showScript ? <th className="w-[38%] px-3 py-2.5 font-medium">Treść (prompter)</th> : null}
               <th className="w-[132px] px-3 py-2.5" />
             </tr>

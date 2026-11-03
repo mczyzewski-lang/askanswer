@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createCanvas } from "@napi-rs/canvas";
 import { parseHybridCsv } from "../../src/lib/csv-import";
-import { effectiveKind, kindFromCsv } from "../../src/lib/question-kinds";
+import { effectiveKind, kindFromCsv, kindHasNarration, prompterHook } from "../../src/lib/question-kinds";
 import { buildInitialDocument } from "../../src/lib/editor/factory";
 import { DEFAULT_THEME } from "../../src/lib/themes";
 import { contentDuration, docDuration, endCardStart, retimeNarration, timedSegments } from "../../src/lib/editor/timeline";
@@ -28,6 +28,20 @@ describe("hybrid projects", () => {
     expect(rows[2]).toMatchObject({ kind: "PROMPTER", text: "3 błędy", script: "Pierwszy błąd." });
     const withHeader = parseHybridCsv("Typ;Kategoria;Podkategoria;Tytuł wideo;Pytanie (czyta lektor);Treść\npytaniazprompterem;Growth;;Tytuł;Pełne pytanie klienta?;Odpowiedź z promptera")!;
     expect(withHeader[0]).toMatchObject({ text: "Tytuł", spokenText: "Pełne pytanie klienta?", script: "Odpowiedź z promptera" });
+  });
+
+  it("hook + prompter: the hook the expert reads has its own column", () => {
+    const rows = parseHybridCsv(
+      'hookzprompterem;Długi;rodzina;Czy mówić mężowi o długach?;Masz długi i nie wiesz, czy powiedzieć mężowi?;"Krótko: tak.\nPotem reszta."\nhook+prompter;Długi;;Co z komornikiem?;;Odpowiedź.',
+    )!;
+    expect(rows[0]).toMatchObject({ kind: "HOOK_PROMPTER", text: "Czy mówić mężowi o długach?", spokenText: "Masz długi i nie wiesz, czy powiedzieć mężowi?", script: "Krótko: tak.\nPotem reszta." });
+    expect(rows[1]).toMatchObject({ kind: "HOOK_PROMPTER", text: "Co z komornikiem?", spokenText: null, script: "Odpowiedź." });
+    const withHeader = parseHybridCsv("Typ;Kategoria;Tytuł wideo;Hook;Treść\nHook z prompterem;Długi;Tytuł;Pytanie eksperta?;Treść z promptera")!;
+    expect(withHeader[0]).toMatchObject({ kind: "HOOK_PROMPTER", text: "Tytuł", spokenText: "Pytanie eksperta?", script: "Treść z promptera" });
+    expect(prompterHook("HOOK_PROMPTER", { text: "Tytuł", spokenText: "Pytanie eksperta?" })).toBe("Pytanie eksperta?");
+    expect(prompterHook("HOOK_PROMPTER", { text: "Tytuł", spokenText: null })).toBe("Tytuł");
+    expect(prompterHook("QUESTION_PROMPTER", { text: "Tytuł" })).toBe("");
+    expect(kindHasNarration("HOOK_PROMPTER")).toBe(false);
   });
 
   it("reads it with a header too, and leaves other files to the old parser", () => {

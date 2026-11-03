@@ -50,6 +50,7 @@ export async function recordSession(token: string) {
     questions: listed.map((q) => ({
       id: q.id,
       text: q.text,
+      spokenText: q.spokenText,
       script: q.script,
       instructions: q.instructions,
       maxDurationSec: q.maxDurationSec,

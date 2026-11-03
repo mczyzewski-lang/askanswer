@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { terms } from "@/lib/project-terms";
+import { kindHasNarration, prompterHook } from "@/lib/question-kinds";
 import { primeAudio, Prompter } from "./prompter";
 import { ReviewScreen, type ReviewItem } from "./review";
 import { AlertTriangle, Camera, Expand, Shrink, ZoomIn, Check, CheckCircle2, ChevronLeft, ChevronRight, CloudUpload, Loader2, Mic, Pause, Play, RefreshCw, RotateCcw, Square, SwitchCamera, Volume2, WifiOff } from "lucide-react";
@@ -19,8 +20,10 @@ interface Question {
   /** Prompter projects: the script read after the hook (text) */
   script?: string | null;
   status: string;
-  /** QUESTION (narrator) | PROMPTER | QUESTION_PROMPTER (narrator + prompter) */
-  kind?: "QUESTION" | "PROMPTER" | "QUESTION_PROMPTER";
+  /** hook + prompter: the hook the expert reads (empty = the title) */
+  spokenText?: string | null;
+  /** QUESTION (narrator) | PROMPTER | QUESTION_PROMPTER (narrator + prompter) | HOOK_PROMPTER (expert reads hook + script) */
+  kind?: "QUESTION" | "PROMPTER" | "QUESTION_PROMPTER" | "HOOK_PROMPTER";
   takes: Array<{ id: string; takeNumber: number; status: string }>;
 }
 
@@ -60,7 +63,7 @@ interface UploadState {
 
 const DEFAULT_ANSWER_SEC = 90;
 
-const ITEM_KIND: Record<NonNullable<Question["kind"]>, string> = { QUESTION: "Pytanie", PROMPTER: "Prompter", QUESTION_PROMPTER: "Pytanie z prompterem" };
+const ITEM_KIND: Record<NonNullable<Question["kind"]>, string> = { QUESTION: "Pytanie", PROMPTER: "Prompter", QUESTION_PROMPTER: "Pytanie z prompterem", HOOK_PROMPTER: "Hook + prompter" };
 
 export function Recorder({ token }: { token: string }) {
   const [screen, setScreen] = useState<Screen>("loading");
@@ -631,7 +634,7 @@ function RecordScreen(props: {
   // what this item is: the narrator reads the question and/or the expert reads from the prompter
   const kind = question.kind ?? (session.project.format === "PROMPTER" ? "PROMPTER" : "QUESTION");
   const isPrompter = kind !== "QUESTION";
-  const withNarrator = kind !== "PROMPTER" && session.narrationAvailable;
+  const withNarrator = kindHasNarration(kind) && session.narrationAvailable;
   const [takeKey, setTakeKey] = useState(0);
 
   const now = () => (clock.current.running ? clock.current.acc + (performance.now() - clock.current.since) / 1000 : clock.current.acc);
@@ -997,7 +1000,7 @@ function RecordScreen(props: {
                 </p>
               ) : null}
               <Prompter
-                hook={kind === "QUESTION_PROMPTER" ? "" : question.text}
+                hook={prompterHook(kind, question)}
                 script={question.script ?? null}
                 takeKey={takeKey}
                 armed={phase === "connecting" || phase === "countdown" || recordingLike}

@@ -87,9 +87,10 @@ export function csvTemplate(prompter: boolean): string {
 /**
  * Mixed (hybrid) file — one row per item, with or without a header row:
  *   typ ; kategoria ; podkategoria ; tytuł wideo ; pytanie (czyta lektor) ; treść [; ekspert]
- *   typ = pytania | prompter | pytaniazprompterem
+ *   typ = pytania | prompter | pytaniazprompterem | hookzprompterem
  * - tytuł wideo: shown at the top of the video (prompter: the hook)
- * - pytanie: what the ElevenLabs narrator reads (pytania / pytaniazprompterem); empty = the title
+ * - pytanie: what the ElevenLabs narrator reads (pytania / pytaniazprompterem), or the hook the expert
+ *   reads from the prompter (hookzprompterem); empty = the title
  * - treść: the prompter text (prompter kinds) or notes for the expert (pytania)
  * The older 5-column layout (without "pytanie") is still read. Returns null for other files.
  */
@@ -109,17 +110,20 @@ export function parseHybridCsv(text: string): ImportRow[] | null {
     const h = rows[0].map((c) => key(clean(c)));
     const find = (...names: string[]) => h.findIndex((x) => names.map(key).includes(x));
     const kindCol = find("typ", "rodzaj", "kind", "type", "format");
+    const titleCol = find("wideotitle", "wideo-title", "tytułwideo", "tytul wideo", "tytuł", "tytul", "title");
     if (kindCol < 0) return null;
     col = {
       kind: kindCol,
       cat: find("kategoria", "category"),
       sub: find("podkategoria", "temat", "subcategory"),
-      title: find("wideotitle", "wideo-title", "tytułwideo", "tytul wideo", "tytuł", "tytul", "title", "hook"),
-      // "Pytanie", "Pytanie (czyta lektor)", "Lektor"…
-      spoken: h.findIndex((x) => x.startsWith("pytanie") || x.includes("lektor") || x === "question"),
+      // "Hook" is the title only when there is no title column (else it is the hook the expert reads)
+      title: titleCol >= 0 ? titleCol : find("hook"),
+      // "Pytanie", "Pytanie (czyta lektor)", "Lektor", "Hook" next to a title column…
+      spoken: -1,
       body: find("treść", "tresc", "script", "skrypt", "content", "tekst", "odpowiedź", "odpowiedz"),
       expert: find("ekspert", "expert"),
     };
+    col.spoken = h.findIndex((x, i) => i !== col.title && (x.startsWith("pytanie") || x.includes("lektor") || x === "question" || x.startsWith("hook")));
     body = rows.slice(1);
   }
   const at = (r: string[], i: number) => (i >= 0 ? clean(r[i]) : "");
@@ -135,6 +139,10 @@ export function parseHybridCsv(text: string): ImportRow[] | null {
       // narrator kinds: the title on the video, the question the narrator reads (if different)
       const shown = title || spoken;
       const read = spoken && spoken !== shown ? spoken : null;
+      if (kind === "HOOK_PROMPTER") {
+        const shownTitle = title || spoken || content.split(/\n/)[0];
+        return { ...base, text: shownTitle, spokenText: spoken && spoken !== shownTitle ? spoken : null, script: content || null, instructions: null };
+      }
       if (kind === "QUESTION") return { ...base, text: shown || content, spokenText: read, script: null, instructions: shown && content ? content : null };
       return { ...base, text: shown || content.split(/\n/)[0], spokenText: read, script: content || null, instructions: null };
     })
@@ -144,10 +152,11 @@ export function parseHybridCsv(text: string): ImportRow[] | null {
 /** Example of the mixed file (UTF-8 with BOM). */
 export function hybridCsvTemplate(): string {
   const rows = [
-    ["Typ", "Kategoria", "Podkategoria", "Tytuł wideo", "Pytanie (czyta lektor)", "Treść"],
+    ["Typ", "Kategoria", "Podkategoria", "Tytuł wideo", "Pytanie (czyta lektor) / hook (hookzprompterem: czyta ekspert)", "Treść"],
     [KIND_LABELS.QUESTION.csv, "Rozwody", "dzieci", "Kto decyduje o opiece nad dzieckiem?", "Dzień dobry, rozwodzę się i zastanawiam, kto zdecyduje, z kim zostaną dzieci?", "Wskazówka dla eksperta: odpowiedz w 3–4 zdaniach"],
     [KIND_LABELS.PROMPTER.csv, "Growth", "sprzedaż", "3 błędy, które kosztują Cię klientów", "", "Pierwszy błąd to brak odpowiedzi w ciągu 24 godzin.\nDrugi błąd to oferta bez konkretnej ceny."],
     [KIND_LABELS.QUESTION_PROMPTER.csv, "Growth", "ceny", "Jak podnieść ceny i nie stracić klientów?", "Chcę podnieść ceny, ale boję się, że klienci odejdą. Jak to zrobić?", "Zacznij od klientów, którzy najbardziej cenią Twoją pracę.\nPodnieś cenę dla nowych zleceń, nie dla trwających."],
+    [KIND_LABELS.HOOK_PROMPTER.csv, "Długi", "rodzina", "Czy mówić mężowi o długach?", "Masz długi i nie wiesz, czy powiedzieć o nich mężowi?", "Krótko: tak, i lepiej wcześniej niż później.\nDługi zaciągnięte w trakcie małżeństwa mogą dotyczyć Was obojga."],
   ];
   return "\uFEFF" + Papa.unparse(rows, { delimiter: ";", newline: "\r\n", quotes: true });
 }

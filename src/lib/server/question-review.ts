@@ -18,11 +18,16 @@ export function reviewInputOf(q: Item, kind: QuestionKind) {
           { role: "hook (pytanie klienta, czyta lektor)", text: q.spokenText?.trim() || q.text },
           { role: "body (odpowiedź eksperta)", text: q.script ?? "" },
         ]
+      : kind === "HOOK_PROMPTER"
+      ? [
+          { role: "hook (pytanie, czyta ekspert)", text: q.spokenText?.trim() || q.text },
+          { role: "body", text: q.script ?? "" },
+        ]
       : [
           { role: "hook", text: q.text },
           { role: "body", text: q.script ?? "" },
         ];
-  return { title: q.text, parts, format: kind === "QUESTION_PROMPTER" ? "[PYTANIE KLIENTA]" : "[EKSPERT]" };
+  return { title: q.text, parts, format: kind === "QUESTION_PROMPTER" ? "[PYTANIE KLIENTA]" : kind === "HOOK_PROMPTER" ? "[PYTANIE EKSPERTA]" : "[EKSPERT]" };
 }
 
 export async function reviewQuestions(projectId: string, questionIds?: string[]) {
@@ -59,7 +64,7 @@ export async function applyQuestionReview(id: string, what: { mode: "all" } | { 
   const hookData = (text: string): Prisma.QuestionUpdateInput => {
     const t = text.trim().slice(0, 500);
     if (!t) return {};
-    return kind === "QUESTION_PROMPTER" && q.spokenText ? { spokenText: t } : { text: t };
+    return (kind === "QUESTION_PROMPTER" || kind === "HOOK_PROMPTER") && q.spokenText ? { spokenText: t } : { text: t };
   };
   if (what.mode === "hook") {
     await prisma.question.update({ where: { id }, data: { ...hookData(what.text), contentApprovedAt: null } });

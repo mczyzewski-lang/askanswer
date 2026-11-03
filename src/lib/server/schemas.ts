@@ -10,7 +10,7 @@ export const QuestionInput = z.object({
   /** Prompter projects: script body read from the teleprompter (text = hook) */
   script: z.string().trim().max(8000).nullable().optional(),
   /** QUESTION | PROMPTER | QUESTION_PROMPTER (hybrid projects); null = from the project format */
-  kind: z.enum(["QUESTION", "PROMPTER", "QUESTION_PROMPTER"]).nullable().optional(),
+  kind: z.enum(["QUESTION", "PROMPTER", "QUESTION_PROMPTER", "HOOK_PROMPTER"]).nullable().optional(),
   /** the question the narrator reads, when it differs from the video title */
   spokenText: z.string().trim().max(1000).nullable().optional(),
   maxDurationSec: z.number().int().min(5).max(1800).nullable().optional(),

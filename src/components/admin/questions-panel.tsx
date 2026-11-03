@@ -224,7 +224,7 @@ export function QuestionsPanel({ data, refresh, toast }: PanelProps) {
     if (!rows.length) {
       toast(
         T.hybrid
-          ? "Nie znaleziono pozycji. Format: typ (pytania/prompter/pytaniazprompterem);kategoria;podkategoria;tytuł wideo;pytanie (lektor);treść"
+          ? "Nie znaleziono pozycji. Format: typ (pytania/prompter/pytaniazprompterem/hookzprompterem);kategoria;podkategoria;tytuł wideo;pytanie (lektor) lub hook (ekspert);treść"
           : T.prompter
             ? "Nie znaleziono skryptów. Plik CSV powinien mieć nagłówek: Kategoria;Podkategoria;Hook;Treść"
             : "Nie znaleziono pytań. Plik CSV powinien mieć nagłówek: Kategoria;Podkategoria;Pytanie;Instrukcje;Czas",
@@ -264,7 +264,7 @@ export function QuestionsPanel({ data, refresh, toast }: PanelProps) {
         <Button variant="outline" onClick={() => fileRef.current?.click()}>
           <FileUp /> Import CSV
         </Button>
-        <Button variant="ghost" onClick={downloadTemplate} title={T.hybrid ? "Kolumny: Typ (pytania/prompter/pytaniazprompterem);Kategoria;Podkategoria;Tytuł wideo;Pytanie (lektor);Treść" : T.prompter ? "Kolumny: Kategoria;Podkategoria;Hook;Treść" : "Kolumny: Kategoria;Podkategoria;Pytanie;Instrukcje;Czas"}>
+        <Button variant="ghost" onClick={downloadTemplate} title={T.hybrid ? "Kolumny: Typ (pytania/prompter/pytaniazprompterem/hookzprompterem);Kategoria;Podkategoria;Tytuł wideo;Pytanie (lektor) lub hook (ekspert);Treść" : T.prompter ? "Kolumny: Kategoria;Podkategoria;Hook;Treść" : "Kolumny: Kategoria;Podkategoria;Pytanie;Instrukcje;Czas"}>
           <Download /> Wzór CSV
         </Button>
         <input
@@ -1021,7 +1021,7 @@ function QuestionDialog({ open, question, data, onClose, refresh, toast }: { ope
                 expertId: expertId || null, instructions: instructions || null, maxDurationSec: max ? Number(max) : null,
                 ...(usesScript ? { script: script.trim() || null } : {}),
                 ...(T.hybrid ? { kind } : {}),
-                ...(kindHasNarration(k) ? { spokenText: spoken.trim() || null } : {}) };
+                ...(kindHasNarration(k) || k === "HOOK_PROMPTER" ? { spokenText: spoken.trim() || null } : {}) };
               try {
                 if (question) await api(`/api/admin/questions/${question.id}`, { method: "PATCH", json: body });
                 else await api(`/api/admin/projects/${data.project.id}/questions`, { method: "POST", json: body });
@@ -1036,7 +1036,7 @@ function QuestionDialog({ open, question, data, onClose, refresh, toast }: { ope
             {T.hybrid ? (
               <div className="space-y-1.5" data-testid="kind-select">
                 <Label>Typ</Label>
-                <div className="grid gap-2 sm:grid-cols-3">
+                <div className="grid gap-2 sm:grid-cols-2">
                   {QUESTION_KINDS.map((x) => (
                     <button
                       key={x}
@@ -1057,6 +1057,13 @@ function QuestionDialog({ open, question, data, onClose, refresh, toast }: { ope
               <Textarea id="qtext" value={text} onChange={(e) => setText(e.target.value)} required minLength={3} rows={k === "PROMPTER" ? 2 : 3} placeholder={k === "PROMPTER" ? "np. 3 błędy, które kosztują Cię klientów" : "np. Dlaczego warto zastrzec znak towarowy?"} />
               {k === "PROMPTER" ? <p className="text-xs text-muted">Hook to pierwsze zdanie rolki — ekspert mówi je na początku, a na wideo pojawia się jako tytuł.</p> : null}
             </div>
+            {k === "HOOK_PROMPTER" ? (
+              <div className="space-y-1.5">
+                <Label htmlFor="qspoken">Hook — pytanie, które ekspert czyta z promptera (opcjonalnie)</Label>
+                <Textarea id="qspoken" value={spoken} onChange={(e) => setSpoken(e.target.value)} rows={2} placeholder="np. Masz długi i nie wiesz, czy powiedzieć o nich mężowi?" />
+                <p className="text-xs text-muted">Gdy puste, ekspert czyta tytuł wideo. Bez lektora — ekspert sam zadaje pytanie, potem czyta treść.</p>
+              </div>
+            ) : null}
             {kindHasNarration(k) ? (
               <div className="space-y-1.5">
                 <Label htmlFor="qspoken">Pytanie czytane przez lektora (opcjonalnie)</Label>

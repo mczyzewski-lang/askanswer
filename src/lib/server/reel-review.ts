@@ -56,6 +56,12 @@ ZASADY DLA FORMATU [PYTANIE KLIENTA] (lektor czyta pytanie klienta, ekspert odpo
 - Treść (body) i CTA mówi EKSPERT: odpowiada bezpośrednio pytającemu i widzom w tej samej sytuacji, nie powtarza pytania słowo w słowo; najpierw krótki kontekst, potem jednoznaczna odpowiedź i co zrobić teraz.
 - Alternatywne hooki (altHooks) w tym formacie to też pytania klienta w 1. osobie.
 
+ZASADY DLA FORMATU [PYTANIE EKSPERTA] (ekspert sam czyta z promptera hook-pytanie, potem treść; bez lektora)
+- Hook to PYTANIE, które EKSPERT zadaje widzowi, patrząc w kamerę: 2. osoba albo pytanie ogólne, dotykające lęku lub sytuacji widza — np. „Masz długi i nie wiesz, czy powiedzieć o nich mężowi?”, „Czy komornik może zabrać ci 800+?”.
+- Hook nie jest wypowiedzią klienta w 1. osobie („Czy mam powiedzieć mężowi…?” brzmi jak klient, a czyta ekspert) ani tezą/listą bez pytania.
+- Treść i CTA mówi ten sam ekspert: krótki kontekst, potem jednoznaczna odpowiedź i co zrobić teraz; nie powtarza pytania.
+- Alternatywne hooki (altHooks) w tym formacie to też pytania eksperta do widza.
+
 ZASADY DLA FORMATU [TALKING HEAD KLIENTA]
 - Najmocniejsze emocjonalne zdanie z wywiadu idzie na początek jako hook, potem cofnięcie do historii.
 - Struktura: ból → moment decyzji → co się zmieniło (konkret: czas, kwota, spokój) → zdanie do widza w podobnej sytuacji.
@@ -83,7 +89,7 @@ const OUTPUT = `FORMAT ODPOWIEDZI: wyłącznie JSON (bez markdown), dokładnie w
   "newVersion": {
     "onScreen": "napis na ekranie 0–2 s",
     "timeline": [{"time": "0–2 s", "text": "…"}, {"time": "2–6 s", "text": "…"}, {"time": "6–X s", "text": "…"}, {"time": "koniec", "text": "…"}],
-    "hook": "hook 0–2 s: w formacie [PYTANIE KLIENTA] pytanie klienta w 1. osobie (czyta lektor); w pozostałych to, co mówi ekspert",
+    "hook": "hook 0–2 s: w formacie [PYTANIE KLIENTA] pytanie klienta w 1. osobie (czyta lektor); w [PYTANIE EKSPERTA] pytanie eksperta do widza; w pozostałych to, co mówi ekspert",
     "body": "to, co ekspert mówi po hooku aż do CTA",
     "cta": "CTA wypowiadane na końcu",
     "shots": ["sugestie ujęć / cięć / B-rolli"],
@@ -119,6 +125,7 @@ export interface ReviewInput {
 /** Who says the hook — spelled out so the new version keeps the right voice. */
 const VOICE: Record<string, string> = {
   "[PYTANIE KLIENTA]": "KTO MÓWI: hook = pytanie klienta czytane przez lektora (głos klienta, 1. osoba); treść i CTA = ekspert odpowiada.",
+  "[PYTANIE EKSPERTA]": "KTO MÓWI: hook, treść i CTA mówi ekspert; hook to pytanie eksperta do widza (2. osoba), nie pytanie klienta w 1. osobie.",
   "[EKSPERT]": "KTO MÓWI: hook, treść i CTA mówi ekspert (głos eksperta, wiedza) — hook nie jest pytaniem klienta w 1. osobie.",
 };
 

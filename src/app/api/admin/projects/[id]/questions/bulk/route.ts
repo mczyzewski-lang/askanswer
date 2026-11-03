@@ -10,7 +10,7 @@ const Body = z.discriminatedUnion("action", [
   z.object({ action: z.literal("status"), ids: z.array(z.string()).min(1).max(1000), status: z.enum(["TO_RECORD", "IN_PROGRESS", "RECORDED", "NEEDS_FIX", "TO_ACCEPT", "APPROVED"]) }),
   z.object({ action: z.literal("expert"), ids: z.array(z.string()).min(1).max(1000), expertId: z.string().nullable() }),
   z.object({ action: z.literal("category"), ids: z.array(z.string()).min(1).max(1000), categoryId: z.string().nullable() }),
-  z.object({ action: z.literal("kind"), ids: z.array(z.string()).min(1).max(1000), kind: z.enum(["QUESTION", "PROMPTER", "QUESTION_PROMPTER"]) }),
+  z.object({ action: z.literal("kind"), ids: z.array(z.string()).min(1).max(1000), kind: z.enum(["QUESTION", "PROMPTER", "QUESTION_PROMPTER", "HOOK_PROMPTER"]) }),
 ]);
 
 /** Bulk actions on selected questions / scripts of the project. */
