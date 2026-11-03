@@ -2,7 +2,7 @@
  * Pure timeline operations. Every function returns a new document; the input is
  * never mutated, which makes undo/redo a matter of keeping old references.
  */
-import type { AVClip, AudioClip, EditorDocument, Overlay, SubtitleSegment, SubWord, TextOverlay, ZoomEffect } from "./types";
+import type { AVClip, AudioClip, EditorDocument, HookVariant, Overlay, SubtitleSegment, SubWord, TextOverlay, ZoomEffect } from "./types";
 import { uid } from "./id";
 
 export const EPS = 1e-4;
@@ -633,6 +633,13 @@ export function retimeNarration(doc: EditorDocument, clipId: string, next: { ass
   const end0 = c.start + oldLen;
   const delta = snapToFrame(oldLen - newLen, doc.fps);
   const updated: AudioClip = { ...c, assetId: next.assetId, baseAssetId: next.baseAssetId, speed: next.speed, sourceIn, sourceOut: sourceIn + newLen };
+  return fitNarration(doc, c, updated, srcDuration, delta);
+}
+
+/** Put `updated` in place of narration clip `c` and cut / open the timeline by the length difference. */
+function fitNarration(doc: EditorDocument, c: AudioClip, updated: AudioClip, srcDuration: (assetId: string) => number, delta = snapToFrame(c.sourceOut - c.sourceIn - (updated.sourceOut - updated.sourceIn), doc.fps)): EditorDocument {
+  const clipId = c.id;
+  const end0 = c.start + (c.sourceOut - c.sourceIn);
   let out: EditorDocument = { ...doc, narration: doc.narration.map((x) => (x.id === clipId ? updated : x)) };
   if (Math.abs(delta) < EPS) return out;
   // the cut / the gap sits at the end of the listening clip when there is one (mode A), else after the question
@@ -682,6 +689,7 @@ function shiftFrom(doc: EditorDocument, p: number, d: number, skipId: string): E
 export function switchHook(doc: EditorDocument, index: number): EditorDocument {
   const h = doc.hooks;
   if (!h || index === h.active || !h.variants[index]) return doc;
+  if (!h.clipId) return switchTitleHook(doc, index);
   const cur = doc.clips.find((c) => c.id === h.clipId);
   if (!cur) return doc;
   const q = doc.overlays.find((o): o is TextOverlay => o.kind === "text" && o.role === "question");
@@ -689,7 +697,8 @@ export function switchHook(doc: EditorDocument, index: number): EditorDocument {
   void _id;
   void _start;
   const variants = h.variants.map((v, i) => (i === h.active ? { ...v, clip: curClip, title: q ? q.text : v.title } : v));
-  const next = variants[index];
+  const next = variants[index] as HookVariant & { clip: Omit<AVClip, "id" | "start"> };
+  if (!next.clip) return doc;
   const d = next.clip.sourceOut - next.clip.sourceIn - (cur.sourceOut - cur.sourceIn);
   let out = shiftFrom({ ...doc, hooks: { ...h, active: index, variants } }, clipEnd(cur), d, h.clipId);
   out = {
@@ -711,4 +720,71 @@ export function switchHook(doc: EditorDocument, index: number): EditorDocument {
     meta: { ...out.meta, questionText: next.title ?? next.code },
   };
   return out;
+}
+
+/** The narrator's question subtitles now in the document (not those of the recordings). */
+function narrationSubs(doc: EditorDocument): { baseAssetId: string; segments: SubtitleSegment[] } | null {
+  const recordings = new Set(doc.clips.map((c) => c.assetId));
+  const segments = doc.subtitles.segments.filter((s) => !recordings.has(s.assetId));
+  return doc.meta.narrationSubs ? { baseAssetId: doc.meta.narrationSubs, segments } : null;
+}
+
+/**
+ * A/B test of one recording: the versions differ in the title (the hook on screen) and, when a narrator
+ * reads the question, in its narration (+ its subtitles) — the expert's recording is never touched;
+ * the answer moves by the narration's length difference.
+ */
+function switchTitleHook(doc: EditorDocument, index: number): EditorDocument {
+  const h = doc.hooks!;
+  const q = doc.overlays.find((o): o is TextOverlay => o.kind === "text" && o.role === "question");
+  const curNarr = h.narrationClipId ? doc.narration.find((n) => n.id === h.narrationClipId) : undefined;
+  const snapshot = (n: AudioClip) => {
+    const { id: _id, start: _start, ...clip } = n;
+    void _id;
+    void _start;
+    return clip;
+  };
+  const variants = h.variants.map((v, i) => (i === h.active ? { ...v, title: q ? q.text : v.title, ...(curNarr ? { narration: { clip: snapshot(curNarr), subs: narrationSubs(doc) } } : {}) } : v));
+  const next = variants[index];
+  let out: EditorDocument = { ...doc, hooks: { ...h, active: index, variants } };
+  if (curNarr && next.narration) {
+    // the timeline follows the new length only where the question has its own time (an intro, or the
+    // expert listening); a narration laid over the expert speaking never cuts into the answer
+    const end0 = curNarr.start + (curNarr.sourceOut - curNarr.sourceIn);
+    const overSpeech = doc.clips.some((v) => !v.muted && v.start < end0 - EPS && clipEnd(v) > curNarr.start + EPS);
+    out = fitNarration(out, curNarr, { ...next.narration.clip, id: curNarr.id, start: curNarr.start }, () => Number.POSITIVE_INFINITY, overSpeech ? 0 : undefined);
+    const subs = next.narration.subs;
+    if (subs) out = withNarrationSubtitles(out, subs.baseAssetId, subs.segments);
+    else {
+      // that version had no narrator subtitles: drop the other version's
+      const recordings = new Set(out.clips.map((c) => c.assetId));
+      out = { ...out, subtitles: { ...out.subtitles, segments: out.subtitles.segments.filter((x) => recordings.has(x.assetId)) }, meta: { ...out.meta, narrationSubs: undefined } };
+    }
+  }
+  const title = next.title ?? next.code;
+  return { ...out, overlays: out.overlays.map((o) => (q && o.id === q.id ? { ...(o as TextOverlay), text: title } : o)), meta: { ...out.meta, questionText: title } };
+}
+
+/**
+ * Start an A/B test of the hook on this edit: version 1 is the current title (and narration), the others
+ * the given texts — each with its own narration when one was made. Replaces an earlier A/B test.
+ */
+export function withTitleHooks(doc: EditorDocument, versions: Array<{ text: string; narration?: { assetId: string; duration: number; speed?: number; baseAssetId?: string; subs: { baseAssetId: string; segments: SubtitleSegment[] } | null } | null }>): EditorDocument {
+  if (doc.hooks?.clipId) return doc;
+  const base = doc.hooks && doc.hooks.active !== 0 ? switchTitleHook(doc, 0) : doc;
+  const q = base.overlays.find((o): o is TextOverlay => o.kind === "text" && o.role === "question");
+  const narr = base.narration[0];
+  const letter = (i: number) => `Hook ${String.fromCharCode(65 + i)}`;
+  const narrationOf = (n: NonNullable<(typeof versions)[number]["narration"]>): HookVariant["narration"] => {
+    if (!narr) return null;
+    const { id: _id, start: _start, ...clip } = narr;
+    void _id;
+    void _start;
+    return { clip: { ...clip, assetId: n.assetId, baseAssetId: n.baseAssetId, speed: n.speed, sourceIn: 0, sourceOut: n.duration }, subs: n.subs };
+  };
+  const variants: HookVariant[] = [
+    { id: uid("hook"), code: letter(0), title: q?.text ?? base.meta.questionText, narration: null },
+    ...versions.map((v, i) => ({ id: uid("hook"), code: letter(i + 1), title: v.text.trim(), narration: v.narration ? narrationOf(v.narration) : null })),
+  ];
+  return { ...base, hooks: { clipId: null, narrationClipId: narr && variants.some((v) => v.narration) ? narr.id : null, active: 0, variants } };
 }

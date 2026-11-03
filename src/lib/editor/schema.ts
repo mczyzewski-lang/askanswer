@@ -65,6 +65,13 @@ const zoom = z.object({
   suggested: z.boolean().optional(),
 });
 
+const subSegment = z.object({
+  id: z.string().max(64),
+  assetId: z.string().max(64),
+  words: z.array(z.object({ id: z.string().max(64), text: z.string().max(200), start: num.min(0), end: num.min(0) })).max(400),
+  y: num.min(0).max(1).nullable().optional(),
+});
+
 const overlayBase = {
   id: z.string().max(64),
   name: z.string().max(120),
@@ -148,25 +155,30 @@ export const EditorDocumentSchema = z.object({
     preset: z.enum(["minimal-white", "bold-social", "dynamic-highlight", "elegant-premium", "clean-corporate"]),
     style: subStyle,
     source: z.enum(["none", "transcript", "edited"]),
-    segments: z
-      .array(
-        z.object({
-          id: z.string().max(64),
-          assetId: z.string().max(64),
-          words: z.array(z.object({ id: z.string().max(64), text: z.string().max(200), start: num.min(0), end: num.min(0) })).max(400),
-          y: num.min(0).max(1).nullable().optional(),
-        }),
-      )
-      .max(5000),
+    segments: z.array(subSegment).max(5000),
   }),
   pauses: z
     .array(z.object({ id: z.string().max(64), assetId: z.string().max(64), start: num, end: num, confidence: num, status: z.enum(["pending", "accepted", "rejected", "applied"]) }))
     .max(5000),
   hooks: z
     .object({
-      clipId: z.string().max(64),
+      clipId: z.string().max(64).nullable().optional(),
+      narrationClipId: z.string().max(64).nullable().optional(),
       active: z.number().int().min(0),
-      variants: z.array(z.object({ id: z.string().max(64), code: z.string().max(120), title: z.string().max(500).nullable(), clip: avClip.omit({ id: true, start: true }) })).max(500),
+      variants: z
+        .array(
+          z.object({
+            id: z.string().max(64),
+            code: z.string().max(120),
+            title: z.string().max(500).nullable(),
+            clip: avClip.omit({ id: true, start: true }).optional(),
+            narration: z
+              .object({ clip: audioClip.omit({ id: true, start: true }), subs: z.object({ baseAssetId: z.string().max(64), segments: z.array(subSegment).max(200) }).nullable() })
+              .nullable()
+              .optional(),
+          }),
+        )
+        .max(500),
     })
     .optional(),
   callStyle: z

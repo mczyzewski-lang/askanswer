@@ -283,17 +283,21 @@ export interface EndCard {
 
 export interface HookVariant {
   id: string;
-  /** reel id from the script (R001…) */
+  /** reel id from the script (R001…), or "Hook A/B/C" for an A/B test of one recording */
   code: string;
   /** the title shown at the top of this version */
   title: string | null;
-  /** the hook clip of this version (its trim is kept per version) */
-  clip: Omit<AVClip, "id" | "start">;
+  /** Ads Studio: the hook clip of this version (its trim is kept per version) */
+  clip?: Omit<AVClip, "id" | "start">;
+  /** A/B test with a narrator: this version's question narration and its subtitles */
+  narration?: { clip: Omit<AudioClip, "id" | "start">; subs: { baseAssetId: string; segments: SubtitleSegment[] } | null } | null;
 }
 
 export interface HookVariants {
-  /** the hook clip on the timeline */
-  clipId: string;
+  /** Ads Studio: the hook clip on the timeline; none = an A/B test of the title (and narration) only */
+  clipId?: string | null;
+  /** A/B test: the narration clip swapped per version */
+  narrationClipId?: string | null;
   active: number;
   variants: HookVariant[];
 }

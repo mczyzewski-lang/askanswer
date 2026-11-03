@@ -185,9 +185,11 @@ export function openaiErrorText(status: number, body: { error?: { message?: stri
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** One call, retried on a rate limit (not an empty balance) and on server errors. */
-async function chat(model: string, user: string) {
+const chat = (model: string, user: string) => chatWith(model, `${REEL_EDITOR_GUIDELINES}\n\n${OUTPUT}`, user);
+
+async function chatWith(model: string, system: string, user: string) {
   for (let attempt = 0; ; attempt++) {
-    const res = await chatOnce(model, user);
+    const res = await chatOnce(model, user, system);
     if (attempt >= 3 || !(res.status === 429 || res.status >= 500)) return res;
     const body = await res.clone().json().catch(() => ({}));
     if (/insufficient_quota|billing/i.test(JSON.stringify(body))) return res;
@@ -196,7 +198,7 @@ async function chat(model: string, user: string) {
   }
 }
 
-async function chatOnce(model: string, user: string) {
+async function chatOnce(model: string, user: string, system: string) {
   return fetch(`${env.openaiBaseUrl}/chat/completions`, {
     method: "POST",
     headers: { Authorization: `Bearer ${env.openaiKey}`, "Content-Type": "application/json" },
@@ -204,7 +206,7 @@ async function chatOnce(model: string, user: string) {
       model,
       response_format: { type: "json_object" },
       messages: [
-        { role: "system", content: `${REEL_EDITOR_GUIDELINES}\n\n${OUTPUT}` },
+        { role: "system", content: system },
         { role: "user", content: user },
       ],
     }),
@@ -235,4 +237,23 @@ export async function reviewReel(p: ReviewInput): Promise<ReelReview & { model: 
     throw new Error("OpenAI zwrócił odpowiedź, której nie da się odczytać — spróbuj ponownie.");
   }
   return { ...asReview(parsed), model };
+}
+
+/**
+ * Only the alternative hooks (A/B), in the voice of the item's format — quicker than a full review.
+ * Used by the Studio's A/B test of the hook.
+ */
+export async function suggestHooks(p: ReviewInput, count = 3): Promise<Array<{ mechanism: string; text: string }>> {
+  if (!openaiConfigured()) throw new Error(`Propozycje hooków wymagają klucza OpenAI. ${openaiKeyDiagnostics()}`);
+  const ask = `${reviewUserMessage(p)}\n\nZADANIE: napisz ${count} alternatywne hooki do testu A/B tej rolki (różne mechanizmy: lęk, liczba, kontrowersja…), zgodnie z zasadami formatu i tym, KTO MÓWI hook. Treść rolki zostaje bez zmian, więc hook musi do niej pasować. Odpowiedz wyłącznie JSON: {"altHooks": [{"mechanism": "lęk", "text": "…"}, …]}`;
+  const res = await chatWith(env.openaiTextModel, REEL_EDITOR_GUIDELINES, ask);
+  const data = (await res.json().catch(() => ({}))) as { choices?: Array<{ message?: { content?: string } }>; error?: { message?: string; code?: string; type?: string } };
+  if (!res.ok) throw new Error(openaiErrorText(res.status, data));
+  let parsed: { altHooks?: Array<{ mechanism?: unknown; text?: unknown }> } = {};
+  try {
+    parsed = JSON.parse((data.choices?.[0]?.message?.content ?? "").replace(/^```(?:json)?\s*|\s*```$/g, ""));
+  } catch {
+    throw new Error("OpenAI zwrócił odpowiedź, której nie da się odczytać — spróbuj ponownie.");
+  }
+  return (parsed.altHooks ?? []).map((h) => ({ mechanism: String(h.mechanism ?? ""), text: String(h.text ?? "").trim() })).filter((h) => h.text).slice(0, count);
 }

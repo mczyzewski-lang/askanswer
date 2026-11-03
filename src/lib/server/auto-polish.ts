@@ -25,7 +25,7 @@ export async function autoPolish(compositionId: string): Promise<AutoPolishResul
   const doc0 = comp.document as unknown as EditorDocument;
   if (doc0.meta.autoPolish) return { done: [], warnings: [], skipped: "already done" };
   if (!p.autoBlur && !p.autoVoice && !p.autoZooms && !p.autoImageEnhance) return { done: [], warnings: [], skipped: "disabled" };
-  const assets = [...new Set([...doc0.clips.map((c) => c.assetId), ...(doc0.hooks?.variants ?? []).map((v) => v.clip.assetId)])];
+  const assets = [...new Set([...doc0.clips.map((c) => c.assetId), ...(doc0.hooks?.variants ?? []).flatMap((v) => (v.clip ? [v.clip.assetId] : []))])];
   const done: string[] = [];
   const warnings: string[] = [];
 
@@ -78,7 +78,7 @@ export async function autoPolish(compositionId: string): Promise<AutoPolishResul
     const hooks = doc.hooks
       ? {
           ...doc.hooks,
-          variants: doc.hooks.variants.map((v) => ({
+          variants: doc.hooks.variants.map((v) => !v.clip ? v : ({
             ...v,
             clip: {
               ...v.clip,

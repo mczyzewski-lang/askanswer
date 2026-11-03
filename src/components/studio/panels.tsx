@@ -29,6 +29,7 @@ import { Row, Section, Seg, Select, SButton, Slider, TextField } from "./control
 import type { PlaybackEngine } from "./playback";
 import { NarrationSpeed, NarrationVoiceChanger } from "./narration";
 import { CallStyleSection } from "./call-style";
+import { AbHooksSection } from "./ab-hooks";
 
 export interface StudioMeta {
   compositionId: string;
@@ -89,6 +90,11 @@ export function QuestionPanel({ meta }: { meta: StudioMeta }) {
         )}
         <p className="text-[11.5px] text-studio-muted">Pytanie to edytowalna warstwa tekstowa — nigdy nie jest wypalane w oryginalnym nagraniu.</p>
       </Section>
+      {meta.question ? (
+        <Section title="Test A/B hooka">
+          <AbHooksSection />
+        </Section>
+      ) : null}
       {meta.elevenLabs ? (
         <Section title="Pytanie jak rozmowa">
           <CallStyleSection questionText={meta.question?.spokenText || meta.question?.text || doc.meta.questionText} />
