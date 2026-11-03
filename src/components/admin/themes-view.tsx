@@ -105,9 +105,9 @@ export function ThemesView({ themes, experts, initialId }: { themes: ThemeRow[];
           <Card className="space-y-4 p-5">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="font-medium">Preset startowy</p>
-              <span className="text-xs text-muted">Zastępuje kolory i czcionki — logo zostaje.</span>
+              <span className="text-xs text-muted">Zastępuje kolory i czcionki — logo zostaje (preset z logo marki wstawia je).</span>
             </div>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
               {THEME_PRESETS.map((p) => (
                 <button
                   key={p.key}

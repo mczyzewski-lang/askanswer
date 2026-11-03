@@ -4,6 +4,7 @@ import { json, route } from "@/lib/server/http";
 import { ProjectInput } from "@/lib/server/schemas";
 import { THEME_PRESETS } from "@/lib/themes";
 import { dashboardData } from "@/lib/server/project-data";
+import { presetLogoAssetId } from "@/lib/server/preset-logo";
 
 const DEFAULT_CATEGORIES = ["Znaki towarowe", "Upadłość konsumencka", "Restrukturyzacja", "Rozwody", "Psychoterapia", "Ogólne"];
 
@@ -32,6 +33,8 @@ export const POST = route(async (req: Request) => {
   const project = await prisma.project.create({
     data: { ...body, themeId: theme.id, categories: { create: DEFAULT_CATEGORIES.map((name, order) => ({ name, order })) } },
   });
+  const logoAssetId = await presetLogoAssetId(preset.key, project.id);
+  if (logoAssetId) await prisma.theme.update({ where: { id: theme.id }, data: { logoAssetId } });
   return json(project, 201);
 });
 

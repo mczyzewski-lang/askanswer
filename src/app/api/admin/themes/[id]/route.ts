@@ -3,6 +3,7 @@ import { prisma } from "@/lib/server/db";
 import { requireAdmin } from "@/lib/server/auth";
 import { json, route } from "@/lib/server/http";
 import { THEME_PRESETS, FONT_FAMILIES } from "@/lib/themes";
+import { presetLogoAssetId } from "@/lib/server/preset-logo";
 
 const hex = z.string().regex(/^#[0-9a-fA-F]{6}$/, "Kolor musi mieć format #RRGGBB");
 const fontName = z.enum(FONT_FAMILIES);
@@ -48,6 +49,12 @@ export const PATCH = route(async (req: Request, ctx: { params: Promise<{ id: str
       subtitleFont: p.subtitleFont,
       labelFont: p.labelFont,
     });
+    // a preset with its brand logo brings it along; other presets keep the current logo
+    if (p.logoFile) {
+      const project = await prisma.project.findFirst({ where: { themeId: id }, select: { id: true } });
+      const logoAssetId = await presetLogoAssetId(p.key, project?.id ?? null);
+      if (logoAssetId) Object.assign(data, { logoAssetId });
+    }
   }
   return json(await prisma.theme.update({ where: { id }, data }));
 });

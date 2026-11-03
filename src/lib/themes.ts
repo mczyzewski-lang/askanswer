@@ -5,7 +5,7 @@ import type { ThemeTokens } from "./editor/types";
  * brand colours of any company. Administrators set exact brand colours and logos
  * in "Motywy" (Theme Settings).
  */
-export const THEME_PRESETS: Array<ThemeTokens & { key: string; description: string }> = [
+export const THEME_PRESETS: Array<ThemeTokens & { key: string; description: string; /** file in public/presets, set as the theme logo */ logoFile?: string }> = [
   {
     key: "pravna",
     name: "Pravna",
@@ -75,6 +75,22 @@ export const THEME_PRESETS: Array<ThemeTokens & { key: string; description: stri
     questionFont: "Poppins",
     subtitleFont: "Montserrat",
     labelFont: "Poppins",
+  },
+  {
+    key: "duo-terapia",
+    name: "DUO Terapia",
+    description: "Ciepłe, spokojne barwy terapii małżeństw: terakota, beż i szałwia",
+    primary: "#FBF8F5",
+    accent: "#B77256",
+    secondary: "#D6C3B0",
+    text: "#36483C",
+    highlight: "#D08A68",
+    background: "#F3EDE5",
+    questionFont: "Montserrat",
+    subtitleFont: "Inter",
+    labelFont: "Montserrat",
+    // white wordmark (the mark keeps its colours): stays readable over footage; the original is duo-terapia.png
+    logoFile: "duo-terapia-white.png",
   },
 ];
 

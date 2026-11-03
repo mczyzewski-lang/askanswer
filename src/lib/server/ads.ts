@@ -335,6 +335,7 @@ export async function ownTheme(name: string, from: { presetKey?: string | null; 
       questionFont: preset.questionFont,
       subtitleFont: preset.subtitleFont,
       labelFont: preset.labelFont,
+      logoAssetId: await (await import("./preset-logo")).presetLogoAssetId(preset.key, null),
     },
   });
 }

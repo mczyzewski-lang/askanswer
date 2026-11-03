@@ -251,3 +251,16 @@ test("project settings show the AI image prompts with the theme colours", async 
   await expect(page.getByTestId("ai-prompt-background")).toContainText("background plate");
   await expect(page.getByTestId("ai-prompt-caller")).toContainText("iPhone front camera");
 });
+
+test("DUO Terapia preset brings its colours and brand logo", async ({ request: api }) => {
+  await adminRequest(api);
+  const res = await api.post("/api/admin/projects", { data: { name: "DUO test", preset: "duo-terapia" } });
+  expect(res.status()).toBe(201);
+  const themes = (await (await api.get("/api/admin/themes")).json()) as Array<{ name: string; accentColor: string; textColor: string; logoUrl: string | null }>;
+  const duo = themes.find((t) => t.name.startsWith("DUO Terapia (DUO test"))!;
+  expect(duo).toMatchObject({ accentColor: "#B77256", textColor: "#36483C" });
+  expect(duo.logoUrl).toBeTruthy();
+  const logo = await api.get(duo.logoUrl!);
+  expect(logo.status()).toBe(200);
+  expect((await logo.body()).subarray(1, 4).toString()).toBe("PNG");
+});
