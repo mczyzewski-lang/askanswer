@@ -155,6 +155,11 @@ const server = http.createServer(async (req, res) => {
         const body = JSON.parse((await readBody(req)).toString() || "{}");
         const user = String(body.messages?.find((m: { role: string }) => m.role === "user")?.content ?? "");
         oaiLog.push({ model: body.model, size: "", prompt: String(body.messages?.[0]?.content ?? "").slice(0, 400) + "\n---\n" + user, n: 1 });
+        // EduStudio: the first sentence is a remark for the editor
+        if (String(body.messages?.[0]?.content ?? "").startsWith("EDU_ANALYSIS")) {
+          const out = { summary: "Testowe nagranie szkoleniowe.", cuts: [{ from: 0, to: 0, kind: "editor", reason: "Polecenie dla montażysty" }] };
+          return json(200, { id: "chatcmpl-mock", object: "chat.completion", model: body.model, choices: [{ index: 0, message: { role: "assistant", content: JSON.stringify(out) }, finish_reason: "stop" }] });
+        }
         const social = socialAi(String(body.messages?.[0]?.content ?? ""), user);
         if (social) return json(200, { id: "chatcmpl-mock", object: "chat.completion", model: body.model, choices: [{ index: 0, message: { role: "assistant", content: JSON.stringify(social) }, finish_reason: "stop" }] });
         const hook = /\[HOOK\] (.*)/.exec(user)?.[1] ?? "";

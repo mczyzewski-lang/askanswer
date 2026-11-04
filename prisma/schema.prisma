@@ -1261,3 +1261,36 @@ model BrollFragment {
 
   @@index([projectId])
 }
+
+/// EduStudio: an educational video — remarks for the editor, retakes and long pauses found and cut out,
+/// exported as one optimized MP4
+model EduVideo {
+  id              String   @id @default(cuid())
+  name            String
+  /// UPLOADING | PROCESSING | READY | EXPORTING | DONE | FAILED
+  status          String   @default("UPLOADING")
+  step            String?
+  error           String?
+  sizeBytes       BigInt   @default(0)
+  uploadSessionId String?  @unique
+  originalAssetId String?
+  proxyAssetId    String?
+  durationSec     Float?
+  width           Int?
+  height          Int?
+  /// transcript words [{text, start, end}]
+  words           Json?
+  /// silences between words [{start, end}] (seconds of the original)
+  pauses          Json?
+  /// proposed cuts [{id, kind, start, end, text, reason, enabled}] — kind: editor | retake | offtopic
+  cuts            Json?
+  /// what the video is about (a short summary from the analysis)
+  summary         String?
+  /// pauses at least this long are shortened
+  pauseMin        Float    @default(1.2)
+  exportAssetId   String?
+  exportProgress  Float    @default(0)
+  exportSettings  Json?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}

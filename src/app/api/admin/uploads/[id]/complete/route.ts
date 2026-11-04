@@ -16,7 +16,13 @@ export const POST = route(async (req: Request, ctx: { params: Promise<{ id: stri
   if (missing.length) return json({ error: "Brakuje części pliku", missing }, 409);
   // only one "complete" moves it on (a retried request does not queue it twice)
   const moved = await prisma.uploadSession.updateMany({ where: { id, status: "UPLOADING" }, data: { status: "PROCESSING" } });
-  if (moved.count) await enqueue("ads-broll", { sessionId: id, totalChunks }, { idempotencyKey: `ads-broll:${id}`, maxAttempts: 1 });
+    if (moved.count) {
+    if (s.purpose === "edu") {
+      const edu = await prisma.eduVideo.findUniqueOrThrow({ where: { uploadSessionId: id } });
+      await prisma.eduVideo.update({ where: { id: edu.id }, data: { status: "PROCESSING", step: "W kolejce", error: null } });
+      await enqueue("edu-process", { eduId: edu.id, totalChunks }, { idempotencyKey: `edu-process:${edu.id}`, maxAttempts: 1 });
+    } else await enqueue("ads-broll", { sessionId: id, totalChunks }, { idempotencyKey: `ads-broll:${id}`, maxAttempts: 1 });
+  }
   return json({ ok: true, status: "PROCESSING" }, 202);
 });
 

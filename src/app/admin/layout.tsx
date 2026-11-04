@@ -33,7 +33,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
             ) : null}
             {lowDisk ? (
               <span
-                className="rounded-full bg-red-50 px-2.5 py-1 text-xs font-medium text-red-700"
+                className="whitespace-nowrap rounded-full bg-red-50 px-2.5 py-1 text-xs font-medium text-red-700"
                 title="Wolumen z nagraniami jest prawie pełny — nowe nagrania mogą się nie przetworzyć. Zwiększ wolumen w Railway lub podłącz S3/R2."
                 data-testid="disk-warning"
               >

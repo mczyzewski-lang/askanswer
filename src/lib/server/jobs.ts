@@ -6,7 +6,7 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "./db";
 
-export type JobType = "process-take" | "transcribe-take" | "render" | "enhance-audio" | "generate-broll" | "generate-infographic" | "segment-asset" | "auto-visuals" | "auto-polish" | "generate-background" | "generate-avatar" | "ads-footage" | "ads-broll" | "ads-build" | "ads-review" | "question-review" | SocialJobType;
+export type JobType = "process-take" | "transcribe-take" | "render" | "enhance-audio" | "generate-broll" | "generate-infographic" | "segment-asset" | "auto-visuals" | "auto-polish" | "generate-background" | "generate-avatar" | "ads-footage" | "ads-broll" | "edu-process" | "edu-export" | "ads-build" | "ads-review" | "question-review" | SocialJobType;
 
 /** Social Media Studio jobs (see src/lib/server/social) */
 export type SocialJobType =
