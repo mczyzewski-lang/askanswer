@@ -460,9 +460,19 @@ export function AdsProject({ id }: { id: string }) {
             <span>
               <b>Reels testowy gotowy: {testReel.groupCode ?? testReel.code}</b> — sprawdź w Studio wygląd, napisy, przebitki i ekran końcowy. Jeśli jest dobrze, wygeneruj wszystkie; jeśli nie — popraw ustawienia wyglądu i ułóż go „od nowa”.
             </span>
-            <Link href={`/studio/${testReel.compositionId}${testReel.hookIndex != null ? `?hook=${testReel.hookIndex}` : ""}`} className="inline-flex items-center gap-1 rounded-lg bg-ink px-3 py-1.5 text-xs font-medium text-white">
-              Otwórz w Studio <ArrowUpRight className="h-3 w-3" />
-            </Link>
+                        <span className="flex flex-wrap gap-2">
+              <Link href={`/studio/${testReel.compositionId}${testReel.hookIndex != null ? `?hook=${testReel.hookIndex}` : ""}`} className="inline-flex items-center gap-1 rounded-lg bg-ink px-3 py-1.5 text-xs font-medium text-white">
+                Otwórz w Studio <ArrowUpRight className="h-3 w-3" />
+              </Link>
+              <button
+                className="inline-flex items-center gap-1 rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-xs font-medium text-emerald-950 disabled:opacity-50"
+                disabled={building}
+                data-testid="ads-rebuild-test"
+                onClick={() => confirm(`Ułożyć reels testowy ${testReel.groupCode ?? testReel.code} od nowa (ze wszystkimi wersjami hooka)? Zmiany zrobione w nim w Studio przepadną.`) && void build(true, [testReel.id])}
+              >
+                {building ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />} Ułóż testowy od nowa
+              </button>
+            </span>
           </div>
         ) : null}
         {data.reels.length ? <ScoringBar project={data.project} reels={data.reels} reviewing={reviewing} review={review} reload={load} toast={toast} /> : null}

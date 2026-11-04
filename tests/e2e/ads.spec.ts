@@ -47,6 +47,7 @@ test("ads studio: script + footage → reels laid out from the transcript", asyn
   await page.getByTestId("ads-build-test").click();
   await expect(page.getByTestId("ads-open-studio")).toHaveCount(2, { timeout: 60_000 });
   await expect(page.getByTestId("ads-test-reel")).toContainText("Reels testowy gotowy: P01");
+  await expect(page.getByTestId("ads-rebuild-test")).toBeVisible();
   const data = await (await request.get(`/api/admin/ads/${projectId}`)).json();
   const [r1, r2, r3] = ["P01-h01", "P01-h02", "P01-h03"].map((c) => data.reels.find((r: { code: string }) => r.code === c));
   expect(r1.matches.map((m: { missing?: boolean }) => !!m.missing)).toEqual([false, false, false]);
