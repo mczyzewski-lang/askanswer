@@ -43,3 +43,23 @@ describe("A/B hooks of one recording", () => {
     expect(a.subtitles.segments.some((s) => s.assetId === "n1")).toBe(false);
   });
 });
+
+import { deleteRange } from "../../src/lib/editor/timeline";
+import type { AVClip } from "../../src/lib/editor/types";
+
+describe("Ads hook versions with a hook cut in the Studio", () => {
+  const d0 = buildInitialDocument({ questionText: "T", theme: DEFAULT_THEME, mode: "ANSWER_ONLY", recording: { assetId: "rec", duration: 60 }, segments: [], pauses: [], visibility: "FULL", questionSeconds: 4 });
+  const c = (id: string, label: string, start: number, a: number, b: number): AVClip => ({ ...d0.clips[0], id, label, start, sourceIn: a, sourceOut: b });
+  const strip = ({ id: _i, start: _s, ...rest }: AVClip) => (void _i, void _s, rest);
+  const doc = { ...d0, clips: [c("h", "HOOK", 0, 10, 14), c("b", "BODY", 4, 20, 30), c("x", "CTA", 14, 40, 43)], hooks: { clipId: "h", active: 0, variants: [{ id: "v0", code: "A", title: "A", clip: strip(c("h", "HOOK", 0, 10, 14)) }, { id: "v1", code: "B", title: "B", clip: strip(c("h", "HOOK", 0, 50, 56)) }] } };
+  const shape = (d: { clips: AVClip[] }) => d.clips.map((x) => [x.label, x.start, x.sourceIn, x.sourceOut]);
+
+  it("the whole hook is swapped (no piece of the old one left), the body follows the new length", () => {
+    const cut = deleteRange(doc, 1, 2, true); // a pause removed inside hook A → two pieces
+    expect(shape(switchHook(cut, 1))).toEqual([["HOOK", 0, 50, 56], ["BODY", 6, 20, 30], ["CTA", 16, 40, 43]]);
+  });
+  it("each version keeps its own cuts when switching back", () => {
+    const cut = deleteRange(doc, 1, 2, true);
+    expect(shape(switchHook(switchHook(cut, 1), 0))).toEqual([["HOOK", 0, 10, 11], ["HOOK", 1, 12, 14], ["BODY", 3, 20, 30], ["CTA", 13, 40, 43]]);
+  });
+});

@@ -693,29 +693,41 @@ export function switchHook(doc: EditorDocument, index: number): EditorDocument {
   const cur = doc.clips.find((c) => c.id === h.clipId);
   if (!cur) return doc;
   const q = doc.overlays.find((o): o is TextOverlay => o.kind === "text" && o.role === "question");
-  const { id: _id, start: _start, ...curClip } = cur;
-  void _id;
-  void _start;
-  const variants = h.variants.map((v, i) => (i === h.active ? { ...v, clip: curClip, title: q ? q.text : v.title } : v));
-  const next = variants[index] as HookVariant & { clip: Omit<AVClip, "id" | "start"> };
+  // the whole hook on the timeline: its clip plus the pieces it was cut into (a pause removed,
+  // a trim in the middle) — they follow one another and keep the HOOK label
+  const ordered = sortedClips(doc);
+  const region: AVClip[] = [cur];
+  for (const c of ordered.slice(ordered.indexOf(cur) + 1)) {
+    const last = region[region.length - 1];
+    if (c.label !== cur.label || Math.abs(c.start - clipEnd(last)) > 0.05) break;
+    region.push(c);
+  }
+  const strip = (c: AVClip) => {
+    const { id: _id, start: _start, ...rest } = c;
+    void _id;
+    void _start;
+    return rest;
+  };
+  const regionEnd = clipEnd(region[region.length - 1]);
+  const saved = { clip: strip(cur), pieces: region.length > 1 ? region.map((c) => ({ ...strip(c), offset: c.start - cur.start })) : undefined };
+  const variants = h.variants.map((v, i) => (i === h.active ? { ...v, ...saved, title: q ? q.text : v.title } : v));
+  const next = variants[index];
   if (!next.clip) return doc;
-  const d = next.clip.sourceOut - next.clip.sourceIn - (cur.sourceOut - cur.sourceIn);
-  let out = shiftFrom({ ...doc, hooks: { ...h, active: index, variants } }, clipEnd(cur), d, h.clipId);
+  const pieces = next.pieces?.length ? next.pieces : [{ ...next.clip, offset: 0 }];
+  const nextLen = Math.max(...pieces.map((p) => p.offset + (p.sourceOut - p.sourceIn)));
+  const d = nextLen - (regionEnd - cur.start);
+  const drop = new Set(region.map((c) => c.id));
+  let out = shiftFrom({ ...doc, hooks: { ...h, active: index, variants } }, regionEnd, d, h.clipId);
+  // the finishing set on the edit (background, picture, enhanced voice of that file) carries over
+  const finish = (p: Omit<AVClip, "id" | "start">) => ({
+    background: cur.background ?? p.background,
+    look: cur.look ?? p.look,
+    audioAssetId: p.assetId === cur.assetId ? (cur.audioAssetId ?? p.audioAssetId) : (doc.clips.find((x) => x.assetId === p.assetId && x.audioAssetId)?.audioAssetId ?? p.audioAssetId),
+  });
+  const placed: AVClip[] = pieces.map(({ offset, ...p }, k) => ({ ...p, ...finish(p), id: k === 0 ? cur.id : `${cur.id}_p${k}`, start: Math.round((cur.start + offset) * 1000) / 1000 }));
   out = {
     ...out,
-    // the finishing set on the edit (background, picture, enhanced voice of that file) carries over
-    clips: out.clips.map((c) =>
-      c.id === h.clipId
-        ? {
-            ...next.clip,
-            background: cur.background ?? next.clip.background,
-            look: cur.look ?? next.clip.look,
-            audioAssetId: next.clip.assetId === cur.assetId ? (cur.audioAssetId ?? next.clip.audioAssetId) : (doc.clips.find((x) => x.assetId === next.clip.assetId && x.audioAssetId)?.audioAssetId ?? next.clip.audioAssetId),
-            id: c.id,
-            start: c.start,
-          }
-        : c,
-    ),
+    clips: [...out.clips.filter((c) => !drop.has(c.id)), ...placed].sort((a, b) => a.start - b.start),
     overlays: out.overlays.map((o) => (q && o.id === q.id ? { ...(o as TextOverlay), text: next.title ?? next.code } : o)),
     meta: { ...out.meta, questionText: next.title ?? next.code },
   };

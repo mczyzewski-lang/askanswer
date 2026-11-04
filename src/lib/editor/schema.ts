@@ -172,6 +172,7 @@ export const EditorDocumentSchema = z.object({
             code: z.string().max(120),
             title: z.string().max(500).nullable(),
             clip: avClip.omit({ id: true, start: true }).optional(),
+            pieces: z.array(avClip.omit({ id: true, start: true }).extend({ offset: num.min(0) })).max(50).optional(),
             narration: z
               .object({ clip: audioClip.omit({ id: true, start: true }), subs: z.object({ baseAssetId: z.string().max(64), segments: z.array(subSegment).max(200) }).nullable() })
               .nullable()

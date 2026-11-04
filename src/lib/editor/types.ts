@@ -289,6 +289,8 @@ export interface HookVariant {
   title: string | null;
   /** Ads Studio: the hook clip of this version (its trim is kept per version) */
   clip?: Omit<AVClip, "id" | "start">;
+  /** the hook cut into pieces in the Studio (a pause removed inside it): every piece, `offset` from the hook's start */
+  pieces?: Array<Omit<AVClip, "id" | "start"> & { offset: number }>;
   /** A/B test with a narrator: this version's question narration and its subtitles */
   narration?: { clip: Omit<AudioClip, "id" | "start">; subs: { baseAssetId: string; segments: SubtitleSegment[] } | null } | null;
 }
