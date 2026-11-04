@@ -354,7 +354,8 @@ model MediaAsset {
   projectId    String?
   storageKey   String    @unique
   mimeType     String
-  sizeBytes    Int       @default(0)
+  /// BigInt: camera files go over 2 GB
+  sizeBytes    BigInt    @default(0)
   durationSec  Float?
   width        Int?
   height       Int?

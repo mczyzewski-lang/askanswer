@@ -33,3 +33,14 @@ describe("drop zone file filter", () => {
     expect(acceptsFile(f("cokolwiek.bin", ""), undefined)).toBe(true);
   });
 });
+
+import { json } from "@/lib/server/http";
+
+describe("JSON responses", () => {
+  it("send file sizes over 2 GB (BigInt) as numbers", async () => {
+    const r = json({ sizeBytes: BigInt(4_294_967_296), ok: true }, 201);
+    expect(r.status).toBe(201);
+    expect(r.headers.get("content-type")).toContain("application/json");
+    expect(await r.json()).toEqual({ sizeBytes: 4294967296, ok: true });
+  });
+});

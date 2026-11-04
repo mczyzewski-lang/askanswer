@@ -2,8 +2,11 @@ import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 import { HttpError } from "./errors";
 
+/** JSON response; BigInt values (file sizes over 2 GB) are sent as plain numbers. */
 export function json(data: unknown, init?: number | ResponseInit) {
-  return NextResponse.json(data, typeof init === "number" ? { status: init } : init);
+  const opts = typeof init === "number" ? { status: init } : init;
+  const body = JSON.stringify(data, (_k, v) => (typeof v === "bigint" ? Number(v) : v));
+  return new NextResponse(body, { ...opts, headers: { "content-type": "application/json", ...(opts?.headers as Record<string, string> | undefined) } });
 }
 
 export function errorResponse(e: unknown) {
