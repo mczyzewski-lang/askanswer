@@ -7,7 +7,7 @@ import { adminRequest, login } from "./helpers";
  * names the words słowo1, słowo2… along the fixture's voiced parts, so the script uses those words.
  */
 test("ads studio: script + footage → reels laid out from the transcript", async ({ page, request }) => {
-  test.setTimeout(300_000);
+  test.setTimeout(480_000);
   await adminRequest(request);
   await login(page);
   await page.goto("/admin/ads");
@@ -128,6 +128,18 @@ test("ads studio: script + footage → reels laid out from the transcript", asyn
     expect(c.volume).toBe(0);
     expect(basket.some((f) => f.assetId === c.assetId)).toBe(true);
   }
+
+  // AI infographics in reels (like in expert projects): switched on, then added to the reels already laid out
+  await page.getByTestId("ads-auto-visuals").getByRole("switch").click();
+  await expect(page.getByTestId("ads-visuals-laid")).toBeVisible();
+  await page.getByTestId("ads-visuals-laid").click();
+  await expect(page.getByText(/Dodaję infografiki do \d+ ułożonych montaży/)).toBeVisible();
+  await expect.poll(async () => (await (await request.get(`/api/admin/compositions/${r1.compositionId}`)).json()).composition.document.meta.autoVisuals, { timeout: 120_000 }).toBeTruthy();
+  const vis = (await (await request.get(`/api/admin/compositions/${r1.compositionId}`)).json()).composition.document;
+  const graphics = vis.overlays.filter((o: { kind: string; id: string }) => o.kind === "image" && !o.id.startsWith("basket_")) as Array<{ start: number; end: number }>;
+  expect(graphics.length).toBeLessThanOrEqual(2);
+  const vHookEnd = vis.clips[0].start + vis.clips[0].sourceOut - vis.clips[0].sourceIn;
+  for (const g of graphics) expect(g.start).toBeGreaterThanOrEqual(vHookEnd);
 
   // large camera files: the page sends B-roll videos in slices, the worker converts them
   await page.getByTestId("ads-broll-input").setInputFiles({ name: "P1016420.MP4", mimeType: "video/mp4", buffer: buf });

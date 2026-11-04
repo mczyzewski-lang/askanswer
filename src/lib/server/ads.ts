@@ -213,7 +213,9 @@ export async function buildReels(projectId: string, opts: { reelIds?: string[]; 
         // the project's finishing, like after an expert recording
         const { applyProjectDefaults } = await import("./project-defaults");
         await applyProjectDefaults(compositionId).catch(() => {});
-        if (project.autoBlur || project.autoVoice || project.autoZooms || project.autoImageEnhance) await enqueue("auto-polish", { compositionId }, { idempotencyKey: `auto-polish:${compositionId}:${Date.now()}`, maxAttempts: 2 });
+                if (project.autoBlur || project.autoVoice || project.autoZooms || project.autoImageEnhance) await enqueue("auto-polish", { compositionId }, { idempotencyKey: `auto-polish:${compositionId}:${Date.now()}`, maxAttempts: 2 });
+        // AI infographics / illustrations of what is said in the body (like in expert projects)
+        if (project.autoInfographics) await enqueue("auto-visuals", { compositionId }, { idempotencyKey: `auto-visuals:${compositionId}:${Date.now()}`, maxAttempts: 2 });
       }
     }
     const variants = doc?.hooks?.variants ?? [];

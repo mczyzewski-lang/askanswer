@@ -43,6 +43,16 @@ export async function autoVisuals(jobId: string, compositionId: string, force = 
   // image provider only infographics can be made, rendered from the theme template
   let picks = suggestions.filter((s) => (s.kind === "illustration" && canIllustrate) || (s.kind === "infographic" && s.infographic.items.length));
   if (!picks.length && suggestions.length) picks = canIllustrate ? suggestions.slice(0, MAX_AUTO).map((s) => ({ ...s, kind: "illustration" as const })) : suggestions.filter((s) => s.infographic.items.length).slice(0, 1).map((s) => ({ ...s, kind: "infographic" as const }));
+    // an Ads Studio reel: only in the body — the hook sells the reel, the CTA closes it, and the cutaways
+  // from the B-roll basket keep their place; a short reel gets at most two
+  const hook = doc0.clips.find((c) => c.label === "HOOK");
+  if (hook) {
+    const cta = doc0.clips.find((c) => c.label === "CTA");
+    const from = hook.start + (hook.sourceOut - hook.sourceIn) + 0.3;
+    const to = (cta ? cta.start : duration) - 0.3;
+    const cutaways = doc0.overlays.filter((o) => o.id.startsWith("basket_"));
+    picks = picks.filter((s) => s.start >= from && s.end <= to && !cutaways.some((o) => s.start < (o.end ?? duration) && s.end > o.start)).slice(0, 2);
+  }
   picks = picks.slice(0, MAX_AUTO);
   const infoEngine = openaiConfigured() ? "openai" : "template";
 

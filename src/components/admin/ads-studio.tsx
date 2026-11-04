@@ -112,7 +112,8 @@ interface AdsLook {
   ctaText: string | null;
   ctaSeconds: number;
   ctaPlacement: string;
-  autoBlur: boolean;
+    autoBlur: boolean;
+  autoInfographics: boolean;
   blurStrength: number;
   adsBrief: string | null;
   leadMagnets: LeadMagnet[] | null;
@@ -675,6 +676,29 @@ function AdsLookCard({ project, reload, toast }: { project: AdsData["project"]; 
             </span>
             <Switch checked={project.autoBlur} onCheckedChange={(v) => void saveProject({ autoBlur: v })} />
           </label>
+                    <label className="flex items-center justify-between gap-3 pt-2 text-sm" data-testid="ads-auto-visuals">
+            <span>
+              Infografiki i ilustracje AI
+              <span className="block text-xs text-muted">OpenAI dobiera do treści reelsa (nie na hook i nie na CTA) do 2 grafik — jak w projektach. Dla nowo układanych reelsów.</span>
+            </span>
+            <Switch checked={project.autoInfographics} onCheckedChange={(v) => void saveProject({ autoInfographics: v }, v ? "Włączone — nowe reelsy dostaną infografiki" : "Wyłączone")} />
+          </label>
+          {project.autoInfographics ? (
+            <button
+              className="text-xs text-muted underline hover:text-ink"
+              data-testid="ads-visuals-laid"
+              onClick={async () => {
+                try {
+                  const r = await api<{ queued: number }>(`/api/admin/ads/${project.id}/visuals`, { method: "POST" });
+                  toast(r.queued ? `Dodaję infografiki do ${r.queued} ułożonych montaży — pojawią się w Studio za chwilę` : "Wszystkie ułożone montaże mają już infografiki");
+                } catch (e) {
+                  toast((e as Error).message, "err");
+                }
+              }}
+            >
+              Dodaj też do już ułożonych reelsów
+            </button>
+          ) : null}
           {project.autoBlur ? <input type="range" min={5} max={100} step={5} defaultValue={project.blurStrength} onMouseUp={(e) => void saveProject({ blurStrength: Number((e.target as HTMLInputElement).value) })} onTouchEnd={(e) => void saveProject({ blurStrength: Number((e.target as HTMLInputElement).value) })} aria-label="Siła rozmycia" className="w-full" /> : null}
         </div>
       </div>
