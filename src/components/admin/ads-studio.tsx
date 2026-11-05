@@ -526,8 +526,8 @@ export function AdsProject({ id }: { id: string }) {
                               hook {(r.hookIndex ?? 0) + 1}/{groupSize.get(r.compositionId)}
                             </span>
                           ) : null}
-                          <Link href={`/studio/${r.compositionId}${r.hookIndex != null ? `?hook=${r.hookIndex}` : ""}`} className="inline-flex items-center gap-1 rounded-lg border border-line px-2.5 py-1 text-xs font-medium hover:bg-black/[.03]" data-testid="ads-open-studio">
-                            Studio <ArrowUpRight className="h-3 w-3" />
+                          <Link href={`/studio/${r.compositionId}${r.hookIndex != null ? `?hook=${r.hookIndex}` : ""}`} className="inline-flex items-center gap-1.5 rounded-lg bg-ink px-3 py-1.5 text-xs font-medium text-white hover:bg-ink/85" data-testid="ads-open-studio">
+                            <Clapperboard className="h-3.5 w-3.5" /> Otwórz w Studio
                           </Link>
                           <button className="rounded-lg px-2 py-1 text-xs text-muted hover:text-ink" disabled={building} onClick={() => confirm((groupSize.get(r.compositionId!) ?? 1) > 1 ? `Ułożyć od nowa montaż z ${groupSize.get(r.compositionId!)} wersjami hooka (razem z ${r.code})? Zmiany w Studio przepadną.` : `Ułożyć ${r.code} od nowa? Zmiany w Studio w tym reelsie przepadną.`) && void build(true, [r.id])}>
                             od nowa

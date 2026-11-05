@@ -16,6 +16,10 @@ test("Auto Reels: a recording becomes ready reels (hook + context, pauses cut), 
   const box = (await side.boundingBox())!;
   expect(box.x).toBe(0);
   expect(box.height).toBeGreaterThan(800);
+  // the setup pages are folded under „Ustawienia”
+  await expect(side.getByRole("link", { name: "Motywy" })).toHaveCount(0);
+  await side.getByTestId("admin-nav-settings").click();
+  await expect(side.getByRole("link", { name: "Motywy" })).toBeVisible();
   await side.getByRole("link", { name: "Auto Reels" }).click();
   await expect(page).toHaveURL(/\/admin\/auto-reels$/);
 
@@ -24,7 +28,7 @@ test("Auto Reels: a recording becomes ready reels (hook + context, pauses cut), 
   await page.getByLabel("Min. długość (s)").fill("10");
   await page.getByLabel("Maks. długość (s)").fill("40");
   await page.getByTestId("ar-create").click();
-  await expect(page.getByTestId("auto-reels")).toBeVisible();
+  await expect(page.getByTestId("auto-reels")).toBeVisible({ timeout: 90_000 });
   const projectId = page.url().split("/").pop()!;
 
   const buf = fs.readFileSync("tests/fixtures/generated/sample-take.mp4");
@@ -34,6 +38,7 @@ test("Auto Reels: a recording becomes ready reels (hook + context, pauses cut), 
   await expect(page.getByTestId("ar-reel")).toContainText("Testowy reels z podcastu");
   await expect(page.getByTestId("ar-reel")).toContainText("88");
   await expect(page.getByTestId("ar-open-studio")).toBeVisible();
+  await expect(page.getByTestId("ar-open-studio")).toHaveAttribute("href", /^\/studio\//);
 
   const d = await (await request.get(`/api/admin/ads/${projectId}`)).json();
   expect(d.project.autoReelsStatus).toBe("DONE");

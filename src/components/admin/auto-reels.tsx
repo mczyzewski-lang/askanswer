@@ -146,6 +146,7 @@ const fmtLen = (s: number) => (s >= 60 ? `${Math.floor(s / 60)}:${String(Math.ro
 
 export function AutoReelsProject({ id }: { id: string }) {
   const [data, setData] = useState<ArData | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [uploads, setUploads] = useState<Record<string, UploadState>>({});
   const [settings, setSettings] = useState<{ count: number; min: number; max: number } | null>(null);
   const { toast, toastNode } = useToast();
@@ -156,12 +157,12 @@ export function AutoReelsProject({ id }: { id: string }) {
     setSettings((s) => s ?? { count: d.project.autoReelsCount, min: d.project.autoReelsMin, max: d.project.autoReelsMax });
   }, [id]);
   useEffect(() => {
-    void load();
+    load().catch((e: Error) => setLoadError(e.message));
   }, [load]);
   const busy = !!data && (data.footage.some((f) => f.status === "PROCESSING" || f.status === "UPLOADING") || data.project.autoReelsStatus === "RUNNING");
   useEffect(() => {
     if (!busy) return;
-    const t = setInterval(() => void load(), 3000);
+    const t = setInterval(() => void load().catch(() => {}), 3000);
     return () => clearInterval(t);
   }, [busy, load]);
 
@@ -206,7 +207,17 @@ export function AutoReelsProject({ id }: { id: string }) {
     }
   };
 
-  if (!data) return <p className="text-sm text-muted">Wczytuję…</p>;
+  if (!data)
+    return loadError ? (
+      <p className="text-sm text-red-600">
+        Nie udało się wczytać projektu: {loadError}{" "}
+        <button className="underline" onClick={() => (setLoadError(null), load().catch((e: Error) => setLoadError(e.message)))}>
+          Spróbuj ponownie
+        </button>
+      </p>
+    ) : (
+      <p className="text-sm text-muted">Wczytuję…</p>
+    );
   const p = data.project;
   const ready = data.footage.filter((f) => f.status === "READY").length;
   const running = p.autoReelsStatus === "RUNNING";
@@ -225,7 +236,7 @@ export function AutoReelsProject({ id }: { id: string }) {
         </div>
         <div className="flex items-center gap-4">
           <Link href={`/admin/projects/${id}`} className="text-sm text-muted underline hover:text-ink">
-            Wszystkie montaże i eksport →
+            Motyw i ustawienia montażu →
           </Link>
           <Button
             variant="outline"
@@ -394,7 +405,13 @@ export function AutoReelsProject({ id }: { id: string }) {
                 <li key={r.id} className="flex flex-wrap items-start gap-3 py-3" data-testid="ar-reel">
                   <span className="w-10 shrink-0 font-mono text-xs text-muted">{r.code}</span>
                   <div className="min-w-0 flex-1">
-                    <p className="font-medium">{r.title}</p>
+                    {r.compositionId ? (
+                      <Link href={`/studio/${r.compositionId}`} className="font-medium hover:underline">
+                        {r.title}
+                      </Link>
+                    ) : (
+                      <p className="font-medium">{r.title}</p>
+                    )}
                     <p className="mt-0.5 line-clamp-2 text-sm text-muted">„{hook}”</p>
                     {r.autoReason ? <p className="mt-0.5 text-xs text-muted">{r.autoReason}</p> : null}
                   </div>
@@ -402,10 +419,14 @@ export function AutoReelsProject({ id }: { id: string }) {
                     {r.autoScore != null ? <Badge tone={r.autoScore >= 75 ? "green" : r.autoScore >= 55 ? "amber" : "gray"}>{r.autoScore}</Badge> : null}
                     {r.durationSec ? <span className="w-14 text-right text-xs text-muted">{fmtLen(r.durationSec)}</span> : null}
                     {r.compositionId ? (
-                      <Link href={`/studio/${r.compositionId}`} className="inline-flex items-center gap-1 rounded-lg border border-line px-2.5 py-1 text-xs font-medium hover:bg-black/[.03]" data-testid="ar-open-studio">
-                        <Clapperboard className="h-3.5 w-3.5" /> Studio
+                      <Link href={`/studio/${r.compositionId}`} className="inline-flex items-center gap-1.5 rounded-lg bg-ink px-3 py-1.5 text-xs font-medium text-white hover:bg-ink/85" data-testid="ar-open-studio">
+                        <Clapperboard className="h-3.5 w-3.5" /> Otwórz w Studio
                       </Link>
-                    ) : null}
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 text-xs text-muted">
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" /> układanie…
+                      </span>
+                    )}
                   </div>
                 </li>
               );
