@@ -242,7 +242,8 @@ test("project settings show the AI image prompts with the theme colours", async 
   const project = await (await request.post("/api/admin/projects", { data: { name: "Prompty AI", preset: "pravna" } })).json();
   await login(page);
   await page.goto(`/admin/projects/${project.id}`);
-  await page.getByRole("tab", { name: "Ustawienia" }).click();
+  await page.getByTestId("project-settings-link").click();
+  await page.getByTestId("settings-sections").getByRole("link", { name: "Ogólne" }).click();
   await page.getByTestId("ai-prompts").getByRole("button", { name: /Prompty AI do grafik/ }).click();
   const illu = page.getByTestId("ai-prompt-illustration");
   await expect(illu).toContainText("Full-screen vertical 9:16 illustration");

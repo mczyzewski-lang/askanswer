@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import * as Popover from "@radix-ui/react-popover";
 import {
@@ -137,6 +137,7 @@ function ProjectSwitcher({ projects, current }: { projects: NavProject[]; curren
  */
 export function AdminNav({ vertical = false, projects, current: remembered, role }: { vertical?: boolean; projects: NavProject[]; current: NavProject | null; role: string }) {
   const path = usePathname();
+  const search = useSearchParams();
   // the project of this page (the layout is not rendered again on client navigation), else the remembered one
   const m = /^\/admin\/(projects|ads|auto-reels)\/([^/?#]+)/.exec(path);
   const [last, setLast] = useState<NavProject | null>(remembered);
@@ -156,16 +157,23 @@ export function AdminNav({ vertical = false, projects, current: remembered, role
     }
   }, [current]);
 
+  const ads = current?.kind === "Ads Studio" || current?.kind === "Auto Reels";
+  const settingsBase = current ? `/admin/projects/${current.id}/settings` : "";
+  const onSettings = (sec: string) => () => path === settingsBase && (search.get("section") ?? "theme") === sec;
   const projectItems: Item[] = current
     ? [
         { href: current.href, label: "Przegląd", icon: LayoutDashboard, match: (p) => p === current.href },
-        ...(editor && current.themeId ? [{ href: `/admin/themes?theme=${current.themeId}`, label: "Motyw graficzny", icon: Palette, match: () => false }] : []),
-        ...(current.kind === "Ads Studio" || current.kind === "Auto Reels"
-          ? [{ href: `/admin/projects/${current.id}`, label: "Montaże i ustawienia", icon: SlidersHorizontal, match: (p: string) => p === `/admin/projects/${current.id}` }]
-          : editor
-            ? [{ href: `/admin/projects/${current.id}?tab=settings`, label: "Ustawienia projektu", icon: SlidersHorizontal, match: () => false }]
-            : []),
+        ...(ads ? [{ href: `/admin/projects/${current.id}`, label: "Montaże i eksport", icon: Clapperboard, match: (p: string) => p === `/admin/projects/${current.id}` }] : []),
         { href: `/admin/projects/${current.id}/social`, label: "Harmonogram social", icon: CalendarDays, match: (p: string) => p === `/admin/projects/${current.id}/social` },
+      ]
+    : [];
+  // Projekt → Ustawienia: its theme, people (with experts), narrator voices, general
+  const projectSettings: Item[] = current
+    ? [
+        { href: `${settingsBase}?section=theme`, label: "Motyw projektu", icon: Palette, match: onSettings("theme") },
+        { href: `${settingsBase}?section=people`, label: "Osoby i eksperci", icon: Users, match: onSettings("people") },
+        ...(ads ? [] : [{ href: `${settingsBase}?section=voice`, label: "Głosy (lektor)", icon: Mic, match: onSettings("voice") }]),
+        { href: `${settingsBase}?section=general`, label: "Ogólne", icon: SlidersHorizontal, match: onSettings("general") },
       ]
     : [];
   const tools: Item[] = [...(editor ? [{ href: "/admin/edu", label: "EduStudio", icon: GraduationCap, match: starts("/admin/edu") }] : []), { href: "/social/calendar?project=all", label: "Harmonogram social", icon: CalendarDays, match: () => false }, { href: "/social", label: "Social Media", icon: Share2, match: () => false }];
@@ -183,7 +191,7 @@ export function AdminNav({ vertical = false, projects, current: remembered, role
       <div className="space-y-2" data-testid="admin-nav-top">
         <ProjectSwitcher projects={projects} current={current} />
         <nav className="flex items-center gap-0.5 overflow-x-auto text-sm">
-          {[...projectItems, ...lists].map((i) => (
+          {[...projectItems, ...projectSettings, ...lists].map((i) => (
             <NavLink key={i.href + i.label} i={i} path={path} compact />
           ))}
           <span className="mx-1 h-5 w-px shrink-0 bg-line" />
@@ -202,6 +210,12 @@ export function AdminNav({ vertical = false, projects, current: remembered, role
             {projectItems.map((i) => (
               <NavLink key={i.href + i.label} i={i} path={path} />
             ))}
+            <p className="px-3 pb-0.5 pt-2 text-[11px] font-medium text-muted/80">Ustawienia projektu</p>
+            <div className="ml-3 flex flex-col gap-0.5 border-l border-line pl-1.5" data-testid="nav-project-settings">
+              {projectSettings.map((i) => (
+                <NavLink key={i.href} i={i} path={path} />
+              ))}
+            </div>
           </div>
         ) : null}
         <Heading>Projekty</Heading>
@@ -221,7 +235,7 @@ export function AdminNav({ vertical = false, projects, current: remembered, role
           <>
             <Heading>
               <span className="inline-flex items-center gap-1">
-                <Settings2 className="h-3 w-3" /> Ustawienia
+                <Settings2 className="h-3 w-3" /> Ustawienia globalne
               </span>
             </Heading>
             <div className="flex flex-col gap-0.5" data-testid="nav-settings">

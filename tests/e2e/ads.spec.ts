@@ -217,8 +217,7 @@ test("ads campaign settings keep the campaign format and stay off the projects l
   await login(page);
   await page.goto("/admin");
   await expect(page.getByText("Kampania ustawienia")).toHaveCount(0);
-  await page.goto(`/admin/projects/${p.id}`);
-  await page.getByRole("tab", { name: "Ustawienia" }).click();
+  await page.goto(`/admin/projects/${p.id}/settings?section=general`);
   await expect(page.getByText("Kampania Ads Studio")).toBeVisible();
   await page.getByRole("button", { name: /Zapisz/ }).first().click();
   await expect.poll(async () => (await (await request.get(`/api/admin/projects/${p.id}`)).json()).project.format).toBe("ADS");

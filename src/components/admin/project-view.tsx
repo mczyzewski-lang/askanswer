@@ -8,7 +8,6 @@ import type { ProjectData } from "@/lib/server/project-data";
 import { Badge, Progress, useToast } from "@/components/ui";
 import { QuestionsPanel } from "./questions-panel";
 import { InvitationsPanel } from "./invitations-panel";
-import { SettingsPanel } from "./settings-panel";
 import { CombinedPanel } from "./combined-panel";
 import { terms } from "@/lib/project-terms";
 
@@ -18,7 +17,7 @@ export function ProjectView({ data }: { data: ProjectData }) {
   const params = useSearchParams();
   const [tab, setTab] = useState(() => {
     const t = params.get("tab");
-    return t === "experts" || t === "export" || t === "settings" ? t : "questions";
+    return t === "experts" || t === "export" ? t : "questions";
   });
   const total = data.questions.length;
   const recorded = data.questions.filter((q) => q.takes.length > 0).length;
@@ -64,7 +63,6 @@ export function ProjectView({ data }: { data: ProjectData }) {
             ["questions", terms(data.project.format).tab],
             ["experts", "Eksperci i linki"],
             ["export", "Eksport"],
-            ["settings", "Ustawienia"],
           ].map(([v, l]) => (
             <Tabs.Trigger key={v} value={v} className="-mb-px border-b-2 border-transparent px-3 py-2.5 text-sm text-muted transition data-[state=active]:border-ink data-[state=active]:font-medium data-[state=active]:text-ink">
               {l}
@@ -75,6 +73,9 @@ export function ProjectView({ data }: { data: ProjectData }) {
               ) : null}
             </Tabs.Trigger>
           ))}
+          <Link href={`/admin/projects/${data.project.id}/settings`} className="-mb-px border-b-2 border-transparent px-3 py-2.5 text-sm text-muted transition hover:text-ink" data-testid="project-settings-link">
+            Ustawienia
+          </Link>
         </Tabs.List>
         <Tabs.Content value="questions" className="pt-6">
           <QuestionsPanel {...ctx} />
@@ -84,9 +85,6 @@ export function ProjectView({ data }: { data: ProjectData }) {
         </Tabs.Content>
         <Tabs.Content value="export" className="pt-6">
           <CombinedPanel {...ctx} />
-        </Tabs.Content>
-        <Tabs.Content value="settings" className="pt-6">
-          <SettingsPanel {...ctx} />
         </Tabs.Content>
       </Tabs.Root>
       {toastNode}

@@ -593,7 +593,7 @@ export function AdsLookCard({ project, reload, toast }: { project: AdsData["proj
           <p className="font-medium">Wygląd reelsów</p>
           <p className="text-sm text-muted">Motyw, tytuł nad reelsem, napisy i ekran końcowy — dla wszystkich reelsów kampanii, także już ułożonych.</p>
         </div>
-        <Link href={`/admin/themes?theme=${project.themeId}`} className="text-sm text-muted underline hover:text-ink">
+        <Link href={`/admin/projects/${project.id}/settings?section=theme`} className="text-sm text-muted underline hover:text-ink">
           Kolory, czcionki i logo motywu →
         </Link>
       </div>

@@ -20,7 +20,8 @@ interface VoiceList {
   voices: Array<{ id: string; name: string; labels: Record<string, string>; previewUrl: string | null }>;
 }
 
-export function SettingsPanel({ data, refresh, toast }: PanelProps) {
+/** `only`: one section of the project settings — "general" (everything but the narrator), "voice" (the narrator) */
+export function SettingsPanel({ data, refresh, toast, only }: PanelProps & { only?: "general" | "voice" }) {
   const router = useRouter();
   const p = data.project;
   const [form, setForm] = useState({
@@ -59,8 +60,11 @@ export function SettingsPanel({ data, refresh, toast }: PanelProps) {
   const [voiceSource, setVoiceSource] = useState<"fixed" | "collection">(p.voiceCollectionId ? "collection" : "fixed");
   const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) => setForm((f) => ({ ...f, [k]: v }));
 
+  const general = only !== "voice";
+  const voice = only !== "general";
   return (
-    <div className="grid gap-6 lg:grid-cols-2">
+    <div className={cn("grid gap-6", general ? "lg:grid-cols-2" : "max-w-2xl")}>
+      {general ? (
       <Card className="space-y-4 p-5">
         <p className="font-medium">Projekt</p>
         <div className="space-y-1.5">
@@ -236,10 +240,12 @@ export function SettingsPanel({ data, refresh, toast }: PanelProps) {
         ) : null}
         <p className="text-xs text-muted">Ustawienia widoczności dotyczą nowych kompozycji. Istniejące filmy edytujesz w Studio.</p>
       </Card>
+      ) : null}
       <div className="space-y-6">
-        <ProjectExpertsCard data={data} refresh={refresh} toast={toast} />
-        <AiPromptsCard projectId={p.id} />
-        {form.format !== "PROMPTER" ? (
+        {only ? null : <ProjectExpertsCard data={data} refresh={refresh} toast={toast} />}
+        {general ? <AiPromptsCard projectId={p.id} /> : null}
+        {voice && form.format === "PROMPTER" ? <Card className="p-5 text-sm text-muted">Projekt typu prompter nie ma lektora — pytanie czyta ekspert.</Card> : null}
+        {voice && form.format !== "PROMPTER" ? (
         <Card className="space-y-4 p-5">
           <p className="font-medium">Lektor ElevenLabs</p>
           {!voices?.configured ? (
@@ -318,15 +324,17 @@ export function SettingsPanel({ data, refresh, toast }: PanelProps) {
           <p className="text-xs text-muted">Wygenerowane nagrania pytań są zapisywane w pamięci podręcznej — ten sam tekst i głos nie są syntezowane ponownie.</p>
         </Card>
         ) : null}
+        {only ? null : (
         <Card className="space-y-3 p-5">
           <p className="font-medium">Motyw i branding</p>
           <p className="text-sm text-muted">
             Aktualny motyw: <b className="text-ink">{p.themeName ?? "domyślny"}</b>. Zmiany kolorów i czcionek aktualizują wszystkie filmy projektu.
           </p>
-          <Link href={`/admin/themes?theme=${p.themeId ?? ""}`} className="inline-flex text-sm font-medium text-brand">
+          <Link href={`/admin/projects/${p.id}/settings?section=theme`} className="inline-flex text-sm font-medium text-brand">
             Edytuj motyw →
           </Link>
         </Card>
+        )}
         <div className="flex gap-3">
           <Button
             className="flex-1"
@@ -345,7 +353,7 @@ export function SettingsPanel({ data, refresh, toast }: PanelProps) {
           >
             Zapisz ustawienia
           </Button>
-          <Button
+          {only === "voice" ? null : <Button
             variant="outline"
             className="text-red-600"
             onClick={async () => {
@@ -355,7 +363,7 @@ export function SettingsPanel({ data, refresh, toast }: PanelProps) {
             }}
           >
             Usuń projekt
-          </Button>
+          </Button>}
         </div>
       </div>
     </div>
