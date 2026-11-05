@@ -36,6 +36,14 @@ export const GET = route(async (_req: Request, ctx: { params: Promise<{ projectI
     leadMagnets: p.leadMagnets,
     adsFormat: p.adsFormat ?? "[EKSPERT]",
     adsBrollPerReel: p.adsBrollPerReel,
+    autoReels: p.autoReels,
+    autoReelsCount: p.autoReelsCount,
+    autoReelsMin: p.autoReelsMin,
+    autoReelsMax: p.autoReelsMax,
+    autoReelsStatus: p.autoReelsStatus,
+    autoReelsStep: p.autoReelsStep,
+    autoReelsError: p.autoReelsError,
+    autoZooms: p.autoZooms,
   };
   const footage = await prisma.adFootage.findMany({
     where: { projectId },
@@ -43,12 +51,19 @@ export const GET = route(async (_req: Request, ctx: { params: Promise<{ projectI
     select: { id: true, name: true, status: true, step: true, error: true, sizeBytes: true, durationSec: true, createdAt: true, words: true },
   });
   const reels = await prisma.adReel.findMany({ where: { projectId }, orderBy: { order: "asc" } });
-  const comps = await prisma.videoComposition.findMany({ where: { id: { in: reels.map((r) => r.compositionId).filter((x): x is string => !!x) } }, select: { id: true, updatedAt: true } });
+  const comps = await prisma.videoComposition.findMany({ where: { id: { in: reels.map((r) => r.compositionId).filter((x): x is string => !!x) } }, select: { id: true, updatedAt: true, ...(p.autoReels ? { document: true } : {}) } });
   const exists = new Set(comps.map((c) => c.id));
+  // Auto Reels: the length of each reel as laid out (after the pauses were cut)
+  const lengthOf = new Map(
+    comps.map((c) => {
+      const d = (c as { document?: { clips?: Array<{ start: number; sourceIn: number; sourceOut: number }> } }).document;
+      return [c.id, d?.clips?.length ? Math.max(...d.clips.map((x) => x.start + x.sourceOut - x.sourceIn)) : null] as const;
+    }),
+  );
   return json({
     project,
     footage: footage.map(({ words, sizeBytes, ...f }) => ({ ...f, sizeBytes: Number(sizeBytes), words: Array.isArray(words) ? words.length : 0 })),
-    reels: reels.map((r) => ({ id: r.id, code: r.code, groupCode: r.groupCode, title: r.title, parts: r.parts, matches: r.matches, review: r.review, reviewedAt: r.reviewedAt, hookIndex: r.hookIndex, compositionId: r.compositionId && exists.has(r.compositionId) ? r.compositionId : null })),
+    reels: reels.map((r) => ({ id: r.id, code: r.code, groupCode: r.groupCode, title: r.title, parts: r.parts, matches: r.matches, review: r.review, reviewedAt: r.reviewedAt, hookIndex: r.hookIndex, autoScore: r.autoScore, autoReason: r.autoReason, durationSec: r.compositionId ? (lengthOf.get(r.compositionId) ?? null) : null, compositionId: r.compositionId && exists.has(r.compositionId) ? r.compositionId : null })),
   });
 });
 

@@ -361,6 +361,8 @@ export interface EditorDocument {
     narrationSubs?: string | null;
     /** project defaults already applied to this video once (later changes in the Studio win) */
     defaults?: { blur?: boolean; speed?: boolean; subs?: string };
+    /** an Auto Reels reel (cut from a long recording): its length decides how many AI graphics it gets */
+    autoReels?: boolean;
   };
 }
 

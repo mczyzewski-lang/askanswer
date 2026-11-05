@@ -105,7 +105,7 @@ export function matchAll(texts: string[], footage: FootageWords[]): Map<string, 
   return new Map(unique.map((t) => [t, matchPart(t, footage, { stops })]));
 }
 
-type Footage = FootageWords & { assetId: string; name: string; duration: number };
+export type Footage = FootageWords & { assetId: string; name: string; duration: number };
 
 /** The cut for a found part: a little air before the first and after the last word, without the neighbours. */
 function cutRange(m: StoredMatch, f: Footage): [number, number] {
@@ -308,7 +308,7 @@ function addWords(doc: EditorDocument, ms: StoredMatch[], footage: Footage[], wa
   }
 }
 
-function reelDocument(
+export function reelDocument(
   title: string,
   ms: StoredMatch[],
   footage: Footage[],

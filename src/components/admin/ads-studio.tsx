@@ -119,7 +119,7 @@ interface AdsLook {
   leadMagnets: LeadMagnet[] | null;
   adsFormat: string;
 }
-interface AdsData {
+export interface AdsData {
   project: { id: string; name: string } & AdsLook;
   footage: Array<{ id: string; name: string; status: string; step: string | null; error: string | null; sizeBytes: number; durationSec: number | null; words: number }>;
   reels: Array<{ id: string; code: string; groupCode: string | null; title: string | null; parts: Array<{ role: string; text: string }>; matches: Match[] | null; compositionId: string | null; hookIndex: number | null; review: Review | { error: string } | null; reviewedAt: string | null }>;
@@ -552,7 +552,7 @@ export function AdsProject({ id }: { id: string }) {
  * The look of every reel of the campaign: theme (own, or copied from another project), the title at
  * the top, subtitles, background blur and the CTA end screen. Applied to all reels (also laid out ones).
  */
-function AdsLookCard({ project, reload, toast }: { project: AdsData["project"]; reload: () => Promise<void>; toast: (t: string, tone?: "ok" | "err") => void }) {
+export function AdsLookCard({ project, reload, toast }: { project: AdsData["project"]; reload: () => Promise<void>; toast: (t: string, tone?: "ok" | "err") => void }) {
   const [themes, setThemes] = useState<Array<{ id: string; name: string; isPreset: boolean }>>([]);
   const [cta, setCta] = useState({ ctaEnabled: project.ctaEnabled, ctaUrl: project.ctaUrl ?? "", ctaText: project.ctaText ?? "", ctaSeconds: project.ctaSeconds, ctaPlacement: project.ctaPlacement });
   useEffect(() => {
@@ -679,7 +679,7 @@ function AdsLookCard({ project, reload, toast }: { project: AdsData["project"]; 
                     <label className="flex items-center justify-between gap-3 pt-2 text-sm" data-testid="ads-auto-visuals">
             <span>
               Infografiki i ilustracje AI
-              <span className="block text-xs text-muted">OpenAI dobiera do treści reelsa (nie na hook i nie na CTA) do 2 grafik — jak w projektach. Dla nowo układanych reelsów.</span>
+              <span className="block text-xs text-muted">OpenAI dobiera do treści reelsa (nie na hook i nie na CTA) {(project as { autoReels?: boolean }).autoReels ? "1–3 grafiki, zależnie od długości reelsa" : "do 2 grafik"} — jak w projektach. Dla nowo układanych reelsów.</span>
             </span>
             <Switch checked={project.autoInfographics} onCheckedChange={(v) => void saveProject({ autoInfographics: v }, v ? "Włączone — nowe reelsy dostaną infografiki" : "Wyłączone")} />
           </label>

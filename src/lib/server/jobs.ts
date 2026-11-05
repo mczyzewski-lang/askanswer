@@ -6,7 +6,7 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "./db";
 
-export type JobType = "process-take" | "transcribe-take" | "render" | "enhance-audio" | "generate-broll" | "generate-infographic" | "segment-asset" | "auto-visuals" | "auto-polish" | "generate-background" | "generate-avatar" | "ads-footage" | "ads-broll" | "edu-process" | "edu-export" | "ads-build" | "ads-review" | "question-review" | SocialJobType;
+export type JobType = "process-take" | "transcribe-take" | "render" | "enhance-audio" | "generate-broll" | "generate-infographic" | "segment-asset" | "auto-visuals" | "auto-polish" | "generate-background" | "generate-avatar" | "ads-footage" | "ads-broll" | "edu-process" | "edu-export" | "ads-build" | "ads-review" | "question-review" | "autoreels-build" | SocialJobType;
 
 /** Social Media Studio jobs (see src/lib/server/social) */
 export type SocialJobType =
@@ -68,7 +68,7 @@ export async function reapDeadJobs() {
  * Jobs that mostly wait on AI APIs (OpenAI, Higgsfield, Claude): they run in their own lane, so an
  * expert's new recording gets its illustrations right away instead of queueing behind renders.
  */
-export const AI_JOB_TYPES: JobType[] = ["auto-visuals", "generate-infographic", "generate-broll", "generate-background", "generate-avatar", "ads-review", "question-review", "social-generate", "social-insights"];
+export const AI_JOB_TYPES: JobType[] = ["auto-visuals", "generate-infographic", "generate-broll", "generate-background", "generate-avatar", "ads-review", "question-review", "autoreels-build", "social-generate", "social-insights"];
 
 /** network jobs of Social Media Studio (provider API calls): their own lane, never behind renders */
 export const SOCIAL_JOB_TYPES: JobType[] = ["social-schedule", "social-cancel", "social-check", "social-webhook", "social-metrics", "social-comments", "social-reply", "social-import-url", "social-tick"];

@@ -190,6 +190,16 @@ model Project {
   adsBrollCompositionId String?
   /// "Reklamy" tab: an expert project for ads recorded from the prompter, several hooks per reel
   adsRecording       Boolean            @default(false)
+  /// "Auto Reels" tab: a long recording (podcast…) → AI picks the hooks and cuts N ready reels (format ADS)
+  autoReels          Boolean            @default(false)
+  /// Auto Reels: how many reels and how long each (seconds)
+  autoReelsCount     Int                @default(25)
+  autoReelsMin       Int                @default(20)
+  autoReelsMax       Int                @default(120)
+  /// Auto Reels: IDLE | RUNNING | DONE | FAILED, the current step and the last error
+  autoReelsStatus    String             @default("IDLE")
+  autoReelsStep      String?
+  autoReelsError     String?
   /// right after processing: voice "podcast + ElevenLabs" (voice isolation + mastering)
   autoVoice          Boolean            @default(true)
   /// right after processing: dynamic zooms on sentence boundaries
@@ -544,6 +554,9 @@ model AdReel {
   /// scoring of the script by the reel editor guidelines (OpenAI) + the version to swap in
   review        Json?
   reviewedAt    DateTime?
+  /// Auto Reels: the AI's rating of the hook (0–100) and why it was picked
+  autoScore     Int?
+  autoReason    String?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 

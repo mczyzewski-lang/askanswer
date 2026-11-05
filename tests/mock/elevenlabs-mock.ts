@@ -156,6 +156,19 @@ const server = http.createServer(async (req, res) => {
         const user = String(body.messages?.find((m: { role: string }) => m.role === "user")?.content ?? "");
         oaiLog.push({ model: body.model, size: "", prompt: String(body.messages?.[0]?.content ?? "").slice(0, 400) + "\n---\n" + user, n: 1 });
         // EduStudio: the first sentence is a remark for the editor
+        if (String(body.messages?.[0]?.content ?? "").startsWith("AUTO_REELS")) {
+          // a teaser hook (the last sentence) before the whole passage; a weaker pick of the same passage is dropped
+          const ids = [...user.matchAll(/^(\d+) \[/gm)].map((m) => Number(m[1]));
+          const first = ids[0] ?? 0;
+          const last = ids[ids.length - 1] ?? 0;
+          const out = {
+            reels: [
+              { hook_from: last, hook_to: last, from: first, to: last, title: "Testowy reels z podcastu", score: 88, reason: "Mocna teza na start" },
+              { hook_from: first, hook_to: first, from: first, to: last, title: "Słabszy wariant", score: 60, reason: "Powtórka tematu" },
+            ],
+          };
+          return json(200, { id: "chatcmpl-mock", object: "chat.completion", model: body.model, choices: [{ index: 0, message: { role: "assistant", content: JSON.stringify(out) }, finish_reason: "stop" }] });
+        }
         if (String(body.messages?.[0]?.content ?? "").startsWith("EDU_ANALYSIS")) {
           const out = { summary: "Testowe nagranie szkoleniowe.", cuts: [{ from: 0, to: 0, kind: "editor", reason: "Polecenie dla montażysty" }] };
           return json(200, { id: "chatcmpl-mock", object: "chat.completion", model: body.model, choices: [{ index: 0, message: { role: "assistant", content: JSON.stringify(out) }, finish_reason: "stop" }] });

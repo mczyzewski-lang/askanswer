@@ -1,3 +1,4 @@
+import { visualsForLength } from "../auto-reels";
 import { Prisma } from "@prisma/client";
 import { prisma } from "./db";
 import { higgsfieldConfigured, openaiConfigured } from "./env";
@@ -54,7 +55,8 @@ export async function autoVisuals(jobId: string, compositionId: string, force = 
     picks = picks
       .map((s) => ({ ...s, start: Math.max(s.start, from), end: Math.min(s.end, to) }))
       .filter((s) => s.end - s.start >= 2)
-      .slice(0, 2);
+      // an Auto Reels reel: by its length (one for a short reel, up to three for a long one)
+      .slice(0, doc0.meta.autoReels ? visualsForLength(duration) : 2);
   }
   picks = picks.slice(0, MAX_AUTO);
   const infoEngine = openaiConfigured() ? "openai" : "template";

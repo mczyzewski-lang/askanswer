@@ -8,7 +8,7 @@ import { ownTheme } from "@/lib/server/ads";
 export const GET = route(async () => {
   await requireAdmin();
   const projects = await prisma.project.findMany({
-    where: { format: "ADS" },
+    where: { format: "ADS", autoReels: false },
     orderBy: { updatedAt: "desc" },
     select: { id: true, name: true, updatedAt: true, adsBrollCompositionId: true, _count: { select: { adFootage: true, adReels: true, compositions: true } } },
   });

@@ -56,7 +56,14 @@ async function handle(job: { id: string; type: string; payload: unknown }) {
     }
     case "ads-footage": {
       const { processFootage } = await import("../lib/server/ads");
-      return processFootage(p.footageId);
+      await processFootage(p.footageId);
+      // Auto Reels: when the last recording is transcribed, the reels are picked and cut on their own
+      const { autoReelsAfterFootage } = await import("../lib/server/auto-reels");
+      return autoReelsAfterFootage(p.footageId);
+    }
+    case "autoreels-build": {
+      const { generateAutoReels } = await import("../lib/server/auto-reels");
+      return generateAutoReels(p.projectId);
     }
     case "ads-review": {
       const { reviewReels } = await import("../lib/server/ads");
