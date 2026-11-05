@@ -717,7 +717,9 @@ export function switchHook(doc: EditorDocument, index: number): EditorDocument {
   const nextLen = Math.max(...pieces.map((p) => p.offset + (p.sourceOut - p.sourceIn)));
   const d = nextLen - (regionEnd - cur.start);
   const drop = new Set(region.map((c) => c.id));
-  let out = shiftFrom({ ...doc, hooks: { ...h, active: index, variants } }, regionEnd, d, h.clipId);
+    // what follows the hook starts on a frame boundary (1/30 s), so up to a frame before the hook's exact end
+  const others = { ...doc, hooks: { ...h, active: index, variants }, clips: doc.clips.filter((c) => !drop.has(c.id) || c.id === cur.id) };
+  let out = shiftFrom(others, regionEnd - 0.04, d, h.clipId);
   // the finishing set on the edit (background, picture, enhanced voice of that file) carries over
   const finish = (p: Omit<AVClip, "id" | "start">) => ({
     background: cur.background ?? p.background,

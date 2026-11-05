@@ -43,15 +43,18 @@ export async function autoVisuals(jobId: string, compositionId: string, force = 
   // image provider only infographics can be made, rendered from the theme template
   let picks = suggestions.filter((s) => (s.kind === "illustration" && canIllustrate) || (s.kind === "infographic" && s.infographic.items.length));
   if (!picks.length && suggestions.length) picks = canIllustrate ? suggestions.slice(0, MAX_AUTO).map((s) => ({ ...s, kind: "illustration" as const })) : suggestions.filter((s) => s.infographic.items.length).slice(0, 1).map((s) => ({ ...s, kind: "infographic" as const }));
-    // an Ads Studio reel: only in the body — the hook sells the reel, the CTA closes it, and the cutaways
-  // from the B-roll basket keep their place; a short reel gets at most two
+      // an Ads Studio reel: only in the body — the hook sells the reel, the CTA closes it (a moment that
+  // reaches into them is trimmed to the body); a short reel gets at most two. They go before the B-roll
+  // cutaways: a cutaway under a graphic is taken out when it is placed.
   const hook = doc0.clips.find((c) => c.label === "HOOK");
   if (hook) {
     const cta = doc0.clips.find((c) => c.label === "CTA");
     const from = hook.start + (hook.sourceOut - hook.sourceIn) + 0.3;
     const to = (cta ? cta.start : duration) - 0.3;
-    const cutaways = doc0.overlays.filter((o) => o.id.startsWith("basket_"));
-    picks = picks.filter((s) => s.start >= from && s.end <= to && !cutaways.some((o) => s.start < (o.end ?? duration) && s.end > o.start)).slice(0, 2);
+    picks = picks
+      .map((s) => ({ ...s, start: Math.max(s.start, from), end: Math.min(s.end, to) }))
+      .filter((s) => s.end - s.start >= 2)
+      .slice(0, 2);
   }
   picks = picks.slice(0, MAX_AUTO);
   const infoEngine = openaiConfigured() ? "openai" : "template";
@@ -91,7 +94,7 @@ export async function autoVisuals(jobId: string, compositionId: string, force = 
     if (doc.meta.autoVisuals !== before) return { placed: 0, proposed: 0, skipped: "already done" };
     const total = docDuration(doc);
     const items: AiBrollItem[] = [];
-    const overlays = [];
+    const overlays: ReturnType<typeof infographicOverlay>[] = [];
     for (const p of placed) {
       const ov = infographicOverlay(p.s, p.assetId, total);
       overlays.push(ov);
@@ -99,10 +102,12 @@ export async function autoVisuals(jobId: string, compositionId: string, force = 
     }
     // on a re-run only new infographics; the earlier video proposals stay as they are
     for (const s of force && before ? [] : proposals) items.push(toItem(s, model, { status: "suggested", illustration: true, illustrationSource: openaiConfigured() ? "openai" : "higgsfield" }));
+        // B-roll cutaways under a new graphic give way to it
+    const kept = doc.overlays.filter((o) => !(o.id.startsWith("basket_") && overlays.some((g) => o.start < (g.end ?? total) && (o.end ?? total) > g.start)));
     const next: EditorDocument = {
       ...doc,
       // under the question and the other layers; captions are always drawn on top
-      overlays: [...overlays, ...doc.overlays],
+      overlays: [...overlays, ...kept],
       // a new stamp per run: an open Studio sees that something new arrived and merges it
       meta: { ...doc.meta, aiBroll: [...(doc.meta.aiBroll ?? []), ...items], autoVisuals: before ? `r${Date.now().toString(36)}` : "done" } as EditorDocument["meta"],
     };

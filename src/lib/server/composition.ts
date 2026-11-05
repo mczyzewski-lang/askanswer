@@ -27,8 +27,13 @@ export async function loadStudio(id: string) {
   for (const v of doc.meta.bgVariants ?? []) ids.add(v);
   for (const v of doc.callStyle?.avatarVariants ?? []) ids.add(v);
   // Ads Studio hook versions: their recordings, so switching plays at once
+    // (and their enhanced voice — without it the video plays muted: no sound in hook 2)
   for (const v of doc.hooks?.variants ?? []) {
-    if (v.clip) ids.add(v.clip.assetId);
+    for (const c of [v.clip, ...(v.pieces ?? [])]) {
+      if (!c) continue;
+      ids.add(c.assetId);
+      if (c.audioAssetId) ids.add(c.audioAssetId);
+    }
     if (v.narration) ids.add(v.narration.clip.assetId);
   }
   if (doc.theme.logoAssetId) ids.add(doc.theme.logoAssetId);

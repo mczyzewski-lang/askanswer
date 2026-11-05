@@ -63,3 +63,19 @@ describe("Ads hook versions with a hook cut in the Studio", () => {
     expect(shape(switchHook(switchHook(cut, 1), 0))).toEqual([["HOOK", 0, 10, 11], ["HOOK", 1, 12, 14], ["BODY", 3, 20, 30], ["CTA", 13, 40, 43]]);
   });
 });
+
+describe("Ads hook versions on frame-rounded timelines", () => {
+  const d0 = buildInitialDocument({ questionText: "T", theme: DEFAULT_THEME, mode: "ANSWER_ONLY", recording: { assetId: "rec", duration: 60 }, segments: [], pauses: [], visibility: "FULL", questionSeconds: 4 });
+  const c = (id: string, label: string, start: number, a: number, b: number): AVClip => ({ ...d0.clips[0], id, label, start, sourceIn: a, sourceOut: b });
+  const strip = ({ id: _i, start: _s, ...rest }: AVClip) => (void _i, void _s, rest);
+  it("the body moves with a longer hook even when it starts a hair before the hook's exact end", () => {
+    // hook 2.71 s long, the body laid at the frame 2.7 (81/30) — as buildReels rounds it
+    const doc = { ...d0, clips: [c("h", "HOOK", 0, 10, 12.71), c("b", "BODY", 81 / 30, 20, 31.5), c("x", "CTA", 81 / 30 + 11.5, 40, 49.3)], hooks: { clipId: "h", active: 0, variants: [{ id: "v0", code: "A", title: "A", clip: strip(c("h", "HOOK", 0, 10, 12.71)) }, { id: "v1", code: "B", title: "B", clip: strip(c("h", "HOOK", 0, 50, 53.1)) }] } };
+    const b = switchHook(doc, 1);
+    const [hk, body, cta] = b.clips;
+    expect(hk.sourceOut - hk.sourceIn).toBeCloseTo(3.1, 3);
+    // no overlap with the hook, no gap before the CTA
+    expect(body.start).toBeGreaterThanOrEqual(3.1 - 0.02);
+    expect(cta.start).toBeCloseTo(body.start + 11.5, 3);
+  });
+});

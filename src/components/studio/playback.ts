@@ -280,22 +280,25 @@ export class PlaybackEngine {
       const src = clip.sourceIn + (t - clip.start);
       const el = this.elementFor(clip.id, clip.assetId, src, next?.assetId === clip.assetId ? next.id : undefined);
       used.add(el);
-      // enhanced voice: the video element is muted and a synced <audio> plays the replacement track
-      el.muted = clip.muted || !!clip.audioAssetId;
+            // enhanced voice: the video element is muted and a synced <audio> plays the replacement track
+      // (only when that track is loaded — otherwise the video's own sound, never silence)
+      el.muted = clip.muted || (!!clip.audioAssetId && !!this.assets[clip.audioAssetId]);
       el.volume = Math.max(0, Math.min(1, clip.volume));
       if (force || Math.abs(el.currentTime - src) > (this.playing ? DRIFT : 0.02)) {
         if (!el.seeking || force) el.currentTime = src;
       }
       if (this.playing && el.paused) void el.play().catch(() => {});
       if (!this.playing && !el.paused) el.pause();
-      // pre-roll the next clip on the spare element so cuts are seamless
-      if (next && next.assetId === clip.assetId) {
-        const spare = this.elementFor(next.id, next.assetId, next.sourceIn, clip.id);
+            // pre-roll the next clip on the spare element so cuts are seamless — also when it comes from
+      // another file (the CTA, another hook): that file is loaded and parked at its first frame
+      if (next) {
+        const spare = next.assetId === clip.assetId ? this.elementFor(next.id, next.assetId, next.sourceIn, clip.id) : this.elementFor(next.id, next.assetId, next.sourceIn);
         if (spare !== el) {
           used.add(spare);
           if (!spare.paused) spare.pause();
           if (Math.abs(spare.currentTime - next.sourceIn) > 0.05 && !spare.seeking) spare.currentTime = next.sourceIn;
         }
+        this.warmLinkedAudio(next);
       }
     } else if (next) {
       const spare = this.elementFor(next.id, next.assetId, next.sourceIn);
@@ -315,6 +318,19 @@ export class PlaybackEngine {
         this.audios.delete(id);
       }
     }
+  }
+
+    /** The next clip's replacement audio: created and loaded ahead, so its first words are not lost. */
+  private warmLinkedAudio(next: { audioAssetId?: string | null; sourceIn: number }) {
+    if (!next.audioAssetId) return;
+    const key = `av:${next.audioAssetId}`;
+    const asset = this.assets[next.audioAssetId];
+    if (!asset || this.audios.has(key)) return;
+    const a = document.createElement("audio");
+    a.preload = "auto";
+    a.src = asset.url;
+    this.container.appendChild(a);
+    this.audios.set(key, a);
   }
 
   /** Replacement audio (e.g. enhanced voice) for the active AV clip, kept in sync with the video's source time. */

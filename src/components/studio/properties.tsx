@@ -1,5 +1,5 @@
 "use client";
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Trash2 } from "lucide-react";
 import { DEFAULT_BUBBLE, type AudioClip, type BlurOverlay, type AVClip, type CalloutOverlay, type EditorDocument, type FaceBubble, type ImageOverlay, type Overlay, type ShapeOverlay, type TextOverlay, type VideoOverlay, type ZoomEffect } from "@/lib/editor/types";
 import { NarrationSpeed, NarrationVoiceChanger } from "./narration";
@@ -9,6 +9,7 @@ import { clipEnd, deleteClip, docDuration } from "@/lib/editor/timeline";
 import { ZOOM_PRESETS } from "@/lib/editor/zoom";
 import { SUBTITLE_PRESETS } from "@/lib/editor/subtitles";
 import { useStudio } from "./store";
+import { cn } from "@/lib/utils";
 import { ColorField, FontSelect, NumberField, Row, Section, Seg, Select, SButton, Slider, TextField, Toggle } from "./controls";
 import { SAFE_ZONES } from "./preview";
 
@@ -324,9 +325,50 @@ function CalloutProps({ o, doc }: { o: CalloutOverlay; doc: EditorDocument }) {
   );
 }
 
+/** A cutaway from the B-roll basket: swap it for another piece of the basket (same place on the timeline). */
+function BasketSwap({ o }: { o: VideoOverlay }) {
+  const compositionId = useStudio((s) => s.compositionId);
+  const [basket, setBasket] = useState<Array<{ id: string; assetId: string; sourceIn: number; sourceOut: number; name?: string; url: string | null }> | null>(null);
+  useEffect(() => {
+    void fetch(`/api/admin/compositions/${compositionId}/broll-library`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+            .then((d) => {
+        setBasket(d?.basket ?? []);
+        // the pieces' files, so a swapped cutaway plays at once
+        if (d?.assets?.length) useStudio.getState().addAssets(d.assets);
+      })
+      .catch(() => setBasket([]));
+  }, [compositionId]);
+  if (!basket) return <p className="text-[12px] text-studio-muted">Wczytuję koszyk przebitek…</p>;
+  if (!basket.length) return <p className="text-[12px] text-studio-muted">Koszyk przebitek jest pusty — potnij B-roll w Ads Studio („Potnij w Studio”).</p>;
+  const swap = async (f: (typeof basket)[number]) => {
+        const st = useStudio.getState();
+
+    const len = Math.min(f.sourceOut - f.sourceIn, 3.5, Math.max(0.5, (o.end ?? o.start + 3.5) - o.start));
+    st.apply((d) => ({ ...d, overlays: d.overlays.map((x) => (x.id === o.id ? { ...(x as VideoOverlay), assetId: f.assetId, sourceIn: f.sourceIn, end: Math.round((o.start + len) * 30) / 30, name: `B-roll: ${f.name ?? ""}`.slice(0, 80) } : x)) }), `basket-swap:${o.id}`);
+  };
+  return (
+    <div className="space-y-1.5" data-testid="basket-swap">
+      <p className="text-[12px] text-studio-muted">Zamień na inną przebitkę z koszyka ({basket.length}):</p>
+      <div className="grid max-h-56 grid-cols-3 gap-1.5 overflow-y-auto">
+        {basket.map((f) => {
+          const on = f.assetId === o.assetId && Math.abs(f.sourceIn - o.sourceIn) < 0.05;
+          return (
+            <button key={f.id} type="button" onClick={() => void swap(f)} aria-pressed={on} title={`${f.name ?? ""} · ${f.sourceIn.toFixed(1)}–${f.sourceOut.toFixed(1)} s`} className={cn("relative overflow-hidden rounded-md border-2 bg-black", on ? "border-sky-400" : "border-transparent hover:border-studio-muted")} data-testid="basket-swap-item">
+              {f.url ? <video src={`${f.url}#t=${f.sourceIn.toFixed(2)}`} muted playsInline preload="metadata" className="aspect-[9/16] w-full object-cover" /> : <span className="block aspect-[9/16]" />}
+              <span className="absolute inset-x-0 bottom-0 truncate bg-black/60 px-1 text-[9.5px] text-white">{(f.sourceOut - f.sourceIn).toFixed(1)} s</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function VideoProps({ o }: { o: VideoOverlay }) {
   return (
     <>
+      {o.id.startsWith("basket_") ? <BasketSwap o={o} /> : null}
       <Row label="Dopasowanie">
         <Seg value={o.fit} onChange={(v) => patchOverlay<VideoOverlay>(o.id, { fit: v })} options={[["contain", "Zmieść"], ["cover", "Wypełnij"]]} />
       </Row>
