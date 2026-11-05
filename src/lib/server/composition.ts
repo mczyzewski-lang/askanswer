@@ -1,3 +1,4 @@
+import { EL_VIDEO_MODELS } from "./eleven-video";
 import { prisma } from "./db";
 import { assetInfo } from "./assets";
 import { themeFromRow } from "../themes";
@@ -90,6 +91,9 @@ export async function loadStudio(id: string) {
       openaiHint: openaiConfigured() ? null : openaiKeyDiagnostics(),
       models: VIDEO_MODELS.map((m) => ({ id: m.id, label: m.label, description: m.description, durations: m.durations })),
       defaultModel: videoModel(null).id,
+      // text-to-video through ElevenLabs (Veo 3.1) — the same key as the voice
+      elevenVideo: elevenLabsConfigured(),
+      elevenModels: EL_VIDEO_MODELS.map((m) => ({ id: m.id, label: m.label, durations: [...m.durations] })),
     },
   };
 }

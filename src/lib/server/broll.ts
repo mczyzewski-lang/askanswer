@@ -258,7 +258,7 @@ function suggestHeuristic(segments: SpokenSegment[], theme: ThemeTokens, duratio
 }
 
 /** Visual style for this video: the question's category, else the theme default; colours filled from the theme. */
-async function styleFor(comp: { questionId: string | null; project: { theme: { brollStyle: string | null } | null } }, theme: ThemeTokens) {
+export async function styleFor(comp: { questionId: string | null; project: { theme: { brollStyle: string | null } | null } }, theme: ThemeTokens) {
   const q = comp.questionId ? await prisma.question.findUnique({ where: { id: comp.questionId }, select: { category: { select: { brollStyle: true } } } }) : null;
   const raw = q?.category?.brollStyle ?? comp.project.theme?.brollStyle ?? null;
   return raw?.trim() ? fillStyle(raw.trim(), theme) : null;

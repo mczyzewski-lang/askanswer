@@ -30,6 +30,16 @@ async function handle(job: { id: string; type: string; payload: unknown }) {
       return { map: await enhanceComposition(p.compositionId, p.mode as "podcast" | "isolator", (p.strength as "natural" | "podcast" | "radio") ?? "podcast") };
     case "generate-broll":
       return generateBroll(job.id, job.payload as Parameters<typeof generateBroll>[1]);
+    case "generate-video-el": {
+      const { generateElVideo, ElVideoError } = await import("../lib/server/eleven-video");
+      try {
+        return await generateElVideo(job.id, job.payload as Parameters<typeof generateElVideo>[1]);
+      } catch (e) {
+        // plan / key / content problems: no point retrying
+        if (e instanceof ElVideoError && e.permanent) throw new PermanentError(e.message);
+        throw e;
+      }
+    }
     case "auto-visuals": {
       const { autoVisuals } = await import("../lib/server/auto-visuals");
       return autoVisuals(job.id, p.compositionId, Boolean((job.payload as { force?: boolean }).force));

@@ -580,7 +580,7 @@ export function Studio({ id }: { id: string }) {
             </button>
           </div>
         </div>
-        <Timeline engine={engine} />
+        <Timeline engine={engine} ai={payload.ai} />
       </div>
 
       <ExportDialog open={exportOpen} onOpenChange={setExportOpen} compositionId={id} initial={payload.renders} take={payload.take} save={save} />

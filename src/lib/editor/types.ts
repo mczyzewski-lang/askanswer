@@ -385,6 +385,8 @@ export interface AiBrollItem {
   prompt: string;
   duration: number; // seconds requested from the video model
   model: string;
+  /** video: who generates it (absent = Higgsfield) */
+  provider?: "higgsfield" | "elevenlabs";
   status: "suggested" | "generating" | "done" | "failed";
   /** infographic: background illustration prompt and content */
   imagePrompt?: string;

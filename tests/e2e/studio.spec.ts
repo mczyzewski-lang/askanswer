@@ -180,12 +180,12 @@ test("studio: pauses, cuts, subtitles, zoom, theme, persistence and real MP4 exp
   const lane = page.getByTestId("overlay-lane");
   const laneBox = (await lane.boundingBox())!;
   await lane.click({ position: { x: 140, y: laneBox.height - 3 } });
-  const pop = page.getByTestId("new-illustration");
+  const pop = page.getByTestId("new-visual");
   await expect(pop).toBeVisible();
   await expect(pop.getByTestId("new-illustration-context")).toContainText("„");
   const ctxText = ((await pop.getByTestId("new-illustration-context").textContent()) ?? "").replace(/^„|”$/g, "").trim();
   await pop.getByLabel("Pomysł na ilustrację").fill("Labirynt z jednym podświetlonym wyjściem i strzałką");
-  await pop.getByTestId("new-illustration-submit").click();
+  await pop.getByTestId("new-visual-submit").click();
   await expect(pop).toBeHidden();
   const own = page.getByTestId("ai-item").filter({ hasText: "Labirynt z jednym podświetlonym" });
   await expect(own.getByTestId("ai-done")).toBeVisible({ timeout: 90_000 });
@@ -194,6 +194,37 @@ test("studio: pauses, cuts, subtitles, zoom, theme, persistence and real MP4 exp
   const ownCall = (ownStats.openai as Array<{ prompt: string }>).find((c) => c.prompt.includes("Labirynt z jednym podświetlonym wyjściem"))!;
   expect(ownCall.prompt).toContain(`«${ctxText}»`);
   expect(ownCall.prompt).toMatch(/background [a-z -]+ \(#[0-9A-Fa-f]{6}\)/);
+
+  // ElevenLabs video from the timeline: the prompt is written by AI from what is said there, editable
+  await lane.click({ position: { x: 60, y: laneBox.height - 3 } });
+  const vpop = page.getByTestId("new-visual");
+  await vpop.getByTestId("new-visual-video").click();
+  const vprompt = vpop.getByTestId("new-video-prompt");
+  await expect(vprompt).toHaveValue(/Cinematic scene/, { timeout: 30_000 });
+  const vctx = ((await vpop.getByTestId("new-illustration-context").textContent()) ?? "").replace(/^„|”$/g, "").trim();
+  const draftCall = (await (await request.get("http://127.0.0.1:4010/__stats", { headers: { "xi-api-key": "mock-key" } })).json()).drafts.at(-1);
+  expect(draftCall).toContain(vctx.slice(0, 40));
+  await vprompt.fill(`${await vprompt.inputValue()} Warm evening light.`);
+  await vpop.getByLabel("Długość wideo").selectOption("6");
+  await vpop.getByTestId("new-visual-submit").click();
+  await expect(vpop).toBeHidden();
+  const elItem = page.getByTestId("ai-item").filter({ hasText: "Sąd i dokumenty" });
+  await expect(elItem.getByTestId("ai-done")).toBeVisible({ timeout: 120_000 });
+  const elStats = await (await request.get("http://127.0.0.1:4010/__stats", { headers: { "xi-api-key": "mock-key" } })).json();
+  const elCall = elStats.video.at(-1);
+  expect(elCall.model_id).toBe("veo-3.1-fast-generate-001");
+  expect(elCall.duration_secs).toBe(6);
+  expect(elCall.aspect_ratio).toBe("9:16");
+  expect(elCall.prompt).toContain("Warm evening light.");
+  // …and an infographic, its content also drafted from the passage
+  await lane.click({ position: { x: 100, y: laneBox.height - 3 } });
+  const ipop = page.getByTestId("new-visual");
+  await ipop.getByTestId("new-visual-infographic").click();
+  await expect(ipop.getByLabel("Nagłówek infografiki")).toHaveValue("Ile to trwa?", { timeout: 30_000 });
+  await ipop.getByLabel("Opis 1").fill("średnio w pierwszej instancji");
+  await ipop.getByTestId("new-visual-submit").click();
+  await expect(ipop).toBeHidden();
+  await expect(page.getByTestId("ai-item").filter({ hasText: "Ile to trwa?" }).getByTestId("ai-done")).toBeVisible({ timeout: 90_000 });
 
   await waitSaved(page);
   const saved = await (await request.get(`/api/admin/compositions/${compId}`)).json();

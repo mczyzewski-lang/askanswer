@@ -24,6 +24,9 @@ let ttsCalls = 0;
 const oaiLog: Array<{ model: string; size: string; prompt: string; n: number }> = [];
 const ttsLog: Array<{ voiceId: string; model: string; text: string; settings: unknown }> = [];
 let sttCalls = 0;
+const videoLog: Array<Record<string, unknown>> = [];
+const draftLog: string[] = [];
+const videoJobs = new Map<string, { at: number }>();
 
 function readBody(req: http.IncomingMessage): Promise<Buffer> {
   return new Promise((resolve, reject) => {
@@ -159,6 +162,13 @@ const server = http.createServer(async (req, res) => {
         const user = String(body.messages?.find((m: { role: string }) => m.role === "user")?.content ?? "");
         oaiLog.push({ model: body.model, size: "", prompt: String(body.messages?.[0]?.content ?? "").slice(0, 400) + "\n---\n" + user, n: 1 });
         // EduStudio: the first sentence is a remark for the editor
+        if (String(body.messages?.[0]?.content ?? "").startsWith("BROLL_DRAFT")) {
+          draftLog.push(user);
+          const out = /kind: video/.test(user)
+            ? { prompt: "Cinematic scene: a courtroom corridor with stacked documents on a wooden bench, slow dolly-in, soft window light, shallow depth of field, vertical framing.", title: "Sąd i dokumenty" }
+            : { headline: "Ile to trwa?", items: [{ value: "6 mies.", label: "średni czas sprawy" }, { value: "2", label: "rozprawy" }], note: null };
+          return json(200, { id: "chatcmpl-mock", object: "chat.completion", model: body.model, choices: [{ index: 0, message: { role: "assistant", content: JSON.stringify(out) }, finish_reason: "stop" }] });
+        }
         if (String(body.messages?.[0]?.content ?? "").startsWith("AUTO_REELS")) {
           // a teaser hook (the last sentence) before the whole passage; a weaker pick of the same passage is dropped
           const ids = [...user.matchAll(/^(\d+) \[/gm)].map((m) => Number(m[1]));
@@ -217,7 +227,33 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && url.pathname === "/v1/voices") {
       return json(200, { voices: [{ voice_id: "mock-voice-pl", name: "Mock — Polski lektor", labels: { accent: "polish", gender: "female" } }, { voice_id: "mock-voice-2", name: "Mock — Drugi głos", labels: {} }] });
     }
-    if (req.method === "GET" && url.pathname === "/__stats") return json(200, { ttsCalls, sttCalls, tts: ttsLog.slice(-50), openai: oaiLog.slice(-20) });
+    if (req.method === "GET" && url.pathname === "/__stats") return json(200, { ttsCalls, sttCalls, tts: ttsLog.slice(-50), openai: oaiLog.slice(-20), video: videoLog.slice(-10), drafts: draftLog.slice(-10) });
+    // ---- MOCK ElevenLabs Image & Video (flows): POST /v1/flows/video → id; GET → status, content_url ----
+    if (req.method === "POST" && url.pathname === "/v1/flows/video") {
+      const body = JSON.parse((await readBody(req)).toString() || "{}");
+      const allowed = new Set(["model_id", "prompt", "aspect_ratio", "duration_secs", "generate_audio", "negative_prompt", "seed", "resolution"]);
+      const extra = Object.keys(body).filter((k) => !allowed.has(k));
+      if (extra.length) return json(422, { detail: [{ msg: "Extra inputs are not permitted", loc: extra }] });
+      videoLog.push(body);
+      const id = `gen_${Math.random().toString(36).slice(2)}`;
+      videoJobs.set(id, { at: Date.now() });
+      return json(200, { id, status: "pending" });
+    }
+    if (req.method === "GET" && url.pathname.startsWith("/v1/flows/video/")) {
+      const id = url.pathname.split("/").pop()!;
+      const j = videoJobs.get(id);
+      if (!j) return json(404, { detail: "not found" });
+      const done = Date.now() - j.at > 1500;
+      return json(200, { id, status: done ? "completed" : "generating", ...(done ? { content_url: `http://127.0.0.1:${PORT}/el-content/${id}.mp4`, content_mime_type: "video/mp4" } : {}) });
+    }
+    if (req.method === "GET" && url.pathname.startsWith("/el-content/")) {
+      const f = path.join(os.tmpdir(), `mock-el-${process.pid}-${Date.now()}.mp4`);
+      execFileSync(ff, ["-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=size=360x640:rate=25:duration=4", "-c:v", "libx264", "-pix_fmt", "yuv420p", f]);
+      const b = fs.readFileSync(f);
+      fs.rmSync(f, { force: true });
+      res.writeHead(200, { "content-type": "video/mp4", "content-length": b.length });
+      return res.end(b);
+    }
     if (req.method === "POST" && url.pathname.startsWith("/v1/text-to-speech/")) {
       const body = JSON.parse((await readBody(req)).toString());
       ttsCalls++;

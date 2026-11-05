@@ -33,6 +33,7 @@ const testEnv = {
   GOOGLE_TOKEN_URL: "http://127.0.0.1:4010/google/token",
   GOOGLE_JWKS_URL: "http://127.0.0.1:4010/google/certs",
   GOOGLE_ISSUER: "http://127.0.0.1:4010/google",
+  EL_VIDEO_POLL_MS: "800",
   NEXT_TELEMETRY_DISABLED: "1",
 };
 Object.assign(process.env, testEnv);

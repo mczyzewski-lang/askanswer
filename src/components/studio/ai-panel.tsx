@@ -17,6 +17,9 @@ export interface AiConfig {
   openaiHint?: string | null;
   models: Array<{ id: string; label: string; description: string; durations: number[] }>;
   defaultModel: string;
+  /** ElevenLabs text-to-video (Veo 3.1) */
+  elevenVideo?: boolean;
+  elevenModels?: Array<{ id: string; label: string; durations: number[] }>;
 }
 
 export interface AutoVisualsJob {
@@ -159,6 +162,97 @@ export async function createIllustrationAt(t: number, idea: string): Promise<str
   st.apply((d) => ({ ...d, meta: { ...d.meta, aiBroll: [...items(d), item] } }));
   try {
     patchItem(item.id, { jobId: await requestIllustration(st.compositionId, item, doc) });
+    return null;
+  } catch (e) {
+    patchItem(item.id, { status: "failed", error: (e as Error).message });
+    return (e as Error).message;
+  }
+}
+
+/** A starting video prompt / infographic content written by AI from what is said at the moment. */
+export async function draftVisualAt(kind: "video" | "infographic", ctx: { passage: string; focus: string }) {
+  const st = useStudio.getState();
+  return (await readJson(
+    await fetch(`/api/admin/compositions/${st.compositionId}/broll/draft`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ kind, passage: ctx.passage, focus: ctx.focus }) }),
+  )) as { prompt?: string; title?: string; headline?: string; items?: Array<{ value: string; label: string }>; note?: string | null; engine?: string; warning?: string };
+}
+
+/** ElevenLabs (Veo) video scene at a clicked moment: lands full-screen on the timeline when generated. */
+export async function createElVideoAt(t: number, p: { prompt: string; title: string; duration: number; model: string }): Promise<string | null> {
+  const st = useStudio.getState();
+  const doc = st.doc;
+  if (!doc) return "Brak dokumentu";
+  const total = docDuration(doc);
+  const start = Math.max(0, Math.min(t, total - 1));
+  const ctx = spokenContext(doc, start);
+  const item: AiBrollItem = {
+    id: uid("ai"),
+    kind: "video",
+    provider: "elevenlabs",
+    start,
+    end: Math.min(total, start + p.duration),
+    quote: ctx.focus,
+    passage: ctx.passage,
+    title: p.title || p.prompt.split(/\s+/).slice(0, 5).join(" "),
+    reason: "Wideo ElevenLabs z osi czasu",
+    prompt: p.prompt,
+    duration: p.duration,
+    model: p.model,
+    status: "generating",
+  };
+  st.apply((d) => ({ ...d, meta: { ...d.meta, aiBroll: [...items(d), item] } }));
+  try {
+    const data = await readJson(
+      await fetch(`/api/admin/compositions/${st.compositionId}/broll/video-el`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: p.prompt, duration: p.duration, model: p.model, aspect: doc.width >= doc.height ? (doc.width === doc.height ? "1:1" : "16:9") : "9:16", start }),
+      }),
+    );
+    patchItem(item.id, { jobId: String(data.jobId), duration: Number(data.duration ?? p.duration) });
+    return null;
+  } catch (e) {
+    patchItem(item.id, { status: "failed", error: (e as Error).message });
+    return (e as Error).message;
+  }
+}
+
+/** Infographic at a clicked moment, from the (edited) content; drawn by OpenAI when set up, else from the theme template. */
+export async function createInfographicAt(t: number, info: { headline: string; items: Array<{ value: string; label: string }>; note: string | null }, openai: boolean): Promise<string | null> {
+  const st = useStudio.getState();
+  const doc = st.doc;
+  if (!doc) return "Brak dokumentu";
+  const total = docDuration(doc);
+  const start = Math.max(0, Math.min(t, total - 1));
+  const ctx = spokenContext(doc, start);
+  const engine = openai ? ("openai" as const) : ("template" as const);
+  const item: AiBrollItem = {
+    id: uid("ai"),
+    kind: "infographic",
+    start,
+    end: Math.min(total, start + 5),
+    quote: ctx.focus,
+    passage: ctx.passage,
+    title: info.headline,
+    reason: "Infografika z osi czasu",
+    prompt: info.headline,
+    infographic: info,
+    engine,
+    illustration: false,
+    duration: 5,
+    model: "",
+    status: "generating",
+  };
+  st.apply((d) => ({ ...d, meta: { ...d.meta, aiBroll: [...items(d), item] } }));
+  try {
+    const data = await readJson(
+      await fetch(`/api/admin/compositions/${st.compositionId}/broll/infographic`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ infographic: { ...info, items: info.items.filter((r) => r.value.trim() || r.label.trim()) }, imagePrompt: null, illustration: "none", engine, start }),
+      }),
+    );
+    patchItem(item.id, { jobId: String(data.jobId) });
     return null;
   } catch (e) {
     patchItem(item.id, { status: "failed", error: (e as Error).message });
@@ -331,7 +425,7 @@ export function AiPanel({
         return;
       }
       const data = await readJson(
-        await fetch(`/api/admin/compositions/${compositionId}/broll/generate`, {
+        await fetch(`/api/admin/compositions/${compositionId}/broll/${item.provider === "elevenlabs" ? "video-el" : "generate"}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ prompt: item.prompt, duration: item.duration, model: item.model, aspect: doc.width >= doc.height ? (doc.width === doc.height ? "1:1" : "16:9") : "9:16", start: item.start }),
@@ -428,7 +522,7 @@ export function AiPanel({
             .slice()
             .sort((a, b) => a.start - b.start)
             .map((it) => (
-              <BrollCard key={it.id} item={it} ai={ai} canGenerate={ai.higgsfield} onSeek={() => seek(it.start)} onGenerate={() => generate(it)} onRemove={() => remove(it)} />
+              <BrollCard key={it.id} item={it} ai={ai} canGenerate={it.provider === "elevenlabs" ? ai.elevenVideo !== false : ai.higgsfield} onSeek={() => seek(it.start)} onGenerate={() => generate(it)} onRemove={() => remove(it)} />
             ))}
         </Section>
       ) : null}
@@ -603,7 +697,7 @@ function BrollCard({ item, ai, canGenerate, onSeek, onGenerate, onRemove }: { it
       {item.status === "generating" ? (
         <p className="flex items-center gap-1.5 text-[11.5px] text-sky-300">
           <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          {illu ? "Rysuję ilustrację… zwykle do minuty." : info ? ((item.engine ?? (ai.openai ? "openai" : "template")) === "openai" && ai.openai ? "OpenAI rysuje infografikę… zwykle do minuty." : bgSource(item, ai) !== "none" ? "Tworzę infografikę z ilustracją AI… zwykle do minuty." : "Tworzę infografikę…") : "Higgsfield generuje scenę… zwykle 1–4 min. Możesz dalej edytować."}
+          {illu ? "Rysuję ilustrację… zwykle do minuty." : info ? ((item.engine ?? (ai.openai ? "openai" : "template")) === "openai" && ai.openai ? "OpenAI rysuje infografikę… zwykle do minuty." : bgSource(item, ai) !== "none" ? "Tworzę infografikę z ilustracją AI… zwykle do minuty." : "Tworzę infografikę…") : item.provider === "elevenlabs" ? "ElevenLabs generuje wideo… zwykle 1–3 min. Możesz dalej edytować." : "Higgsfield generuje scenę… zwykle 1–4 min. Możesz dalej edytować."}
         </p>
       ) : null}
       {item.status === "done" ? (

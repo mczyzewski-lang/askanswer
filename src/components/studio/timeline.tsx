@@ -1,12 +1,12 @@
 "use client";
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { AudioLines, Captions, Film, Flag, ImagePlus, Loader2, Mic2, Music, Type, X, ZoomIn } from "lucide-react";
+import { AudioLines, BarChart3, Captions, Film, Flag, ImagePlus, Loader2, Mic2, Music, Type, X, ZoomIn } from "lucide-react";
 import type { AVClip, AudioClip, EditorDocument, Overlay, Waveform, ZoomEffect } from "@/lib/editor/types";
 import { clipEnd, docDuration, endCardStart, formatTimecode, moveClip, overlayEnd, retimeSegment, shiftSegment, snapToFrame, sourceRangeToTimeline, trimClip, timedSegments } from "@/lib/editor/timeline";
 import { cn } from "@/lib/utils";
 import { useStudio } from "./store";
 import type { PlaybackEngine } from "./playback";
-import { createIllustrationAt, spokenContext } from "./ai-panel";
+import { createElVideoAt, createIllustrationAt, createInfographicAt, draftVisualAt, spokenContext, type AiConfig } from "./ai-panel";
 
 const LABEL_W = 128;
 const RULER_H = 26;
@@ -39,7 +39,7 @@ function lanes<T extends { start: number; end: number }>(items: T[]): Array<T & 
   });
 }
 
-export function Timeline({ engine }: { engine: PlaybackEngine | null }) {
+export function Timeline({ engine, ai }: { engine: PlaybackEngine | null; ai?: AiConfig }) {
   const doc = useStudio((s) => s.doc)!;
   const time = useStudio((s) => s.time);
   const pps = useStudio((s) => s.pxPerSec);
@@ -235,7 +235,7 @@ export function Timeline({ engine }: { engine: PlaybackEngine | null }) {
 
   return (
     <div className="scroll-thin flex min-h-0 flex-1 select-none overflow-y-auto overflow-x-hidden" data-testid="timeline">
-      {newAt ? <NewIllustration at={newAt} onClose={() => setNewAt(null)} /> : null}
+      {newAt ? <NewVisual at={newAt} ai={ai} onClose={() => setNewAt(null)} /> : null}
       <div className="sticky left-0 shrink-0 border-r border-studio-line bg-studio-2" style={{ width: LABEL_W, height: totalH + 12 }}>
         <div style={{ height: RULER_H }} className="border-b border-studio-line" />
         {rows.map((r) => (
@@ -262,7 +262,7 @@ export function Timeline({ engine }: { engine: PlaybackEngine | null }) {
                 key={r.key}
                 className="group absolute left-0 cursor-copy border-b border-studio-line/60 hover:bg-teal-500/5"
                 style={{ top: rowTop[r.key], height: r.h, width: contentW }}
-                title="Kliknij, aby dodać tu własną ilustrację AI"
+                title="Kliknij, aby dodać tu ilustrację, infografikę albo wideo AI"
                 data-testid="overlay-lane"
                 onClick={(e) => {
                   if (drag.current?.moved) return;
@@ -527,68 +527,198 @@ const WaveClip = memo(function WaveClip({ clip, left, width, top, height, wavefo
 export { formatTimecode };
 export type { EditorDocument };
 
+type VisualKind = "illustration" | "infographic" | "video";
+
 /**
- * Own illustration at a clicked moment: the user writes the idea; the passage said ±8 s around it is
- * shown and sent along, the theme colours / category style / text rules are added on the server.
+ * A visual at a clicked moment of the overlay lane: an illustration (the user's idea), an infographic
+ * or an ElevenLabs video scene. For the infographic and the video, AI writes a first version from what
+ * the expert says ±8 s around the moment (shown above); it can be edited before generating.
  */
-function NewIllustration({ at, onClose }: { at: { t: number; x: number; y: number }; onClose: () => void }) {
+function NewVisual({ at, ai, onClose }: { at: { t: number; x: number; y: number }; ai?: AiConfig; onClose: () => void }) {
   const doc = useStudio((s) => s.doc)!;
   const ctx = useMemo(() => spokenContext(doc, at.t), [doc, at.t]);
+  const [kind, setKind] = useState<VisualKind>("illustration");
   const [idea, setIdea] = useState("");
+  const [prompt, setPrompt] = useState("");
+  const [title, setTitle] = useState("");
+  const [info, setInfo] = useState<{ headline: string; items: Array<{ value: string; label: string }>; note: string | null } | null>(null);
+  const models = ai?.elevenModels?.length ? ai.elevenModels : [{ id: "veo-3.1-fast-generate-001", label: "Veo 3.1 Fast", durations: [4, 6, 8] }];
+  const [model, setModel] = useState(models[0].id);
+  const [duration, setDuration] = useState(models[0].durations.at(-1) ?? 8);
+  const [drafting, setDrafting] = useState<VisualKind | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const W = 340;
+  const drafted = useRef<Set<VisualKind>>(new Set());
+  const W = 380;
   const left = Math.max(8, Math.min(at.x - W / 2, (typeof window !== "undefined" ? window.innerWidth : 1200) - W - 8));
-  const top = Math.max(8, at.y - 330);
+  const top = Math.max(8, at.y - 470);
+  const mm = (t: number) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, "0")}`;
+
+  // the first time the video / infographic tab is opened: AI drafts it from the passage
+  const draft = async (k: "video" | "infographic") => {
+    setDrafting(k);
+    setErr(null);
+    try {
+      const d = await draftVisualAt(k, ctx);
+      if (k === "video") {
+        setPrompt(d.prompt ?? "");
+        setTitle(d.title ?? "");
+      } else setInfo({ headline: d.headline ?? "", items: d.items?.length ? d.items : [{ value: "", label: "" }], note: d.note ?? null });
+      if (d.warning) setErr(d.warning);
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setDrafting(null);
+    }
+  };
+  useEffect(() => {
+    if (kind === "illustration" || drafted.current.has(kind)) return;
+    drafted.current.add(kind);
+    void draft(kind);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kind]);
+
   const submit = async () => {
     setBusy(true);
     setErr(null);
-    const e = await createIllustrationAt(at.t, idea.trim());
+    const e =
+      kind === "illustration"
+        ? await createIllustrationAt(at.t, idea.trim())
+        : kind === "video"
+          ? await createElVideoAt(at.t, { prompt: prompt.trim(), title: title.trim(), duration, model })
+          : await createInfographicAt(at.t, info!, !!ai?.openai);
     setBusy(false);
     if (e) setErr(e);
     else onClose();
   };
-  const mm = (t: number) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, "0")}`;
+  const ready = kind === "illustration" ? idea.trim().length >= 5 : kind === "video" ? prompt.trim().length >= 10 && ai?.elevenVideo !== false : !!info?.headline.trim();
+  const field = "w-full rounded-lg border border-studio-line bg-studio-3 px-2 py-1.5 text-[12px] text-studio-text outline-none focus:border-white/30";
+  const tabs: Array<[VisualKind, string, typeof ImagePlus]> = [
+    ["illustration", "Ilustracja", ImagePlus],
+    ["infographic", "Infografika", BarChart3],
+    ["video", "Wideo", Film],
+  ];
+
   return (
-    <div className="fixed z-50 space-y-2 rounded-xl border border-studio-line bg-studio-2 p-3 text-studio-text shadow-2xl" style={{ left, top, width: W }} data-testid="new-illustration" onPointerDown={(e) => e.stopPropagation()}>
+    <div className="fixed z-50 space-y-2 rounded-xl border border-studio-line bg-studio-2 p-3 text-studio-text shadow-2xl" style={{ left, top, width: W }} data-testid="new-visual" onPointerDown={(e) => e.stopPropagation()}>
       <div className="flex items-center gap-2">
-        <ImagePlus className="h-4 w-4 text-teal-300" />
-        <p className="flex-1 text-[12.5px] font-medium">Własna ilustracja w {mm(at.t)}</p>
+        <p className="flex-1 text-[12.5px] font-medium">Dodaj w {mm(at.t)}</p>
         <button type="button" onClick={onClose} aria-label="Zamknij" className="rounded p-0.5 text-studio-muted hover:text-studio-text">
           <X className="h-3.5 w-3.5" />
         </button>
+      </div>
+      <div className="flex gap-1 rounded-lg bg-studio-3/60 p-0.5" role="tablist">
+        {tabs.map(([k, label, Icon]) => (
+          <button
+            key={k}
+            type="button"
+            role="tab"
+            aria-selected={kind === k}
+            onClick={() => setKind(k)}
+            className={cn("flex flex-1 items-center justify-center gap-1 rounded-md px-2 py-1 text-[12px]", kind === k ? "bg-studio-2 font-medium text-studio-text shadow" : "text-studio-muted hover:text-studio-text")}
+            data-testid={`new-visual-${k}`}
+          >
+            <Icon className="h-3.5 w-3.5" /> {label}
+          </button>
+        ))}
       </div>
       <div className="rounded-lg bg-studio-3/60 px-2 py-1.5">
         <p className="mb-0.5 text-[10.5px] uppercase tracking-wide text-studio-muted">
           Ekspert mówi ({mm(ctx.from)}–{mm(ctx.to)})
         </p>
-        <p className="max-h-28 overflow-y-auto text-[11.5px] leading-snug text-studio-muted" data-testid="new-illustration-context">
+        <p className="max-h-24 overflow-y-auto text-[11.5px] leading-snug text-studio-muted" data-testid="new-illustration-context">
           {ctx.passage ? `„${ctx.passage}”` : "Brak napisów w tym miejscu — wygeneruj transkrypcję, żeby AI znało kontekst."}
         </p>
       </div>
-      <textarea
-        autoFocus
-        value={idea}
-        onChange={(e) => setIdea(e.target.value)}
-        rows={3}
-        placeholder="Twój pomysł, np. labirynt z jednym podświetlonym wyjściem, strzałka „wąskie gardło”"
-        aria-label="Pomysł na ilustrację"
-        className="w-full resize-y rounded-lg border border-studio-line bg-studio-3 px-2 py-1.5 text-[12px] text-studio-text outline-none focus:border-white/30"
-        onKeyDown={(e) => {
-          if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && idea.trim().length >= 5) void submit();
-          if (e.key === "Escape") onClose();
-        }}
-      />
-      <p className="text-[10.5px] leading-snug text-studio-muted">Kolory motywu, styl kategorii i zasady tekstu (krótki nagłówek, strzałki z podpisami) dodam sam. Powstaną warianty do wyboru w zakładce AI.</p>
+
+      {kind === "illustration" ? (
+        <>
+          <textarea
+            autoFocus
+            value={idea}
+            onChange={(e) => setIdea(e.target.value)}
+            rows={3}
+            placeholder="Twój pomysł, np. labirynt z jednym podświetlonym wyjściem, strzałka „wąskie gardło”"
+            aria-label="Pomysł na ilustrację"
+            className={cn(field, "resize-y")}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && ready) void submit();
+              if (e.key === "Escape") onClose();
+            }}
+          />
+          <p className="text-[10.5px] leading-snug text-studio-muted">Kolory motywu, styl kategorii i zasady tekstu dodam sam. Powstaną warianty do wyboru w zakładce AI.</p>
+        </>
+      ) : null}
+
+      {kind === "video" ? (
+        <>
+          {ai?.elevenVideo === false ? <p className="rounded-lg bg-amber-500/10 px-2 py-1.5 text-[11.5px] text-amber-200">ElevenLabs nie jest podłączony — dodaj ELEVENLABS_API_KEY (generowanie wideo wymaga planu Pro).</p> : null}
+          {drafting === "video" ? (
+            <p className="flex items-center gap-1.5 text-[11.5px] text-studio-muted">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" /> AI pisze prompt z tego fragmentu…
+            </p>
+          ) : null}
+          <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} rows={6} aria-label="Prompt wideo" placeholder="Opis sceny dla ElevenLabs (po angielsku działa najlepiej)" className={cn(field, "resize-y")} data-testid="new-video-prompt" />
+          <div className="flex gap-2">
+            <select value={model} onChange={(e) => setModel(e.target.value)} aria-label="Model wideo" className={cn(field, "flex-1")}>
+              {models.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+            <select value={duration} onChange={(e) => setDuration(Number(e.target.value))} aria-label="Długość wideo" className={cn(field, "w-20")}>
+              {(models.find((m) => m.id === model)?.durations ?? [4, 6, 8]).map((d) => (
+                <option key={d} value={d}>
+                  {d} s
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex items-center justify-between">
+            <p className="text-[10.5px] leading-snug text-studio-muted">Wideo bez dźwięku, na pełny ekran pod napisami; głos eksperta zostaje.</p>
+            <button type="button" className="shrink-0 text-[11px] text-studio-muted underline hover:text-studio-text" onClick={() => void draft("video")} disabled={!!drafting}>
+              Napisz od nowa
+            </button>
+          </div>
+        </>
+      ) : null}
+
+      {kind === "infographic" ? (
+        <>
+          {drafting === "infographic" || !info ? (
+            <p className="flex items-center gap-1.5 text-[11.5px] text-studio-muted">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" /> AI układa infografikę z tego fragmentu…
+            </p>
+          ) : (
+            <div className="space-y-1.5" data-testid="new-infographic">
+              <input value={info.headline} onChange={(e) => setInfo({ ...info, headline: e.target.value })} aria-label="Nagłówek infografiki" className={field} placeholder="Nagłówek" />
+              {info.items.map((r, i) => (
+                <div key={i} className="flex gap-1.5">
+                  <input value={r.value} onChange={(e) => setInfo({ ...info, items: info.items.map((x, j) => (j === i ? { ...x, value: e.target.value } : x)) })} aria-label={`Wartość ${i + 1}`} className={cn(field, "w-20")} placeholder="liczba" />
+                  <input value={r.label} onChange={(e) => setInfo({ ...info, items: info.items.map((x, j) => (j === i ? { ...x, label: e.target.value } : x)) })} aria-label={`Opis ${i + 1}`} className={field} placeholder="opis" />
+                </div>
+              ))}
+              {info.items.length < 5 ? (
+                <button type="button" className="text-[11px] text-studio-muted underline hover:text-studio-text" onClick={() => setInfo({ ...info, items: [...info.items, { value: "", label: "" }] })}>
+                  + wiersz
+                </button>
+              ) : null}
+            </div>
+          )}
+        </>
+      ) : null}
+
       {err ? <p className="text-[11.5px] text-red-300">{err}</p> : null}
       <button
         type="button"
-        disabled={busy || idea.trim().length < 5}
+        disabled={busy || !ready || !!drafting}
         onClick={() => void submit()}
         className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-teal-500 px-3 py-1.5 text-[12.5px] font-medium text-black hover:bg-teal-400 disabled:opacity-50"
-        data-testid="new-illustration-submit"
+        data-testid="new-visual-submit"
       >
-        {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ImagePlus className="h-3.5 w-3.5" />} Narysuj ilustrację
+        {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+        {kind === "illustration" ? "Narysuj ilustrację" : kind === "video" ? "Wygeneruj wideo (ElevenLabs)" : "Utwórz infografikę"}
       </button>
     </div>
   );
