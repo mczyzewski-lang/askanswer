@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 import { execSync } from "node:child_process";
 import { adminRequest, login } from "./helpers";
 
-const sql = (q: string) => execSync(`psql "${process.env.DATABASE_URL!.replace("?schema=public", "")}" -At -c ${JSON.stringify(q)}`).toString().trim();
+const sql = (q: string) => execSync(`psql "${process.env.DATABASE_URL!.replace("?schema=public", "")}" -At -c ${JSON.stringify(q.replace(/\s*\n\s*/g, " "))}`).toString().trim();
 
 /** A project shows the schedule of its Social Media Studio project; the global schedule shows them all. */
 test("social schedule under the project and globally", async ({ page, request }) => {

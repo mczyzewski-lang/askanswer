@@ -27,6 +27,7 @@ export async function dashboardData(opts: { adsRecording?: boolean } = {}) {
       id: p.id,
       name: p.name,
       description: p.description,
+      adsRecording: p.adsRecording,
       experts: [...new Set(p.questions.map((q) => q.expert?.name).filter(Boolean))] as string[],
       questionCount: p.questions.length,
       recorded,

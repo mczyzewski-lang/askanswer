@@ -19,7 +19,8 @@ test("ads: hook + prompter with three hooks — read in turn, one edit with inte
   // the "Reklamy" tab lists it (and the regular projects list does not)
   const tab = await (await request.get("/admin/reklamy")).text();
   expect(tab).toContain("Reklamy — długi");
-  expect(await (await request.get("/admin")).text()).not.toContain("Reklamy — długi");
+  const regular = (await (await request.get("/api/admin/projects")).json()) as Array<{ name: string; adsRecording?: boolean }>;
+  expect(regular.filter((p) => !p.adsRecording).map((p) => p.name)).not.toContain("Reklamy — długi");
 
   const { url, token } = await newInvitation(request, project.id, expert.id);
   const session = await (await request.get(`/api/record/${token}`)).json();

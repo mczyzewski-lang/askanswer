@@ -16,10 +16,9 @@ test("Auto Reels: a recording becomes ready reels (hook + context, pauses cut), 
   const box = (await side.boundingBox())!;
   expect(box.x).toBe(0);
   expect(box.height).toBeGreaterThan(800);
-  // the setup pages are folded under „Ustawienia”
-  await expect(side.getByRole("link", { name: "Motywy" })).toHaveCount(0);
-  await side.getByTestId("admin-nav-settings").click();
-  await expect(side.getByRole("link", { name: "Motywy" })).toBeVisible();
+  // the setup pages are at the bottom, under „Ustawienia”, with the global tools above them
+  await expect(side.getByTestId("nav-settings").getByRole("link", { name: "Motywy" })).toBeVisible();
+  await expect(side.getByTestId("nav-tools")).toContainText("EduStudio");
   await side.getByRole("link", { name: "Auto Reels" }).click();
   await expect(page).toHaveURL(/\/admin\/auto-reels$/);
 
