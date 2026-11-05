@@ -16,6 +16,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { socialAi, uploadPostMock } from "./upload-post-mock";
+import { googleMock } from "./google-mock";
 
 const PORT = Number(process.env.MOCK_PORT ?? 4010);
 const ff = process.env.FFMPEG_PATH || "ffmpeg";
@@ -135,6 +136,8 @@ const server = http.createServer(async (req, res) => {
   try {
     // ---- MOCK Upload-Post (Social Media Studio): /uploadpost/api/* + test controls ----
     if (url.pathname.startsWith("/uploadpost/")) return uploadPostMock(req, res, url, json);
+    // ---- MOCK Google sign-in: /google/auth, /google/token, /google/certs, POST /google/next ----
+    if (url.pathname.startsWith("/google/")) return await googleMock(req, res, url, json);
     // ---- MOCK Higgsfield (text-to-video): POST /{model} → request_id; GET /requests/:id/status ----
     if (url.pathname.startsWith("/hf/")) return higgsfield(req, res, url.pathname.slice(3), json);
     // ---- MOCK OpenAI images: POST /oai/v1/images/generations → base64 PNG; GET /oai/v1/models/:id ----

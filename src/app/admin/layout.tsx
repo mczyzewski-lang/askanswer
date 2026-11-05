@@ -1,6 +1,9 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { currentUser } from "@/lib/server/auth";
+import { cookies } from "next/headers";
+import { ROLE_LABELS, currentUser, projectOfPath, projectScope, requestInfo, type StudioRole } from "@/lib/server/auth";
+import { prisma } from "@/lib/server/db";
+import type { NavProject } from "@/components/admin/nav";
 import { elevenLabsConfigured } from "@/lib/server/env";
 import { AdminNav } from "@/components/admin/nav";
 import { ActivityNotifier } from "@/components/admin/activity-notifier";
@@ -22,6 +25,17 @@ function Logo() {
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const user = await currentUser();
   if (!user) redirect("/login");
+  const { path } = await requestInfo();
+  const rows = await prisma.project.findMany({ where: await projectScope(user), orderBy: { updatedAt: "desc" }, select: { id: true, name: true, format: true, adsRecording: true, autoReels: true, themeId: true } });
+  const projects: NavProject[] = rows.map((p) => {
+    const kind: NavProject["kind"] = p.autoReels ? "Auto Reels" : p.format === "ADS" ? "Ads Studio" : p.adsRecording ? "Reklamy" : "Projekt";
+    return { id: p.id, name: p.name, kind, themeId: p.themeId, href: kind === "Auto Reels" ? `/admin/auto-reels/${p.id}` : kind === "Ads Studio" ? `/admin/ads/${p.id}` : `/admin/projects/${p.id}` };
+  });
+  // the project being worked on: the one of this page, else the last one chosen
+  const fromPath = path ? await projectOfPath(path) : null;
+  const remembered = (await cookies()).get("askby_project")?.value;
+  const current = projects.find((p) => p.id === fromPath) ?? (fromPath ? null : projects.find((p) => p.id === remembered)) ?? null;
+  const roleName = ROLE_LABELS[user.role as StudioRole]?.name ?? user.role;
   // local media storage: warn before the volume is full (uploads and processing would fail)
   const disk = env.storageDriver === "local" ? await diskUsage() : null;
   const lowDisk = disk && disk.total > 0 && (disk.free < 400e6 || disk.free / disk.total < 0.15) ? disk : null;
@@ -43,12 +57,10 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     <div className="min-h-screen lg:flex">
       {/* desktop: menu on the left */}
       <aside className="sticky top-0 hidden h-screen w-56 shrink-0 flex-col border-r border-line bg-paper/85 px-3 py-4 backdrop-blur lg:flex" data-testid="admin-sidebar">
-        <div className="px-2 pb-5">
+        <div className="px-2 pb-4">
           <Logo />
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          <AdminNav vertical />
-        </div>
+        <AdminNav vertical projects={projects} current={current} role={user.role} />
         <div className="space-y-2 border-t border-line px-2 pt-3 text-sm">
           {diskBadge}
           {!elevenLabsConfigured() ? (
@@ -56,7 +68,10 @@ export default async function AdminLayout({ children }: { children: React.ReactN
               ElevenLabs: brak konfiguracji
             </span>
           ) : null}
-          <div className="truncate text-xs text-muted" title={user.email}>{user.email}</div>
+          <div className="truncate text-xs text-muted" title={user.email}>
+            {user.email}
+            <span className="block text-[11px]" data-testid="my-role">{roleName}</span>
+          </div>
           <div className="flex items-center justify-between">
             {logout}
             {appCommit() ? (
@@ -78,10 +93,12 @@ export default async function AdminLayout({ children }: { children: React.ReactN
             </div>
           </div>
           <div className="px-2 pb-2 sm:px-4">
-            <AdminNav />
+            <AdminNav projects={projects} current={current} role={user.role} />
           </div>
         </header>
-        <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">{children}</main>
+        <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
+          {children}
+        </main>
       </div>
       <ActivityNotifier />
     </div>

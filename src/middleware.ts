@@ -17,7 +17,11 @@ export async function middleware(req: NextRequest) {
       url.search = "";
       return NextResponse.redirect(url);
     }
-    return NextResponse.next();
+    // the path and method for the role / project checks in the routes (always set here, never from the client)
+    const headers = new Headers(req.headers);
+    headers.set("x-askby-path", pathname);
+    headers.set("x-askby-method", req.method);
+    return NextResponse.next({ request: { headers } });
   }
   if (pathname.startsWith("/api/")) return NextResponse.json({ error: "Wymagane logowanie" }, { status: 401 });
   const url = req.nextUrl.clone();

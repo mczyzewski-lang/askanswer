@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import * as Tabs from "@radix-ui/react-tabs";
 import { ChevronLeft } from "lucide-react";
@@ -15,7 +15,11 @@ import { terms } from "@/lib/project-terms";
 export function ProjectView({ data }: { data: ProjectData }) {
   const router = useRouter();
   const { toast, toastNode } = useToast();
-  const [tab, setTab] = useState("questions");
+  const params = useSearchParams();
+  const [tab, setTab] = useState(() => {
+    const t = params.get("tab");
+    return t === "experts" || t === "export" || t === "settings" ? t : "questions";
+  });
   const total = data.questions.length;
   const recorded = data.questions.filter((q) => q.takes.length > 0).length;
   const processing = data.questions.some((q) => q.takes.some((t) => t.status === "UPLOADED" || t.status === "PROCESSING" || t.status === "UPLOADING"));

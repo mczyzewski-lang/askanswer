@@ -1,14 +1,14 @@
 import { z } from "zod";
 import { prisma } from "@/lib/server/db";
-import { requireAdmin } from "@/lib/server/auth";
+import { grantCreator, projectScope, requireAdmin } from "@/lib/server/auth";
 import { json, route } from "@/lib/server/http";
 import { ownTheme } from "@/lib/server/ads";
 
 /** Auto Reels projects (a long recording → many reels). */
 export const GET = route(async () => {
-  await requireAdmin();
+  const me = await requireAdmin();
   const projects = await prisma.project.findMany({
-    where: { format: "ADS", autoReels: true },
+    where: { ...(await projectScope(me)), format: "ADS", autoReels: true },
     orderBy: { updatedAt: "desc" },
     select: { id: true, name: true, updatedAt: true, autoReelsStatus: true, autoReelsStep: true, autoReelsCount: true, _count: { select: { adFootage: true, adReels: true } } },
   });
@@ -16,7 +16,7 @@ export const GET = route(async () => {
 });
 
 export const POST = route(async (req: Request) => {
-  await requireAdmin();
+  const me = await requireAdmin();
   const b = z
     .object({
       name: z.string().trim().min(2).max(120),
@@ -49,5 +49,6 @@ export const POST = route(async (req: Request) => {
       adsBrollPerReel: 0,
     },
   });
+  await grantCreator(me, project.id);
   return json(project, 201);
 });

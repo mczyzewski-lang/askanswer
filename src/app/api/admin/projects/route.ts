@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/server/db";
-import { requireAdmin } from "@/lib/server/auth";
+import { grantCreator, requireAdmin } from "@/lib/server/auth";
 import { json, route } from "@/lib/server/http";
 import { ProjectInput } from "@/lib/server/schemas";
 import { THEME_PRESETS } from "@/lib/themes";
@@ -9,7 +9,7 @@ import { presetLogoAssetId } from "@/lib/server/preset-logo";
 const DEFAULT_CATEGORIES = ["Znaki towarowe", "Upadłość konsumencka", "Restrukturyzacja", "Rozwody", "Psychoterapia", "Ogólne"];
 
 export const POST = route(async (req: Request) => {
-  await requireAdmin();
+  const me = await requireAdmin();
   const raw = await req.json();
   const { leadMagnets, ...body } = ProjectInput.parse(raw);
   // each project gets its own editable theme, initialised from a preset
@@ -35,6 +35,7 @@ export const POST = route(async (req: Request) => {
   });
   const logoAssetId = await presetLogoAssetId(preset.key, project.id);
   if (logoAssetId) await prisma.theme.update({ where: { id: theme.id }, data: { logoAssetId } });
+  await grantCreator(me, project.id);
   return json(project, 201);
 });
 

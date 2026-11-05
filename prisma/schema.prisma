@@ -13,8 +13,14 @@ datasource db {
 }
 
 enum UserRole {
+  /// everything: all projects, people and their access
   ADMIN
+  /// edits the projects assigned to them, uses the global tools
   EDITOR
+  /// an expert: sees the projects assigned to them (read-only)
+  EXPERT
+  /// read-only access to the projects assigned to them
+  VIEWER
   /// Social Media Studio only (clients, approvers): no access to the video tools
   MEMBER
 }
@@ -87,9 +93,14 @@ model User {
   id                 String                @id @default(cuid())
   email              String                @unique
   name               String
+  /// "" for accounts that sign in with Google only
   passwordHash       String
   role               UserRole              @default(ADMIN)
+  /// Google account id (set at the first Google sign-in)
+  googleSub          String?               @unique
+  lastLoginAt        DateTime?
   createdAt          DateTime              @default(now())
+  projectAccess      ProjectAccess[]
   orgMemberships     OrganizationMember[]
   projectMemberships SocialProjectMember[]
   notifications      Notification[]
@@ -156,6 +167,8 @@ model ProjectExpert {
 
 model Project {
   id                 String             @id @default(cuid())
+  /// people with access (admins see every project)
+  access             ProjectAccess[]
   adFootage          AdFootage[]
   adReels            AdReel[]
   name               String
@@ -1306,4 +1319,16 @@ model EduVideo {
   exportSettings  Json?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+}
+
+/// Who may open a project (ADMIN accounts see all of them)
+model ProjectAccess {
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@id([userId, projectId])
+  @@index([projectId])
 }

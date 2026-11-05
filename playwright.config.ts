@@ -26,6 +26,13 @@ const testEnv = {
   UPLOAD_POST_BASE_URL: "http://127.0.0.1:4010/uploadpost/api",
   UPLOAD_POST_WEBHOOK_SECRET: "whsec_e2e_secret_0123456789",
   SOCIAL_TICK_MS: "4000",
+  // Google sign-in against the mock (tests/mock/google-mock.ts)
+  GOOGLE_CLIENT_ID: "mock-google-client.apps.googleusercontent.com",
+  GOOGLE_CLIENT_SECRET: "mock-google-secret",
+  GOOGLE_AUTH_URL: "http://127.0.0.1:4010/google/auth",
+  GOOGLE_TOKEN_URL: "http://127.0.0.1:4010/google/token",
+  GOOGLE_JWKS_URL: "http://127.0.0.1:4010/google/certs",
+  GOOGLE_ISSUER: "http://127.0.0.1:4010/google",
   NEXT_TELEMETRY_DISABLED: "1",
 };
 Object.assign(process.env, testEnv);
