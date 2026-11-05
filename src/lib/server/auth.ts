@@ -21,8 +21,10 @@ export async function currentUser() {
   return prisma.user.findUnique({ where: { id: s.uid }, select: { id: true, email: true, name: true, role: true } });
 }
 
-/** people of the video studio; MEMBER accounts only see Social Media Studio */
-export const isStaff = (role: string) => role === "ADMIN" || role === "EDITOR" || role === "EXPERT" || role === "VIEWER";
+/** people of the video studio (any role but MEMBER — those only see Social Media Studio) */
+export const isStudioUser = (role: string) => role === "ADMIN" || role === "EDITOR" || role === "EXPERT" || role === "VIEWER";
+/** the team running the platform: in Social Media Studio they see every organization and project */
+export const isStaff = (role: string) => role === "ADMIN" || role === "EDITOR";
 /** may change things (the others only look) */
 export const canEdit = (role: string) => role === "ADMIN" || role === "EDITOR";
 
@@ -101,7 +103,7 @@ export async function projectOfPath(path: string): Promise<string | null> {
 
 /** Why this person may not do this request (null = allowed). */
 export async function denyReason(user: { id: string; role: string }, path: string, method: string): Promise<string | null> {
-  if (!isStaff(user.role)) return "Brak dostępu";
+  if (!isStudioUser(user.role)) return "Brak dostępu";
   if (user.role === "ADMIN") return null;
   if (ADMIN_ONLY.some((r) => r.test(path))) return "Tylko dla administratora";
   if (!canEdit(user.role)) {

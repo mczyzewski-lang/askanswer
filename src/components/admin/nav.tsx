@@ -4,6 +4,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import * as Popover from "@radix-ui/react-popover";
 import {
+  CalendarDays,
   Check,
   ChevronsUpDown,
   Clapperboard,
@@ -164,9 +165,10 @@ export function AdminNav({ vertical = false, projects, current: remembered, role
           : editor
             ? [{ href: `/admin/projects/${current.id}?tab=settings`, label: "Ustawienia projektu", icon: SlidersHorizontal, match: () => false }]
             : []),
+        { href: `/admin/projects/${current.id}/social`, label: "Harmonogram social", icon: CalendarDays, match: (p: string) => p === `/admin/projects/${current.id}/social` },
       ]
     : [];
-  const tools: Item[] = [...(editor ? [{ href: "/admin/edu", label: "EduStudio", icon: GraduationCap, match: starts("/admin/edu") }] : []), { href: "/social", label: "Social Media", icon: Share2, match: () => false }];
+  const tools: Item[] = [...(editor ? [{ href: "/admin/edu", label: "EduStudio", icon: GraduationCap, match: starts("/admin/edu") }] : []), { href: "/social/calendar?project=all", label: "Harmonogram social", icon: CalendarDays, match: () => false }, { href: "/social", label: "Social Media", icon: Share2, match: () => false }];
   const settings: Item[] = editor
     ? [
         { href: "/admin/experts", label: "Eksperci", icon: Users, match: starts("/admin/experts") },

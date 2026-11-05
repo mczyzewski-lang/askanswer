@@ -169,6 +169,8 @@ model Project {
   id                 String             @id @default(cuid())
   /// people with access (admins see every project)
   access             ProjectAccess[]
+  /// the Social Media Studio project its videos are published from (its schedule shows under the project)
+  socialProjectId    String?
   adFootage          AdFootage[]
   adReels            AdReel[]
   name               String

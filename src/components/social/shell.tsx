@@ -87,7 +87,13 @@ export function SocialShell({ children }: { children: React.ReactNode }) {
   }, []);
   React.useEffect(() => {
     const q = search.get("project");
-    if (q) setProjectIdState(q);
+    // ?project=all — every project (e.g. the global schedule opened from the studio menu)
+    if (q === "all") {
+      setProjectIdState("");
+      try {
+        localStorage.setItem("social-project", "");
+      } catch {}
+    } else if (q) setProjectIdState(q);
     else {
       try {
         setProjectIdState(localStorage.getItem("social-project") ?? "");
