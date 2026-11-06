@@ -2,12 +2,15 @@
 import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ImagePlus, Trash2 } from "lucide-react";
-import { Button, Card, EmptyState, Input, Label, NativeSelect, useToast } from "@/components/ui";
+import { Button, Card, EmptyState, Input, Label, NativeSelect, Textarea, useToast } from "@/components/ui";
 import { api, cn } from "@/lib/utils";
 import { FONT_FAMILIES, THEME_PRESETS, themeFromRow } from "@/lib/themes";
 import { QUESTION_POSITIONS, QUESTION_STYLES } from "@/lib/question-styles";
 import { ThemePreview } from "./theme-preview";
 import { AiStyleCard, type StyleCategory } from "./ai-style-card";
+import { INFOGRAPHIC_PROMPT_BASE, INFOGRAPHIC_TOKENS, infographicPrompt, isBasePrompt } from "@/lib/infographic-prompt";
+import { fillStyle } from "@/lib/broll-style";
+import type { ThemeTokens } from "@/lib/editor/types";
 
 interface ThemeRow {
   id: string;
@@ -27,6 +30,7 @@ interface ThemeRow {
   logoAssetId: string | null;
   logoUrl: string | null;
   brollStyle: string | null;
+  infographicPrompt?: string | null;
   projects: Array<{ id: string; name: string; categories: StyleCategory[] }>;
 }
 
@@ -294,6 +298,7 @@ export function ThemesView({ themes, experts, initialId, embedded = false }: { t
             </Button>
           </div>
           <AiStyleCard themeId={current.id} themeStyle={current.brollStyle} tokens={tokens} projects={current.projects} experts={experts} toast={toast} />
+          <InfographicPromptCard key={current.id} themeId={current.id} saved={current.infographicPrompt ?? null} tokens={tokens} style={current.brollStyle} toast={toast} />
         </div>
         <div className="lg:sticky lg:top-20 lg:self-start">
           <p className="mb-2 text-xs font-medium text-muted">Podgląd na żywo</p>
@@ -302,5 +307,77 @@ export function ThemesView({ themes, experts, initialId, embedded = false }: { t
       </div>
       {toastNode}
     </div>
+  );
+}
+
+/**
+ * The prompt OpenAI gets for an infographic (reels and projects alike): this theme's template, with
+ * {{placeholders}} filled for each graphic. "Przywróć bazowy" is shown whenever it differs from the base.
+ */
+function InfographicPromptCard({ themeId, saved, tokens, style, toast }: { themeId: string; saved: string | null; tokens: ThemeTokens; style: string | null; toast: (t: string, tone?: "ok" | "err") => void }) {
+  const router = useRouter();
+  const [text, setText] = useState(saved ?? INFOGRAPHIC_PROMPT_BASE);
+  const [busy, setBusy] = useState(false);
+  const changed = !isBasePrompt(text);
+  const dirty = text.trim() !== (saved ?? INFOGRAPHIC_PROMPT_BASE).trim();
+  const save = async (value: string | null, msg: string) => {
+    setBusy(true);
+    try {
+      await api(`/api/admin/themes/${themeId}`, { method: "PATCH", json: { infographicPrompt: value } });
+      toast(msg);
+      router.refresh();
+    } catch (err) {
+      toast((err as Error).message, "err");
+    } finally {
+      setBusy(false);
+    }
+  };
+  const example = infographicPrompt({ headline: "Ile trwa rozwód?", items: [{ value: "6 mies.", label: "średni czas sprawy" }, { value: "2", label: "rozprawy" }], note: null }, tokens, style?.trim() ? fillStyle(style.trim(), tokens) : null, text);
+  return (
+    <Card className="space-y-3 p-5" data-testid="infographic-prompt">
+      <div>
+        <p className="font-medium">Prompt infografiki (reelsy i filmy)</p>
+        <p className="text-sm text-muted">
+          Tekst, który dostaje OpenAI, gdy rysuje całą infografikę (z tekstem). W <code>{"{{…}}"}</code> wstawiają się wartości danej grafiki i kolory motywu.{" "}
+          {saved ? <span className="font-medium text-amber-700">Ten motyw ma własną wersję.</span> : "Ten motyw używa promptu bazowego."}
+        </p>
+      </div>
+      {changed || saved ? (
+        <div className="flex items-center justify-between gap-2 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          <span>{saved && !dirty ? "Zapisana zmieniona wersja." : "Prompt różni się od bazowego."}</span>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={busy}
+            data-testid="infographic-prompt-reset"
+            onClick={() => {
+              setText(INFOGRAPHIC_PROMPT_BASE);
+              void save(null, "Przywrócono bazowy prompt infografiki");
+            }}
+          >
+            Przywróć bazowy
+          </Button>
+        </div>
+      ) : null}
+      <Textarea value={text} onChange={(e) => setText(e.target.value)} rows={12} className="font-mono text-[12px] leading-relaxed" aria-label="Prompt infografiki" data-testid="infographic-prompt-text" />
+      <div className="flex flex-wrap gap-1.5 text-xs text-muted">
+        {INFOGRAPHIC_TOKENS.map(([k, label]) => (
+          <button key={k} type="button" className="rounded-full border border-line px-2 py-0.5 hover:bg-black/[.03]" title={`Wstaw ${k}`} onClick={() => setText((t) => `${t}${t.endsWith("\n") ? "" : " "}${k}`)}>
+            <code>{k}</code> {label}
+          </button>
+        ))}
+      </div>
+      <div className="flex justify-end">
+        <Button size="sm" disabled={!dirty || busy || !text.trim()} onClick={() => void save(text, "Zapisano prompt infografiki")} data-testid="infographic-prompt-save">
+          Zapisz prompt
+        </Button>
+      </div>
+      <details className="text-xs">
+        <summary className="cursor-pointer text-muted">Podgląd po wstawieniu przykładowych wartości</summary>
+        <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap rounded-lg bg-black/[.04] p-3 font-mono text-[11.5px] leading-relaxed text-ink/85" data-testid="infographic-prompt-example">
+          {example}
+        </pre>
+      </details>
+    </Card>
   );
 }

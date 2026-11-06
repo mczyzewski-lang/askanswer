@@ -16,10 +16,27 @@ test("project settings: theme, people and voices under the project", async ({ pa
 
   await group.getByRole("link", { name: "Motyw projektu" }).click();
   await expect(page.getByTestId("project-settings")).toBeVisible();
-  await expect(page.getByText("Kolor główny")).toBeVisible();
+  await expect(page.getByText("Kolor główny", { exact: true })).toBeVisible();
   // only this project's theme — no list of the other projects' themes, no categories it does not use
   await expect(page.getByTestId("theme-list")).toHaveCount(0);
   await expect(page.getByText(/Kategorie projektu/)).toHaveCount(0);
+  // the infographic prompt of this theme: shown, editable, "Przywróć bazowy" once it differs
+  const ip = page.getByTestId("infographic-prompt");
+  await expect(ip.getByTestId("infographic-prompt-text")).toHaveValue(/Headline: «\{\{headline\}\}»/);
+  await expect(ip.getByTestId("infographic-prompt-reset")).toHaveCount(0);
+  await ip.getByTestId("infographic-prompt-text").fill("Hand-drawn chalkboard infographic. Title «{{headline}}». Rows: {{rows}}. Colours {{primary}}, {{accent}}.");
+  await expect(ip.getByTestId("infographic-prompt-reset")).toBeVisible();
+  await ip.getByTestId("infographic-prompt-save").click();
+  await expect(page.getByText("Zapisano prompt infografiki")).toBeVisible();
+  const prompts = await (await request.get(`/api/admin/projects/${p}/ai-prompts`)).json();
+  expect(prompts.items.find((i: { key: string }) => i.key === "infographic").prompt).toContain("Hand-drawn chalkboard infographic. Title «[nagłówek]»");
+  await page.reload();
+  await expect(ip.getByTestId("infographic-prompt-reset")).toBeVisible();
+  await ip.getByTestId("infographic-prompt-reset").click();
+  await expect(page.getByText("Przywrócono bazowy prompt infografiki")).toBeVisible();
+  await expect(ip.getByTestId("infographic-prompt-text")).toHaveValue(/Headline: «\{\{headline\}\}»/);
+  const back = await (await request.get(`/api/admin/projects/${p}/ai-prompts`)).json();
+  expect(back.items.find((i: { key: string }) => i.key === "infographic").prompt).toContain("Headline: «[nagłówek]»");
 
   await group.getByRole("link", { name: "Osoby i eksperci" }).click();
   const people = page.getByTestId("project-people");

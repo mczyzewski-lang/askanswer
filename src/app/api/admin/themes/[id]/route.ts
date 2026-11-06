@@ -4,6 +4,7 @@ import { requireAdmin } from "@/lib/server/auth";
 import { json, route } from "@/lib/server/http";
 import { THEME_PRESETS, FONT_FAMILIES } from "@/lib/themes";
 import { presetLogoAssetId } from "@/lib/server/preset-logo";
+import { isBasePrompt } from "@/lib/infographic-prompt";
 
 const hex = z.string().regex(/^#[0-9a-fA-F]{6}$/, "Kolor musi mieć format #RRGGBB");
 const fontName = z.enum(FONT_FAMILIES);
@@ -28,6 +29,8 @@ export const PATCH = route(async (req: Request, ctx: { params: Promise<{ id: str
       questionStyle: z.enum(["card", "plain", "outline", "accent", "pill"]).optional(),
       questionPosition: z.enum(["top", "center", "lower"]).optional(),
       brollStyle: z.string().trim().max(4000).nullable().optional().transform((v) => (v === "" ? null : v)),
+      // the infographic prompt template; the base one (or empty) is stored as null = follows the code
+      infographicPrompt: z.string().max(8000).nullable().optional().transform((v) => (v === undefined ? undefined : v === null || isBasePrompt(v) ? null : v.replace(/\r\n/g, "\n").trim())),
       applyPreset: z.string().optional(),
     })
     .parse(raw);

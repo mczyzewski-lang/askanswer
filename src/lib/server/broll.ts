@@ -13,6 +13,8 @@ import { ingestOverlayVideo } from "./uploads";
 import { downloadFile, HiggsfieldError, submitImage, submitVideo, waitForImage, waitForVideo, videoModel } from "./higgsfield";
 import { renderInfographic, type InfographicData } from "./infographic";
 import { colorName, fillStyle } from "../broll-style";
+import { TEXT_SAFE_ZONE, infographicPrompt } from "../infographic-prompt";
+export { TEXT_SAFE_ZONE };
 import { putFile } from "./storage";
 import { randomToken } from "./crypto";
 import { higgsfieldConfigured, openaiConfigured, openaiKeyDiagnostics } from "./env";
@@ -148,8 +150,6 @@ export function sanitize(list: RawSuggestion[], duration: number): BrollSuggesti
  * Captions are laid over the bottom of every video: any text the image model draws must stay out of
  * the lower 30% (and the top, where the title sits) — said plainly and repeated, the model obeys it better.
  */
-export const TEXT_SAFE_ZONE =
-  "TEXT PLACEMENT (strict): every letter, word, number, label and arrow label must be inside the band between 20% and 68% of the image height. The bottom 30% of the image must stay completely free of lettering — not even small labels or numbers — because the video captions are placed there; keep it to artwork only.";
 
 function compose(style: string | null, scene: string) {
   return style ? `${style} ${scene.trim()}` : scene.trim();
@@ -323,24 +323,9 @@ export async function generateBroll(jobId: string, p: { compositionId: string; p
  * background, then crisp text rendered with the theme fonts. An illustration failure does not
  * lose the infographic: it is rendered on the theme background and the warning is returned.
  */
-/** Prompt for a complete infographic drawn by OpenAI (text included), in the theme colours and category style. */
-export function openaiInfographicPrompt(info: InfographicData, theme: ThemeTokens, style: string | null) {
-  const c = (hex: string) => `${colorName(hex)} (${hex})`;
-  const rows = info.items.map((r, i) => `${i + 1}. big value «${r.value}» — label «${r.label}»`).join("\n");
-  return [
-    "Vertical 9:16 infographic for a short expert video on TikTok/Reels.",
-    "Language: Polish. Render every text exactly as written below, with correct Polish letters (ą ć ę ł ń ó ś ź ż); add no other words.",
-    `Headline: «${info.headline}»`,
-    `Rows:\n${rows}`,
-    info.note ? `Small footnote: «${info.note}»` : "",
-    "Layout: keep the top 22% and the bottom 32% of the image calm, without text (the video title and captions are placed there). Put the infographic card with all text in the middle band, large and legible on a phone.",
-    TEXT_SAFE_ZONE,
-    `Brand colours: background ${c(theme.background)}, card ${c(theme.primary)}, highlights ${c(theme.accent)} and ${c(theme.highlight)}, text ${c(theme.text)}.`,
-    "Clean, modern, premium design with simple icons; high contrast; no logos, no watermarks, no people's faces.",
-    style ? `Visual style of the illustration elements (as a still image): ${style}` : "",
-  ]
-    .filter(Boolean)
-    .join("\n");
+/** Prompt for a complete infographic drawn by OpenAI (text included): the theme's template (or the base one), filled in. */
+export function openaiInfographicPrompt(info: InfographicData, theme: ThemeTokens, style: string | null, template?: string | null) {
+  return infographicPrompt(info, theme, style, template);
 }
 
 /**
@@ -436,7 +421,7 @@ export async function generateInfographic(
     if (p.engine === "openai") {
       // whole infographic by OpenAI, fitted (cover) to the video frame
       const raw = path.join(dir, "openai.png");
-      await generateOpenAIImage(openaiInfographicPrompt(p.infographic, theme, await styleFor(comp, theme)), { width: W, height: H, out: raw });
+      await generateOpenAIImage(openaiInfographicPrompt(p.infographic, theme, await styleFor(comp, theme), comp.project.theme?.infographicPrompt), { width: W, height: H, out: raw });
       await coverTo(raw, out, W, H);
       return await storeInfographic(comp.projectId, out, W, H, p.infographic.headline, { engine: "openai" }, "Grafika z OpenAI — sprawdź pisownię tekstu przed eksportem.");
     }

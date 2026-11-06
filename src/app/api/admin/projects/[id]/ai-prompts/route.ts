@@ -36,7 +36,7 @@ export const GET = route(async (_req: Request, ctx: { params: Promise<{ id: stri
       key: "infographic",
       title: "Infografika z liczbami",
       when: "Gdy ekspert podaje konkretne liczby i infografika jest rysowana przez OpenAI.",
-      prompt: openaiInfographicPrompt({ headline: "[nagłówek]", items: [{ value: "[liczba]", label: "[opis]" }, { value: "[liczba]", label: "[opis]" }] }, theme, themeStyle),
+      prompt: openaiInfographicPrompt({ headline: "[nagłówek]", items: [{ value: "[liczba]", label: "[opis]" }, { value: "[liczba]", label: "[opis]" }] }, theme, themeStyle, project.theme?.infographicPrompt),
     },
     {
       key: "background",

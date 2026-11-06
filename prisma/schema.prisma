@@ -121,6 +121,8 @@ model Expert {
 
 model Theme {
   id               String    @id @default(cuid())
+  /// the prompt template of infographics drawn by OpenAI (null = the base one in the code)
+  infographicPrompt String?
   name             String
   presetKey        String?
   isPreset         Boolean   @default(false)
