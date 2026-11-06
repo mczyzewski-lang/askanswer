@@ -385,6 +385,9 @@ export interface AiBrollItem {
   prompt: string;
   duration: number; // seconds requested from the video model
   model: string;
+  /** when the generation was requested (ms) and the job's state, for the progress shown on the timeline */
+  startedAt?: number;
+  jobState?: "queued" | "running";
   /** video: who generates it (absent = Higgsfield) */
   provider?: "higgsfield" | "elevenlabs";
   status: "suggested" | "generating" | "done" | "failed";

@@ -158,6 +158,7 @@ export async function createIllustrationAt(t: number, idea: string): Promise<str
     duration: 5,
     model: "",
     status: "generating",
+    startedAt: Date.now(),
   };
   st.apply((d) => ({ ...d, meta: { ...d.meta, aiBroll: [...items(d), item] } }));
   try {
@@ -199,6 +200,7 @@ export async function createElVideoAt(t: number, p: { prompt: string; title: str
     duration: p.duration,
     model: p.model,
     status: "generating",
+    startedAt: Date.now(),
   };
   st.apply((d) => ({ ...d, meta: { ...d.meta, aiBroll: [...items(d), item] } }));
   try {
@@ -242,6 +244,7 @@ export async function createInfographicAt(t: number, info: { headline: string; i
     duration: 5,
     model: "",
     status: "generating",
+    startedAt: Date.now(),
   };
   st.apply((d) => ({ ...d, meta: { ...d.meta, aiBroll: [...items(d), item] } }));
   try {
@@ -289,6 +292,11 @@ export function useBrollJobs() {
           const job = (await res.json().catch(() => null)) as { status: string; error?: string | null; warning?: string | null; assets?: AssetInfo[]; result?: { variantIds?: string[] } | null } | null;
           if (!job) continue;
           if (job.status === "FAILED") patchItem(itemId, { status: "failed", error: (job.error ?? "Generowanie nie powiodło się").slice(0, 900) });
+          if (job.status === "QUEUED" || job.status === "RUNNING") {
+            const state = job.status === "RUNNING" ? "running" : "queued";
+            const cur = useStudio.getState().doc?.meta.aiBroll?.find((i) => i.id === itemId);
+            if (cur && cur.jobState !== state) patchItem(itemId, { jobState: state });
+          }
           if (job.status === "SUCCEEDED" && job.assets?.[0]) {
             const asset = job.assets[0];
             const variants = job.result?.variantIds && job.result.variantIds.length > 1 ? job.result.variantIds : undefined;
@@ -400,7 +408,7 @@ export function AiPanel({
   };
 
   const generate = async (item: AiBrollItem) => {
-    patchItem(item.id, { status: "generating", error: null, warning: null });
+    patchItem(item.id, { status: "generating", error: null, warning: null, startedAt: Date.now(), jobState: "queued" });
     try {
       if (isIllustration(item)) {
         patchItem(item.id, { jobId: await requestIllustration(compositionId, item, doc) });

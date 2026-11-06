@@ -1,7 +1,7 @@
 "use client";
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { AudioLines, BarChart3, Captions, Film, Flag, ImagePlus, Loader2, Mic2, Music, Type, X, ZoomIn } from "lucide-react";
-import type { AVClip, AudioClip, EditorDocument, Overlay, Waveform, ZoomEffect } from "@/lib/editor/types";
+import type { AiBrollItem, AVClip, AudioClip, EditorDocument, Overlay, Waveform, ZoomEffect } from "@/lib/editor/types";
 import { clipEnd, docDuration, endCardStart, formatTimecode, moveClip, overlayEnd, retimeSegment, shiftSegment, snapToFrame, sourceRangeToTimeline, trimClip, timedSegments } from "@/lib/editor/timeline";
 import { cn } from "@/lib/utils";
 import { useStudio } from "./store";
@@ -52,7 +52,7 @@ export function Timeline({ engine, ai }: { engine: PlaybackEngine | null; ai?: A
   // click on an empty spot of the graphics layer → own illustration at that moment
   const [newAt, setNewAt] = useState<{ t: number; x: number; y: number } | null>(null);
   // AI visuals on their way (illustrations, infographics, videos) and the ones that failed — shown on the lane
-  const drawing = useMemo(() => (doc.meta.aiBroll ?? []).filter((i) => i.status === "generating" && !!i.jobId), [doc.meta.aiBroll]);
+  const drawing = useMemo(() => (doc.meta.aiBroll ?? []).filter((i) => i.status === "generating" && (!!i.jobId || !!i.startedAt)), [doc.meta.aiBroll]);
   const failed = useMemo(() => (doc.meta.aiBroll ?? []).filter((i) => i.status === "failed" && (i.provider === "elevenlabs" || i.reason.includes("z osi czasu"))), [doc.meta.aiBroll]);
 
   const duration = docDuration(doc);
@@ -295,17 +295,7 @@ export function Timeline({ engine, ai }: { engine: PlaybackEngine | null; ai?: A
           ))}
           {/* illustrations being drawn */}
           {drawing.map((i) => (
-            <div
-              key={i.id}
-              className="pointer-events-none absolute z-[2] flex items-center gap-1 overflow-hidden rounded-md border border-dashed border-teal-400/80 bg-teal-500/15 px-1.5 text-[10.5px] text-teal-100"
-              style={{ left: x(i.start), width: Math.max(24, x(i.end - i.start)), top: rowTop.overlays + 5 + overlayLanes * 24, height: 20 }}
-              data-testid="illustration-drawing"
-            >
-              <Loader2 className="h-3 w-3 shrink-0 animate-spin" />{" "}
-              <span className="truncate">
-                {i.kind === "video" || !i.kind ? (i.provider === "elevenlabs" ? "ElevenLabs generuje wideo (1–3 min)" : "Generuję wideo") : i.kind === "infographic" ? "Tworzę infografikę" : "Rysuję"}: {i.title}
-              </span>
-            </div>
+            <GeneratingBlock key={i.id} item={i} style={{ left: x(i.start), width: Math.max(150, x(i.end - i.start)), top: rowTop.overlays + 5 + overlayLanes * 24, height: 20 }} />
           ))}
           {failed.map((i) => (
             <div
@@ -557,6 +547,35 @@ const WaveClip = memo(function WaveClip({ clip, left, width, top, height, wavefo
 
 export { formatTimecode };
 export type { EditorDocument };
+
+/** A visual on its way: what is happening (sent / queued / generating) and for how long, ticking every second. */
+function GeneratingBlock({ item: i, style }: { item: AiBrollItem; style: React.CSSProperties }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+  const secs = i.startedAt ? Math.max(0, Math.round((now - i.startedAt) / 1000)) : null;
+  const clock = secs == null ? "" : ` · ${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`;
+  const video = i.kind === "video" || !i.kind;
+  const who = video ? (i.provider === "elevenlabs" ? "ElevenLabs" : "Higgsfield") : i.kind === "infographic" ? "Infografika" : "Ilustracja";
+  const state = !i.jobId ? "wysyłam…" : i.jobState === "running" ? (video ? "generuje wideo" : "rysuje") : i.jobState === "queued" ? "w kolejce" : video ? "generuje wideo" : "rysuje";
+  const hint = video ? (i.provider === "elevenlabs" ? "zwykle 1–3 min" : "zwykle 1–4 min") : "zwykle do minuty";
+  return (
+    <div
+      className="pointer-events-none absolute z-[2] flex items-center gap-1 overflow-hidden rounded-md border border-dashed border-teal-400/80 bg-teal-500/15 px-1.5 text-[10.5px] text-teal-100"
+      style={style}
+      title={`${who}: ${state}${clock} (${hint}) — „${i.title}”. Wstawi się tutaj samo; możesz dalej montować.`}
+      data-testid="illustration-drawing"
+    >
+      <Loader2 className="h-3 w-3 shrink-0 animate-spin" />
+      <span className="truncate">
+        {who}: {state}
+        {clock} — {i.title}
+      </span>
+    </div>
+  );
+}
 
 type VisualKind = "illustration" | "infographic" | "video";
 

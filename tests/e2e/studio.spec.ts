@@ -208,6 +208,8 @@ test("studio: pauses, cuts, subtitles, zoom, theme, persistence and real MP4 exp
   await vpop.getByLabel("Długość wideo").selectOption("6");
   await vpop.getByTestId("new-visual-submit").click();
   await expect(vpop).toBeHidden();
+  // from the click on, the timeline says what is happening and for how long
+  await expect(page.getByTestId("illustration-drawing").filter({ hasText: "ElevenLabs" })).toContainText(/ElevenLabs: (wysyłam…|w kolejce|generuje wideo)/, { timeout: 5_000 });
   const elItem = page.getByTestId("ai-item").filter({ hasText: "Sąd i dokumenty" });
   await expect(elItem.getByTestId("ai-done")).toBeVisible({ timeout: 120_000 });
   const elStats = await (await request.get("http://127.0.0.1:4010/__stats", { headers: { "xi-api-key": "mock-key" } })).json();

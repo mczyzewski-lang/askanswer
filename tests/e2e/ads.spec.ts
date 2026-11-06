@@ -199,6 +199,10 @@ test("ads studio: script + footage → reels laid out from the transcript", asyn
   const frags2 = (await (await request.get(`/api/admin/ads/${projectId}/broll`)).json()).fragments as Array<{ assetId: string }>;
   const other = frags2.findIndex((f) => f.assetId !== firstAsset);
   expect(other).toBeGreaterThanOrEqual(0);
+  // under the mouse a piece plays, muted
+  const thumb = items.nth(other).getByTestId("basket-thumb");
+  await thumb.hover();
+  await expect.poll(async () => thumb.evaluate((v: HTMLVideoElement) => [!v.paused, v.muted]), { timeout: 10_000 }).toEqual([true, true]);
   await items.nth(other).click();
   await expect(items.nth(other)).toHaveAttribute("aria-pressed", "true");
   await expect

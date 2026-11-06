@@ -326,6 +326,41 @@ function CalloutProps({ o, doc }: { o: CalloutOverlay; doc: EditorDocument }) {
 }
 
 /** A cutaway from the B-roll basket: swap it for another piece of the basket (same place on the timeline). */
+/** A basket piece: its first frame; under the mouse it plays (muted, in a loop) just that piece. */
+function BasketThumb({ url, from, to }: { url: string; from: number; to: number }) {
+  const ref = useRef<HTMLVideoElement>(null);
+  const play = () => {
+    const v = ref.current;
+    if (!v) return;
+    v.currentTime = from;
+    void v.play().catch(() => {});
+  };
+  const stop = () => {
+    const v = ref.current;
+    if (!v) return;
+    v.pause();
+    v.currentTime = from;
+  };
+  return (
+    <video
+      ref={ref}
+      src={`${url}#t=${from.toFixed(2)}`}
+      muted
+      playsInline
+      preload="metadata"
+      className="aspect-[9/16] w-full object-cover"
+      onMouseEnter={play}
+      onMouseLeave={stop}
+      onTimeUpdate={(e) => {
+        const v = e.currentTarget;
+        // only this piece, over and over
+        if (!v.paused && (v.currentTime >= to - 0.05 || v.currentTime < from - 0.3)) v.currentTime = from;
+      }}
+      data-testid="basket-thumb"
+    />
+  );
+}
+
 function BasketSwap({ o }: { o: VideoOverlay }) {
   const compositionId = useStudio((s) => s.compositionId);
   const [basket, setBasket] = useState<Array<{ id: string; assetId: string; sourceIn: number; sourceOut: number; name?: string; url: string | null }> | null>(null);
@@ -355,7 +390,7 @@ function BasketSwap({ o }: { o: VideoOverlay }) {
           const on = f.assetId === o.assetId && Math.abs(f.sourceIn - o.sourceIn) < 0.05;
           return (
             <button key={f.id} type="button" onClick={() => void swap(f)} aria-pressed={on} title={`${f.name ?? ""} · ${f.sourceIn.toFixed(1)}–${f.sourceOut.toFixed(1)} s`} className={cn("relative overflow-hidden rounded-md border-2 bg-black", on ? "border-sky-400" : "border-transparent hover:border-studio-muted")} data-testid="basket-swap-item">
-              {f.url ? <video src={`${f.url}#t=${f.sourceIn.toFixed(2)}`} muted playsInline preload="metadata" className="aspect-[9/16] w-full object-cover" /> : <span className="block aspect-[9/16]" />}
+              {f.url ? <BasketThumb url={f.url} from={f.sourceIn} to={f.sourceOut} /> : <span className="block aspect-[9/16]" />}
               <span className="absolute inset-x-0 bottom-0 truncate bg-black/60 px-1 text-[9.5px] text-white">{(f.sourceOut - f.sourceIn).toFixed(1)} s</span>
             </button>
           );
