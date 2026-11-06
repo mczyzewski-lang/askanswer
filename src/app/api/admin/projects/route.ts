@@ -6,7 +6,8 @@ import { THEME_PRESETS } from "@/lib/themes";
 import { dashboardData } from "@/lib/server/project-data";
 import { presetLogoAssetId } from "@/lib/server/preset-logo";
 
-const DEFAULT_CATEGORIES = ["Znaki towarowe", "Upadłość konsumencka", "Restrukturyzacja", "Rozwody", "Psychoterapia", "Ogólne"];
+// one neutral category to start; the project's own ones come from the CSV import or "Kategorie"
+const DEFAULT_CATEGORIES = ["Ogólne"];
 
 export const POST = route(async (req: Request) => {
   const me = await requireAdmin();

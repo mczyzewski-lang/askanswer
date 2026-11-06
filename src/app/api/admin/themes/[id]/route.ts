@@ -58,3 +58,14 @@ export const PATCH = route(async (req: Request, ctx: { params: Promise<{ id: str
   }
   return json(await prisma.theme.update({ where: { id }, data }));
 });
+
+/** Delete a theme no project uses (leftovers of deleted projects). */
+export const DELETE = route(async (_req: Request, ctx: { params: Promise<{ id: string }> }) => {
+  await requireAdmin();
+  const { id } = await ctx.params;
+  const t = await prisma.theme.findUniqueOrThrow({ where: { id }, select: { isPreset: true, _count: { select: { projects: true } } } });
+  if (t.isPreset) return json({ error: "Presetów nie można usunąć" }, 400);
+  if (t._count.projects) return json({ error: "Ten motyw jest używany przez projekt" }, 409);
+  await prisma.theme.delete({ where: { id } });
+  return json({ ok: true });
+});

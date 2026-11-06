@@ -66,7 +66,7 @@ export function ProjectSettings({
           );
         })}
       </nav>
-      {section === "theme" ? theme ? <ThemesView themes={[theme]} experts={experts} initialId={theme.id} /> : <p className="text-sm text-muted">Projekt nie ma własnego motywu.</p> : null}
+      {section === "theme" ? theme ? <ThemesView themes={[theme]} experts={experts} initialId={theme.id} embedded /> : <p className="text-sm text-muted">Projekt nie ma własnego motywu.</p> : null}
       {section === "people" ? (
         <div className="grid gap-6 lg:grid-cols-2">
           <ProjectPeople projectId={projectId} toast={toast} />

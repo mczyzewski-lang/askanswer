@@ -5,9 +5,12 @@ test("Test 1 — admin creates a category and a question that persist after refr
   await login(page);
   await page.getByText("Pravna — Znaki Towarowe").click();
   await expect(page.getByRole("tab", { name: "Pytania i nagrania" })).toBeVisible();
+  // the toolbar: add, imports in one menu, filters; categories are added in their dialog
+  await page.getByRole("button", { name: "Kategorie i tematy" }).click();
   await page.getByLabel("Nowa kategoria").fill("Prawo pracy");
-  await page.getByRole("button", { name: "Dodaj", exact: true }).click();
+  await page.getByRole("button", { name: "Dodaj kategorię" }).click();
   await expect(page.getByText("Dodano kategorię")).toBeVisible();
+  await page.keyboard.press("Escape");
 
   await page.getByRole("button", { name: "Dodaj pytanie" }).click();
   await page.getByLabel("Treść pytania").fill("Czy pracodawca może zakazać konkurencji po rozwiązaniu umowy?");
@@ -29,7 +32,8 @@ test("Test 1 — admin creates a category and a question that persist after refr
 test("bulk paste adds several questions", async ({ page }) => {
   await login(page);
   await page.getByText("Pravna — Znaki Towarowe").click();
-  await page.getByRole("button", { name: "Wklej wiele" }).click();
+  await page.getByTestId("import-menu").click();
+  await page.getByRole("menuitem", { name: "Wklej wiele" }).click();
   await page.getByRole("textbox", { name: "Pytania" }).fill("1. Czym jest znak słowno-graficzny?\n2. Czy logo musi być w kolorze?");
   await page.getByRole("button", { name: /Dodaj 2/ }).click();
   await expect(page.getByText("Dodano 2 pytania")).toBeVisible();

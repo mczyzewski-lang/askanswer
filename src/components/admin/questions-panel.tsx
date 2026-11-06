@@ -22,6 +22,7 @@ import {
   Plus,
   RefreshCw,
   RotateCcw,
+  Settings2,
   Star,
   Trash2,
   Volume2,
@@ -82,7 +83,7 @@ const STATUS_ORDER = ["NEEDS_FIX", "TO_ACCEPT", "RECORDED", "IN_PROGRESS", "APPR
 
 type SortKey = "manual" | "status" | "newest" | "takes" | "category" | "alpha";
 const SORTS: Array<[SortKey, string]> = [
-  ["manual", "Kolejność (przeciąganie)"],
+  ["manual", "Własna kolejność"],
   ["status", "Status"],
   ["newest", "Najnowsze nagrania"],
   ["takes", "Najwięcej nagrań"],
@@ -104,7 +105,6 @@ export function QuestionsPanel({ data, refresh, toast }: PanelProps) {
   const [editing, setEditing] = useState<Q | "new" | null>(null);
   const [bulk, setBulk] = useState(false);
   const [preview, setPreview] = useState<Q | null>(null);
-  const [newCat, setNewCat] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
   const [reviewing, setReviewing] = useState(false);
   const [openReview, setOpenReview] = useState<string | null>(null);
@@ -257,19 +257,32 @@ export function QuestionsPanel({ data, refresh, toast }: PanelProps) {
 
   return (
     <DropZone accept=".csv,text/csv" multiple={false} label="Upuść plik CSV — zaimportuję pozycje" onFiles={(fs) => importCsv(fs[0])} onRejected={(n) => toast(`To nie jest plik CSV: ${n.join(", ")}`, "err")} data-testid="questions-drop">
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2" data-testid="questions-toolbar">
         <Button onClick={() => setEditing("new")}>
           <Plus /> {T.add}
         </Button>
-        <Button variant="outline" onClick={() => setBulk(true)}>
-          <ClipboardPaste /> Wklej wiele
-        </Button>
-        <Button variant="outline" onClick={() => fileRef.current?.click()}>
-          <FileUp /> Import CSV
-        </Button>
-        <Button variant="ghost" onClick={downloadTemplate} title={T.hybrid ? "Kolumny: Typ (pytania/prompter/pytaniazprompterem/hookzprompterem);Kategoria;Podkategoria;Tytuł wideo;Pytanie (lektor) lub hook (ekspert);Treść" : T.prompter ? "Kolumny: Kategoria;Podkategoria;Hook;Treść" : "Kolumny: Kategoria;Podkategoria;Pytanie;Instrukcje;Czas"}>
-          <Download /> Wzór CSV
-        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" data-testid="import-menu">
+              <FileUp /> Import <ChevronDown className="h-3.5 w-3.5 opacity-60" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start">
+            <DropdownMenuItem onSelect={() => setBulk(true)}>
+              <ClipboardPaste className="h-4 w-4" /> Wklej wiele
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => fileRef.current?.click()}>
+              <FileUp className="h-4 w-4" /> Import z pliku CSV
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onSelect={downloadTemplate}
+              title={T.hybrid ? "Kolumny: Typ (pytania/prompter/pytaniazprompterem/hookzprompterem);Kategoria;Podkategoria;Tytuł wideo;Pytanie (lektor) lub hook (ekspert);Treść" : T.prompter ? "Kolumny: Kategoria;Podkategoria;Hook;Treść" : "Kolumny: Kategoria;Podkategoria;Pytanie;Instrukcje;Czas"}
+            >
+              <Download className="h-4 w-4" /> Pobierz wzór CSV
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
         <input
           ref={fileRef}
           type="file"
@@ -282,50 +295,32 @@ export function QuestionsPanel({ data, refresh, toast }: PanelProps) {
           }}
         />
         <div className="ml-auto flex flex-wrap items-center gap-2">
-          <NativeSelect className="h-9 w-48" value={sort} onChange={(e) => setSort(e.target.value as SortKey)} aria-label="Sortowanie">
+          <NativeSelect className="h-9 w-44" value={sort} onChange={(e) => setSort(e.target.value as SortKey)} aria-label="Sortowanie">
             {SORTS.map(([k, label]) => (
               <option key={k} value={k}>
-                Sortuj: {label}
+                {label}
               </option>
             ))}
           </NativeSelect>
-          <NativeSelect className="h-9 w-48" value={filter} onChange={(e) => setFilter(e.target.value)} aria-label="Filtr kategorii">
-            <option value="all">Wszystkie kategorie</option>
-            {data.categories.map((c) => [
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>,
-              ...c.subcategories.map((sc) => (
-                <option key={sc.id} value={`sub:${sc.id}`}>
-                  {"\u00a0\u00a0\u00a0"}› {sc.name}
-                </option>
-              )),
-            ])}
-            <option value="none">Bez kategorii</option>
-          </NativeSelect>
-          <Button size="sm" variant="outline" onClick={() => setCatsOpen(true)}>
-            Kategorie i tematy
-          </Button>
-          <form
-            className="flex items-center gap-1"
-            onSubmit={async (e) => {
-              e.preventDefault();
-              if (!newCat.trim()) return;
-              try {
-                await api(`/api/admin/projects/${data.project.id}/categories`, { method: "POST", json: { name: newCat.trim() } });
-                setNewCat("");
-                toast("Dodano kategorię");
-                refresh();
-              } catch (err) {
-                toast((err as Error).message, "err");
-              }
-            }}
-          >
-            <Input className="h-9 w-40" placeholder="Nowa kategoria" value={newCat} onChange={(e) => setNewCat(e.target.value)} aria-label="Nowa kategoria" />
-            <Button type="submit" size="sm" variant="subtle" disabled={!newCat.trim()}>
-              Dodaj
+          <div className="flex items-center">
+            <NativeSelect className="h-9 w-48 rounded-r-none" value={filter} onChange={(e) => setFilter(e.target.value)} aria-label="Filtr kategorii">
+              <option value="all">Wszystkie kategorie</option>
+              {data.categories.map((c) => [
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>,
+                ...c.subcategories.map((sc) => (
+                  <option key={sc.id} value={`sub:${sc.id}`}>
+                    {"\u00a0\u00a0\u00a0"}› {sc.name}
+                  </option>
+                )),
+              ])}
+              <option value="none">Bez kategorii</option>
+            </NativeSelect>
+            <Button variant="outline" className="h-9 rounded-l-none border-l-0 px-2.5" onClick={() => setCatsOpen(true)} title="Kategorie i tematy — dodaj, usuń" aria-label="Kategorie i tematy">
+              <Settings2 className="h-4 w-4" />
             </Button>
-          </form>
+          </div>
         </div>
       </div>
 
@@ -1308,6 +1303,7 @@ function BulkDialog({ open, onClose, data, refresh, toast }: { open: boolean; on
 
 function CategoriesDialog({ open, onClose, data, refresh, toast }: { open: boolean; onClose: () => void } & PanelProps) {
   const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [newCat, setNewCat] = useState("");
   const counts = (catId: string, subId?: string) => data.questions.filter((q) => q.categoryId === catId && (subId === undefined || q.subcategoryId === subId)).length;
   const call = async (url: string, method: string, json?: unknown, ok?: string) => {
     try {
@@ -1322,6 +1318,20 @@ function CategoriesDialog({ open, onClose, data, refresh, toast }: { open: boole
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent title="Kategorie i tematy" description="Podkategorie (tematy) porządkują pytania w kategorii, np. Rozwody › dzieci, Rozwody › majątek." className="max-w-xl">
         <div className="space-y-3">
+          <form
+            className="flex gap-2"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              if (!newCat.trim()) return;
+              await call(`/api/admin/projects/${data.project.id}/categories`, "POST", { name: newCat.trim() }, "Dodano kategorię");
+              setNewCat("");
+            }}
+          >
+            <Input className="h-9" placeholder="Nowa kategoria, np. Prawo pracy" value={newCat} onChange={(e) => setNewCat(e.target.value)} aria-label="Nowa kategoria" />
+            <Button type="submit" size="sm" disabled={!newCat.trim()}>
+              Dodaj kategorię
+            </Button>
+          </form>
           {data.categories.map((c) => (
             <div key={c.id} className="rounded-xl border border-line p-3">
               <div className="flex items-center justify-between gap-2">

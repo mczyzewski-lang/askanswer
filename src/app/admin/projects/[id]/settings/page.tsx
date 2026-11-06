@@ -21,10 +21,12 @@ export default async function ProjectSettingsPage({ params, searchParams }: { pa
   const sections: SettingsSection[] = ads ? ["theme", "people", "general"] : ["theme", "people", "voice", "general"];
   const current = sections.includes(section as SettingsSection) ? (section as SettingsSection) : "theme";
   const row = p.themeId
-    ? await prisma.theme.findUnique({ where: { id: p.themeId }, include: { projects: { select: { id: true, name: true, categories: { orderBy: { order: "asc" }, select: { id: true, name: true, brollStyle: true, expertId: true } } } } } })
+    ? await prisma.theme.findUnique({ where: { id: p.themeId }, include: { projects: { where: { id }, select: { id: true, name: true, categories: { orderBy: { order: "asc" }, select: { id: true, name: true, brollStyle: true, expertId: true, _count: { select: { questions: true } } } } } } } })
     : null;
   const logo = row?.logoAssetId ? await prisma.mediaAsset.findUnique({ where: { id: row.logoAssetId } }) : null;
-  const theme = row ? { ...row, createdAt: row.createdAt.toISOString(), updatedAt: row.updatedAt.toISOString(), logoUrl: logo ? await signedUrl(logo.storageKey) : null } : null;
+  // this project only, and only the categories it uses (or that have their own style / expert set)
+  const rowOwn = row ? { ...row, projects: row.projects.map((pr) => ({ ...pr, categories: pr.categories.filter((c) => c._count.questions > 0 || c.brollStyle || c.expertId).map(({ _count, ...c }) => (void _count, c)) })) } : null;
+  const theme = rowOwn ? { ...rowOwn, createdAt: rowOwn.createdAt.toISOString(), updatedAt: rowOwn.updatedAt.toISOString(), logoUrl: logo ? await signedUrl(logo.storageKey) : null } : null;
   const experts = await prisma.expert.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } });
   const data = await projectData(id);
   const back = p.autoReels ? `/admin/auto-reels/${id}` : ads ? `/admin/ads/${id}` : `/admin/projects/${id}`;

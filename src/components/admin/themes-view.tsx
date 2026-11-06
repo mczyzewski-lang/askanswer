@@ -39,10 +39,12 @@ const COLORS: Array<[keyof ThemeRow, string, string]> = [
   ["backgroundColor", "Tło", "plansze i przerwy"],
 ];
 
-export function ThemesView({ themes, experts, initialId }: { themes: ThemeRow[]; experts: Array<{ id: string; name: string }>; initialId: string | null }) {
+/** `embedded`: inside a project's settings — just that project's theme, no list of the others. */
+export function ThemesView({ themes, experts, initialId, embedded = false }: { themes: ThemeRow[]; experts: Array<{ id: string; name: string }>; initialId: string | null; embedded?: boolean }) {
   const router = useRouter();
   const { toast, toastNode } = useToast();
   const [id, setId] = useState(initialId);
+  const [showUnused, setShowUnused] = useState(false);
   const current = themes.find((t) => t.id === id) ?? themes[0];
   const [draft, setDraft] = useState<ThemeRow | null>(current ?? null);
   const [lastId, setLastId] = useState(current?.id);
@@ -51,6 +53,7 @@ export function ThemesView({ themes, experts, initialId }: { themes: ThemeRow[];
     setDraft(current);
   }
   const fileRef = useRef<HTMLInputElement>(null);
+  const unused = themes.filter((t) => !t.projects.length);
   const tokens = useMemo(() => (draft ? themeFromRow(draft) : null), [draft]);
   if (!current || !draft || !tokens) return <EmptyState title="Brak motywów projektów">Motyw jest tworzony automatycznie razem z projektem.</EmptyState>;
   const dirty = JSON.stringify(draft) !== JSON.stringify(current);
@@ -83,10 +86,15 @@ export function ThemesView({ themes, experts, initialId }: { themes: ThemeRow[];
 
   return (
     <div>
+      {embedded ? null : (
+        <>
       <h1 className="font-display text-[28px] font-semibold">Motywy</h1>
-      <p className="mt-1 text-sm text-muted">Kolory, czcionki i logo marki. Zmiana motywu automatycznie aktualizuje pytania, napisy, belki i dekoracje we wszystkich filmach projektu — także w eksporcie.</p>
-      <div className="mt-6 flex flex-wrap gap-2">
-        {themes.map((t) => (
+      <p className="mt-1 max-w-3xl text-sm text-muted">
+        Każdy projekt ma własny motyw (kopię presetu, od którego zaczął) — dlatego jest ich tyle, ile projektów. Zmiana motywu aktualizuje pytania, napisy, belki i dekoracje we wszystkich filmach tego projektu. Motyw projektu
+        edytujesz też w projekcie: Ustawienia projektu → Motyw projektu.
+      </p>
+      <div className="mt-6 flex flex-wrap gap-2" data-testid="theme-list">
+        {themes.filter((t) => t.projects.length || showUnused || t.id === current.id).map((t) => (
           <button key={t.id} onClick={() => setId(t.id)} className={cn("rounded-xl border px-3 py-2 text-left text-sm transition", t.id === current.id ? "border-ink bg-white shadow-sm" : "border-line hover:bg-white")}>
             <span className="flex items-center gap-2">
               <span className="flex">
@@ -100,6 +108,34 @@ export function ThemesView({ themes, experts, initialId }: { themes: ThemeRow[];
           </button>
         ))}
       </div>
+      {unused.length ? (
+        <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-muted" data-testid="unused-themes">
+          <button type="button" className="underline hover:text-ink" onClick={() => setShowUnused((v) => !v)}>
+            {showUnused ? "Ukryj nieużywane" : `Pokaż nieużywane (${unused.length})`}
+          </button>
+          <span>— motywy po usuniętych projektach, nie wpływają na żaden film.</span>
+          <button
+            type="button"
+            className="text-red-600 underline"
+            data-testid="delete-unused-themes"
+            onClick={async () => {
+              if (!confirm(`Usunąć ${unused.length} nieużywanych motywów? Żaden projekt z nich nie korzysta.`)) return;
+              try {
+                for (const t of unused) await api(`/api/admin/themes/${t.id}`, { method: "DELETE" });
+                toast(`Usunięto ${unused.length} nieużywanych motywów`);
+                setShowUnused(false);
+                router.refresh();
+              } catch (err) {
+                toast((err as Error).message, "err");
+              }
+            }}
+          >
+            Usuń nieużywane
+          </button>
+        </div>
+      ) : null}
+        </>
+      )}
       <div className="mt-6 grid gap-8 lg:grid-cols-[1fr_auto]">
         <div className="space-y-6">
           <Card className="space-y-4 p-5">

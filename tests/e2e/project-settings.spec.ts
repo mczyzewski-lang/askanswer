@@ -17,6 +17,9 @@ test("project settings: theme, people and voices under the project", async ({ pa
   await group.getByRole("link", { name: "Motyw projektu" }).click();
   await expect(page.getByTestId("project-settings")).toBeVisible();
   await expect(page.getByText("Kolor główny")).toBeVisible();
+  // only this project's theme — no list of the other projects' themes, no categories it does not use
+  await expect(page.getByTestId("theme-list")).toHaveCount(0);
+  await expect(page.getByText(/Kategorie projektu/)).toHaveCount(0);
 
   await group.getByRole("link", { name: "Osoby i eksperci" }).click();
   const people = page.getByTestId("project-people");
@@ -34,4 +37,25 @@ test("project settings: theme, people and voices under the project", async ({ pa
   await group.getByRole("link", { name: "Głosy (lektor)" }).click();
   await expect(page.getByText("Lektor ElevenLabs")).toBeVisible();
   await expect(page.getByText("Format projektu")).toHaveCount(0);
+});
+
+test("themes: one per project, the unused ones (after deleted projects) folded and removable", async ({ page, request }) => {
+  await adminRequest(request);
+  const gone = (await (await request.post("/api/admin/projects", { data: { name: "Projekt do usunięcia", preset: "pravna" } })).json()).id as string;
+  expect((await request.delete(`/api/admin/projects/${gone}`)).ok()).toBeTruthy();
+  // a new project starts with one neutral category, not a list of legal ones
+  const fresh = (await (await request.post("/api/admin/projects", { data: { name: "Nowy czysty", preset: "pravna" } })).json()).id as string;
+  const cats = (await (await request.get(`/api/admin/projects/${fresh}`)).json()).categories as Array<{ name: string }>;
+  expect(cats.map((c) => c.name)).toEqual(["Ogólne"]);
+
+  await login(page);
+  await page.goto("/admin/themes");
+  await expect(page.getByTestId("theme-list")).not.toContainText("nieużywany");
+  await expect(page.getByTestId("unused-themes")).toContainText("Pokaż nieużywane");
+  page.once("dialog", (d) => void d.accept());
+  await page.getByTestId("delete-unused-themes").click();
+  await expect(page.getByText(/Usunięto \d+ nieużywanych motywów/)).toBeVisible();
+  await expect(page.getByTestId("unused-themes")).toHaveCount(0);
+  const themes = (await (await request.get("/api/admin/themes")).json()) as Array<{ name: string }>;
+  expect(themes.some((t) => t.name.includes("Projekt do usunięcia"))).toBe(false);
 });
