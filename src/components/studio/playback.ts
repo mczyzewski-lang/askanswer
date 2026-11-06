@@ -81,15 +81,25 @@ export class PlaybackEngine {
       const asset = this.assets[o.assetId];
       if (!asset) continue;
       let v = this.overlayVideos.get(o.id);
+      let seekNow = force;
       if (!v) {
         v = document.createElement("video");
         v.preload = "auto";
         v.playsInline = true;
         v.src = playableUrl(asset);
+        v.dataset.assetId = o.assetId;
+        v.dataset.overlayId = o.id;
         v.addEventListener("seeked", () => this.invalidate());
         v.addEventListener("loadeddata", () => this.invalidate());
         this.container.appendChild(v);
         this.overlayVideos.set(o.id, v);
+      } else if (v.dataset.assetId !== o.assetId) {
+        // the layer got another file (a cutaway swapped from the basket, a replaced clip): load it
+        v.pause();
+        v.src = playableUrl(asset);
+        v.dataset.assetId = o.assetId;
+        v.load();
+        seekNow = true;
       }
       const visible = !o.hidden && t >= o.start && t < overlayEnd(o, dur);
       const local = overlayVideoTime(o, t, asset.durationSec);
@@ -100,8 +110,8 @@ export class PlaybackEngine {
         if (Math.abs(v.currentTime - local) > 0.05 && !v.seeking) v.currentTime = local;
         continue;
       }
-      if (force || Math.abs(v.currentTime - local) > (this.playing ? DRIFT : 0.02)) {
-        if (!v.seeking || force) v.currentTime = local;
+      if (seekNow || Math.abs(v.currentTime - local) > (this.playing ? DRIFT : 0.02)) {
+        if (!v.seeking || seekNow) v.currentTime = local;
       }
       if (this.playing && v.paused) void v.play().catch(() => {});
       if (!this.playing && !v.paused) v.pause();

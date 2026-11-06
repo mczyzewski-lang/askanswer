@@ -161,6 +161,15 @@ test("ads studio: script + footage → reels laid out from the transcript", asyn
   await request.post(`/api/admin/uploads/${bad.id}/complete`, { data: { totalChunks: 1 } });
   await expect.poll(async () => (await (await request.get(`/api/admin/uploads/${bad.id}/complete`)).json()).error, { timeout: 60_000 }).toBe("To nie jest plik wideo (MP4 / MOV / WEBM)");
 
+  // one cutaway from the basket in the body (to swap in the Studio below)
+  {
+    const frags = (await (await request.get(`/api/admin/ads/${projectId}/broll`)).json()).fragments as Array<{ assetId: string; sourceIn: number }>;
+    const cur = (await (await request.get(`/api/admin/compositions/${r1.compositionId}`)).json()).composition;
+    const body = cur.document.clips[1];
+    const ov = { id: "basket_swaptest", kind: "video", name: "B-roll do zamiany", assetId: frags[0].assetId, fit: "cover", sourceIn: frags[0].sourceIn, loop: false, volume: 0, radius: 0, start: body.start + 0.3, end: body.start + 1.5, x: 0, y: 0, w: 1, h: 1, opacity: 1, animation: "fade" };
+    expect((await request.put(`/api/admin/compositions/${r1.compositionId}`, { data: { version: cur.version, document: { ...cur.document, overlays: [...cur.document.overlays, ov] } } })).ok()).toBeTruthy();
+  }
+
   // the Studio: switch the hook version — the rest of the edit stays, the title follows the version
   await page.getByTestId("ads-open-studio").first().click();
   await expect(page.getByTestId("timeline")).toBeVisible({ timeout: 60_000 });
@@ -178,6 +187,28 @@ test("ads studio: script + footage → reels laid out from the transcript", asyn
   const d2 = (await (await request.get(`/api/admin/compositions/${r1.compositionId}`)).json()).composition.document;
   expect(d2.clips[1].start).toBeCloseTo(d2.clips[0].sourceOut - d2.clips[0].sourceIn, 1);
   expect(d2.clips[1].sourceIn).toBeCloseTo(doc.clips[1].sourceIn, 3);
+
+  // a cutaway swapped for a piece of another B-roll file: the edit and the preview both take the new file
+  const block = page.getByTestId("timeline").getByTitle("B-roll do zamiany", { exact: true });
+  const firstAsset = (await (await request.get(`/api/admin/ads/${projectId}/broll`)).json()).fragments[0].assetId as string;
+  await block.click();
+  const swapBox = page.getByTestId("basket-swap");
+  await expect(swapBox).toBeVisible();
+  const items = swapBox.getByTestId("basket-swap-item");
+  // the piece of the other file (the first fragment is the one placed above)
+  const frags2 = (await (await request.get(`/api/admin/ads/${projectId}/broll`)).json()).fragments as Array<{ assetId: string }>;
+  const other = frags2.findIndex((f) => f.assetId !== firstAsset);
+  expect(other).toBeGreaterThanOrEqual(0);
+  await items.nth(other).click();
+  await expect(items.nth(other)).toHaveAttribute("aria-pressed", "true");
+  await expect
+    .poll(async () => {
+      const d = (await (await request.get(`/api/admin/compositions/${r1.compositionId}`)).json()).composition.document;
+      return d.overlays.find((o: { id: string }) => o.id === "basket_swaptest")?.assetId;
+    }, { timeout: 20_000 })
+    .toBe(frags2[other].assetId);
+  // the preview's video element of that layer now plays the new file
+  await expect.poll(async () => page.evaluate(() => (document.querySelector('video[data-overlay-id="basket_swaptest"]') as HTMLVideoElement | null)?.dataset.assetId ?? null), { timeout: 20_000 }).toBe(frags2[other].assetId);
 
   // the picked cutaway, one click from the Graphics tab: full screen at the playhead
   await page.getByTestId("tab-graphics").click();
