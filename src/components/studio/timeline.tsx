@@ -51,7 +51,9 @@ export function Timeline({ engine, ai }: { engine: PlaybackEngine | null; ai?: A
   const drag = useRef<DragState | null>(null);
   // click on an empty spot of the graphics layer → own illustration at that moment
   const [newAt, setNewAt] = useState<{ t: number; x: number; y: number } | null>(null);
-  const drawing = useMemo(() => (doc.meta.aiBroll ?? []).filter((i) => i.status === "generating" && (i.kind === "illustration" || i.kind === "infographic")), [doc.meta.aiBroll]);
+  // AI visuals on their way (illustrations, infographics, videos) and the ones that failed — shown on the lane
+  const drawing = useMemo(() => (doc.meta.aiBroll ?? []).filter((i) => i.status === "generating" && !!i.jobId), [doc.meta.aiBroll]);
+  const failed = useMemo(() => (doc.meta.aiBroll ?? []).filter((i) => i.status === "failed" && (i.provider === "elevenlabs" || i.reason.includes("z osi czasu"))), [doc.meta.aiBroll]);
 
   const duration = docDuration(doc);
   const contentW = Math.max((duration + 4) * pps, 400);
@@ -66,7 +68,7 @@ export function Timeline({ engine, ai }: { engine: PlaybackEngine | null; ai?: A
   const ctaAt = endCardStart(doc);
   const rows = [
     ...(ctaAt != null ? [{ key: "cta", label: "Plansza CTA", icon: <Flag className="h-3.5 w-3.5" />, h: 28 }] : []),
-    { key: "overlays", label: "Tekst i grafika", icon: <Type className="h-3.5 w-3.5" />, h: 10 + overlayLanes * 24 },
+    { key: "overlays", label: "Tekst i grafika", icon: <Type className="h-3.5 w-3.5" />, h: 10 + (overlayLanes + (drawing.length || failed.length ? 1 : 0)) * 24 },
     { key: "subs", label: "Napisy", icon: <Captions className="h-3.5 w-3.5" />, h: 30 },
     { key: "zoom", label: "Zbliżenia", icon: <ZoomIn className="h-3.5 w-3.5" />, h: 8 + zoomLanes * 22 },
     { key: "video", label: "Wideo", icon: <Film className="h-3.5 w-3.5" />, h: 42 },
@@ -296,10 +298,39 @@ export function Timeline({ engine, ai }: { engine: PlaybackEngine | null; ai?: A
             <div
               key={i.id}
               className="pointer-events-none absolute z-[2] flex items-center gap-1 overflow-hidden rounded-md border border-dashed border-teal-400/80 bg-teal-500/15 px-1.5 text-[10.5px] text-teal-100"
-              style={{ left: x(i.start), width: Math.max(24, x(i.end - i.start)), top: rowTop.overlays + 5 + overlayLanes * 24 - 24, height: 20 }}
+              style={{ left: x(i.start), width: Math.max(24, x(i.end - i.start)), top: rowTop.overlays + 5 + overlayLanes * 24, height: 20 }}
               data-testid="illustration-drawing"
             >
-              <Loader2 className="h-3 w-3 shrink-0 animate-spin" /> <span className="truncate">Rysuję: {i.title}</span>
+              <Loader2 className="h-3 w-3 shrink-0 animate-spin" />{" "}
+              <span className="truncate">
+                {i.kind === "video" || !i.kind ? (i.provider === "elevenlabs" ? "ElevenLabs generuje wideo (1–3 min)" : "Generuję wideo") : i.kind === "infographic" ? "Tworzę infografikę" : "Rysuję"}: {i.title}
+              </span>
+            </div>
+          ))}
+          {failed.map((i) => (
+            <div
+              key={i.id}
+              className="absolute z-[2] flex cursor-pointer items-center gap-1 overflow-hidden rounded-md border border-dashed border-red-400/80 bg-red-500/20 px-1.5 text-[10.5px] text-red-100"
+              style={{ left: x(i.start), width: Math.max(60, x(i.end - i.start)), top: rowTop.overlays + 5 + overlayLanes * 24, height: 20 }}
+              title={`${i.error ?? "Nie udało się"} — kliknij, aby otworzyć zakładkę AI (ponów / usuń)`}
+              data-testid="visual-failed"
+              onClick={(e) => {
+                e.stopPropagation();
+                window.dispatchEvent(new CustomEvent("studio:tab", { detail: "ai" }));
+              }}
+            >
+              <span className="truncate">Błąd: {i.error ?? i.title}</span>
+              <button
+                type="button"
+                aria-label="Usuń"
+                className="ml-auto shrink-0 opacity-70 hover:opacity-100"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  useStudio.getState().apply((d) => ({ ...d, meta: { ...d.meta, aiBroll: (d.meta.aiBroll ?? []).filter((x) => x.id !== i.id) } }));
+                }}
+              >
+                <X className="h-3 w-3" />
+              </button>
             </div>
           ))}
           {/* CTA end card: its own layer — after the video or over its last seconds */}

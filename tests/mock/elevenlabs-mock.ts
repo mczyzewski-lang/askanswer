@@ -236,7 +236,7 @@ const server = http.createServer(async (req, res) => {
       if (extra.length) return json(422, { detail: [{ msg: "Extra inputs are not permitted", loc: extra }] });
       videoLog.push(body);
       const id = `gen_${Math.random().toString(36).slice(2)}`;
-      videoJobs.set(id, { at: Date.now() });
+      videoJobs.set(id, { at: Date.now(), fail: String(body.prompt).includes("MOCK_FAIL") } as { at: number });
       return json(200, { id, status: "pending" });
     }
     if (req.method === "GET" && url.pathname.startsWith("/v1/flows/video/")) {
@@ -244,6 +244,7 @@ const server = http.createServer(async (req, res) => {
       const j = videoJobs.get(id);
       if (!j) return json(404, { detail: "not found" });
       const done = Date.now() - j.at > 1500;
+      if (done && (j as { fail?: boolean }).fail) return json(200, { id, status: "failed", error_message: "Prompt narusza zasady treści (mock)" });
       return json(200, { id, status: done ? "completed" : "generating", ...(done ? { content_url: `http://127.0.0.1:${PORT}/el-content/${id}.mp4`, content_mime_type: "video/mp4" } : {}) });
     }
     if (req.method === "GET" && url.pathname.startsWith("/el-content/")) {

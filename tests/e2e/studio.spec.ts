@@ -216,6 +216,18 @@ test("studio: pauses, cuts, subtitles, zoom, theme, persistence and real MP4 exp
   expect(elCall.duration_secs).toBe(6);
   expect(elCall.aspect_ratio).toBe("9:16");
   expect(elCall.prompt).toContain("Warm evening light.");
+  // the theme colours for the background of the scene are in the prompt
+  expect(elCall.prompt).toMatch(/brand palette: [a-z -]+ \(#[0-9A-Fa-f]{6}\)/);
+  // a generation that fails is shown on the timeline with the reason (not only in the AI tab)
+  await lane.click({ position: { x: 30, y: laneBox.height - 3 } });
+  const fpop = page.getByTestId("new-visual");
+  await fpop.getByTestId("new-visual-video").click();
+  await expect(fpop.getByTestId("new-video-prompt")).toHaveValue(/Cinematic scene/, { timeout: 30_000 });
+  await fpop.getByTestId("new-video-prompt").fill("MOCK_FAIL a scene that the provider refuses for this test.");
+  await fpop.getByTestId("new-visual-submit").click();
+  await expect(page.getByTestId("visual-failed")).toContainText("Prompt narusza zasady treści", { timeout: 60_000 });
+  await page.getByTestId("visual-failed").getByRole("button", { name: "Usuń" }).click();
+  await expect(page.getByTestId("visual-failed")).toHaveCount(0);
   // …and an infographic, its content also drafted from the passage
   await lane.click({ position: { x: 100, y: laneBox.height - 3 } });
   const ipop = page.getByTestId("new-visual");

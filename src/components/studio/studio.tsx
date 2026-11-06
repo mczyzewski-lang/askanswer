@@ -94,6 +94,12 @@ export function Studio({ id }: { id: string }) {
   useNarrationSubtitles();
   useBackgroundMasks();
   const [tab, setTab] = useState<TabKey>("subs");
+  // other parts of the Studio (e.g. a failed AI visual on the timeline) can open a tab
+  useEffect(() => {
+    const on = (e: Event) => setTab((e as CustomEvent<TabKey>).detail);
+    window.addEventListener("studio:tab", on);
+    return () => window.removeEventListener("studio:tab", on);
+  }, []);
   const [exportOpen, setExportOpen] = useState(false);
   const [notice, setNotice] = useState<{ text: string; tone: "ok" | "err" } | null>(null);
   const doc = useStudio((s) => s.doc);
