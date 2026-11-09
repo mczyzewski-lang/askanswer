@@ -268,18 +268,8 @@ export function drawCreative(ctx: Ctx2D, input: CreativeInput): Measure {
       ctx.font = lf(f.px);
       const bw = kind === "portrait" ? S.w : Math.min(S.w, ctx.measureText(f.lines[0] ?? lab).width + f.px * 2.4);
       const bx = kind === "portrait" ? S.x : (W - bw) / 2;
-      const by = S.y + S.h - h;
-      ctx.fillStyle = theme.accent;
-      roundRect(ctx, bx, by, bw, h, h * 0.22);
-      ctx.fill();
-      const ink = inkOn(theme.accent, theme.background);
-      c = contrast(ink, theme.accent);
-      ctx.fillStyle = ink;
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText(f.lines[0] ?? lab, bx + bw / 2, by + h / 2 + f.px * 0.04);
-      ctx.textAlign = "left";
-      ctx.textBaseline = "top";
+      const by = S.y + S.h - h - unit * 0.035;
+      c = drawCta(ctx, theme, bx, by, bw, h, f.lines[0] ?? lab, lf(f.px), f.px);
       minFont = f.px;
       over = f.overflow;
     }
@@ -353,7 +343,9 @@ export function drawCreative(ctx: Ctx2D, input: CreativeInput): Measure {
     }
     ctaH = ctaFit.px * 2.5;
   }
-  const bottom = T.y + T.h - (ctaText ? ctaH + unit * 0.04 : 0);
+  // room under the CTA (away from the frame)
+  const ctaLift = ctaText ? unit * 0.035 : 0;
+  const bottom = T.y + T.h - (ctaText ? ctaH + ctaLift + unit * 0.04 : 0);
 
   const headline = input.copy.headline.trim();
   const subline = (input.copy.subheadline ?? "").trim();
@@ -503,23 +495,13 @@ export function drawCreative(ctx: Ctx2D, input: CreativeInput): Measure {
     const cw = ctaWide ? S.w : T.w;
     const bw = kind === "portrait" ? cw : Math.min(cw, tw + ctaFit.px * 2.4);
     const bx = ctaWide ? S.x : T.x;
-    const by = T.y + T.h - ctaH;
-    ctx.fillStyle = theme.accent;
-    roundRect(ctx, bx, by, bw, ctaH, ctaH * 0.22);
-    ctx.fill();
-    const cInk = inkOn(theme.accent, theme.background);
-    contrasts.push(contrast(cInk, theme.accent));
-    ctx.fillStyle = cInk;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(ctaFit.lines[0] ?? ctaLabel, bx + bw / 2, by + ctaH / 2 + ctaFit.px * 0.04);
-    ctx.textAlign = "left";
-    ctx.textBaseline = "top";
+    const by = T.y + T.h - ctaH - ctaLift;
+    contrasts.push(drawCta(ctx, theme, bx, by, bw, ctaH, ctaFit.lines[0] ?? ctaLabel, label(ctaFit.px), ctaFit.px));
     overflow ||= ctaFit.overflow;
     fonts.push(ctaFit.px);
     boxes.push({ x: bx, y: by, w: bw, h: ctaH });
   }
-  // the gold frame in the margin, around the whole banner (3–5 px)
+  // the gold frame in the margin, around the whole banner
   goldFrame(ctx, W, H, theme.accent);
 
   for (const b of boxes) if (b.x < S.x - 1 || b.y < S.y - 1 || b.x + b.w > S.x + S.w + 1 || b.y + b.h > S.y + S.h + 1) outsideSafe = true;
@@ -527,10 +509,40 @@ export function drawCreative(ctx: Ctx2D, input: CreativeInput): Measure {
   return { overflow, outsideSafe, minFontPx: fonts.length ? Math.min(...fonts) : 0, contrast: contrasts.length ? Math.min(...contrasts) : 21, height: H };
 }
 
-/** a thin gold frame inside the margin of the banner */
+/**
+ * The CTA must be the most visible thing after the headline: of the theme's light colours the one that
+ * stands out most on the background (on a dark green: the cream / light gold), dark bold label, a gold rim.
+ */
+export function ctaColors(theme: ThemeTokens) {
+  const cands = [theme.highlight, theme.accent, theme.secondary, "#FFFFFF"].filter((c) => /^#[0-9a-f]{6}$/i.test(c ?? ""));
+  const bgc = cands.reduce((best, c) => (contrast(c, theme.background) > contrast(best, theme.background) ? c : best), theme.accent);
+  return { bg: bgc, ink: inkOn(bgc, theme.background), rim: bgc.toLowerCase() === theme.accent.toLowerCase() ? null : theme.accent };
+}
+function drawCta(ctx: Ctx2D, theme: ThemeTokens, x: number, y: number, w: number, h: number, text: string, font: string, px: number) {
+  const c = ctaColors(theme);
+  ctx.fillStyle = c.bg;
+  roundRect(ctx, x, y, w, h, h * 0.22);
+  ctx.fill();
+  if (c.rim) {
+    ctx.strokeStyle = c.rim;
+    ctx.lineWidth = Math.max(2, Math.round(h * 0.05));
+    roundRect(ctx, x, y, w, h, h * 0.22);
+    ctx.stroke();
+  }
+  ctx.font = font;
+  ctx.fillStyle = c.ink;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(text, x + w / 2, y + h / 2 + px * 0.04);
+  ctx.textAlign = "left";
+  ctx.textBaseline = "top";
+  return contrast(c.ink, c.bg);
+}
+
+/** the gold frame inside the margin of the banner (thick: ~1.5% of the short side, 9–15 px) */
 export function goldFrame(ctx: Ctx2D, W: number, H: number, color: string) {
   const unit = Math.min(W, H);
-  const lw = Math.max(3, Math.min(5, Math.round(unit * 0.005)));
+  const lw = Math.max(9, Math.min(15, Math.round(unit * 0.015)));
   const inset = Math.round(unit * 0.035);
   ctx.save();
   ctx.strokeStyle = color;

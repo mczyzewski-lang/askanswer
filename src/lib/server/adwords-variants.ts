@@ -35,49 +35,60 @@ async function sourceConcepts(projectId: string, conceptIds?: string[]) {
 }
 const taken = async (projectId: string) => new Set((await prisma.adwordsAsset.findMany({ where: { projectId }, select: { conceptId: true } })).map((r) => r.conceptId).filter((x): x is string => !!x));
 
-/** a copy of each concept with an expert's photo; concepts that already show a photo (or are variants) are skipped */
-export async function expertVariants(projectId: string, conceptIds?: string[]) {
+/**
+ * Copies of each concept with an expert's photo — one per chosen photo (default: the photos with consent).
+ * A concept that already shows a photo gets copies with the OTHER photos. Concept ids: G03E, G03E2, G03E3…
+ */
+export async function expertVariants(projectId: string, conceptIds?: string[], photoIds?: string[]) {
   const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, include: { theme: { include: { expertPhotos: { orderBy: { createdAt: "asc" } } } } } });
-  const photos = project.theme?.expertPhotos ?? [];
-  if (!photos.length) throw new HttpError(400, "Najpierw dodaj zdjęcia ekspertów (zakładka Zdjęcia ekspertów).");
-  // photos with consent first — a photo without it would block the creative
-  const pool = [...photos.filter((p) => p.consentConfirmed), ...photos.filter((p) => !p.consentConfirmed)];
+  const all = project.theme?.expertPhotos ?? [];
+  if (!all.length) throw new HttpError(400, "Najpierw dodaj zdjęcia ekspertów (zakładka Zdjęcia ekspertów).");
+  const chosen = photoIds?.length ? all.filter((p) => photoIds.includes(p.id)) : all.filter((p) => p.consentConfirmed).length ? all.filter((p) => p.consentConfirmed) : all;
+  if (!chosen.length) throw new HttpError(400, "Wybierz zdjęcia.");
   const used = await taken(projectId);
+  // which photo each existing variant uses (no duplicates of the same concept + photo)
+  const existing = await prisma.adwordsAsset.findMany({ where: { projectId, rowType: "image" }, select: { conceptId: true, expertPhotoId: true, edit: true } });
+  const has = new Set(existing.filter((e) => e.expertPhotoId).map((e) => `${((e.edit ?? {}) as { variantOf?: string }).variantOf ?? e.conceptId}|${e.expertPhotoId}`));
   const made: string[] = [];
   const skipped: string[] = [];
-  let i = 0;
-  const max = (await prisma.adwordsAsset.aggregate({ where: { projectId }, _max: { order: true } }))._max.order ?? 0;
+  let max = (await prisma.adwordsAsset.aggregate({ where: { projectId }, _max: { order: true } }))._max.order ?? 0;
   for (const [c, rows] of await sourceConcepts(projectId, conceptIds)) {
-    const variant = rows[0].edit && (rows[0].edit as Record<string, unknown>).variantOf;
-    if (rows.some((r) => r.expertPhotoId || r.expertPhotoKey || r.layout === "infographic") || variant || /[EI]$/.test(c) || used.has(`${c}E`)) {
+    const edit = (rows[0].edit ?? {}) as { variantOf?: string };
+    if (edit.variantOf || rows.some((r) => r.layout === "infographic")) {
       skipped.push(c);
       continue;
     }
-    const photo = pool[i++ % pool.length];
-    for (const [k, r] of rows.entries()) {
-      const data = Object.fromEntries(Object.entries(r).filter(([key]) => !COPY_SKIP.has(key))) as Record<string, unknown>;
-      await prisma.adwordsAsset.create({
-        data: {
-          ...(data as object),
-          projectId,
-          conceptId: `${c}E`,
-          assetKey: keyFor(r, c, "E"),
-          layout: "expert_split",
-          expertPhotoId: photo.id,
-          expertPhotoKey: photo.key,
-          experimentId: null,
-          variant: null,
-          pairedAssetId: null,
-          lp: r.lp ? ({ ...(r.lp as object), layout_id: "expert_split" } as Prisma.InputJsonValue) : Prisma.JsonNull,
-          edit: { variantOf: c } as Prisma.InputJsonValue,
-          extra: (r.extra ?? Prisma.JsonNull) as Prisma.InputJsonValue,
-          order: max + 1 + made.length * 3 + k,
-        } as Prisma.AdwordsAssetUncheckedCreateInput,
-      });
+    for (const photo of chosen) {
+      if (has.has(`${c}|${photo.id}`) || rows[0].expertPhotoId === photo.id) continue;
+      let id = `${c}E`;
+      for (let n = 2; used.has(id); n++) id = `${c}E${n}`;
+      used.add(id);
+      has.add(`${c}|${photo.id}`);
+      for (const r of rows) {
+        const data = Object.fromEntries(Object.entries(r).filter(([key]) => !COPY_SKIP.has(key))) as Record<string, unknown>;
+        await prisma.adwordsAsset.create({
+          data: {
+            ...(data as object),
+            projectId,
+            conceptId: id,
+            assetKey: keyFor(r, c, id.slice(c.length)),
+            layout: "expert_split",
+            expertPhotoId: photo.id,
+            expertPhotoKey: photo.key,
+            experimentId: null,
+            variant: null,
+            pairedAssetId: null,
+            lp: r.lp ? ({ ...(r.lp as object), layout_id: "expert_split" } as Prisma.InputJsonValue) : Prisma.JsonNull,
+            edit: { variantOf: c } as Prisma.InputJsonValue,
+            extra: (r.extra ?? Prisma.JsonNull) as Prisma.InputJsonValue,
+            order: ++max,
+          } as Prisma.AdwordsAssetUncheckedCreateInput,
+        });
+      }
+      made.push(id);
     }
-    made.push(`${c}E`);
   }
-  return { made, skipped, photos: photos.length };
+  return { made, skipped, photos: chosen.length };
 }
 
 /** start the infographic versions (a background job per concept) */

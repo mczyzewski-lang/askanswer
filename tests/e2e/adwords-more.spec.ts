@@ -24,6 +24,8 @@ test("Google Adwords: the topic in every headline (fix proposals), versions with
   execFileSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=size=800x1000:duration=1", "-frames:v", "1", photo]);
   const up = await request.post(`${base}/photos`, { multipart: { file: { name: "anna.jpg", mimeType: "image/jpeg", buffer: fs.readFileSync(photo) }, key: "anna", name: "Anna Mediatorka", consentConfirmed: "true" } });
   expect(up.ok()).toBe(true);
+  const up2 = await request.post(`${base}/photos`, { multipart: { file: { name: "marek.jpg", mimeType: "image/jpeg", buffer: fs.readFileSync(photo) }, key: "marek", name: "Marek Mediator", consentConfirmed: "true" } });
+  expect(up2.ok()).toBe(true);
 
   await login(page);
   await page.goto(`/admin/adwords/${project.id}?tab=grafiki`);
@@ -39,14 +41,23 @@ test("Google Adwords: the topic in every headline (fix proposals), versions with
   expect(data.assets.filter((a: { conceptId: string; rowType: string }) => a.conceptId === "G03" && a.rowType === "image").every((a: { headline: string }) => a.headline === "Najpierw plan, potem pozew o rozwód")).toBe(true);
   expect(data.evaluation.images.find((e: { assetKey: string }) => e.assetKey === "G03-L").gate.problems.map((p: { message: string }) => p.message).join(" ")).not.toContain("nie mówi, czego dotyczy");
 
-  // 2. versions with the expert: G03 + G04 picked → G03E, G04E with Anna's photo, layout expert_split
+  // 2. versions with the expert: G03 + G04 picked × both photos → G03E (Anna), G03E2 (Marek), G04E, G04E2
   for (const c of ["G03", "G04"]) await page.getByTestId("concept-card").filter({ hasText: c }).first().getByTestId("pick-concept").check();
+  await expect(more.getByTestId("variants-expert")).toContainText("2 konc. × 2 zdj.");
   await more.getByTestId("variants-expert").click();
-  await expect(page.getByTestId("concept-card").filter({ hasText: "G03E" })).toBeVisible();
+  await expect(page.getByTestId("concept-card").filter({ hasText: "G04E2" })).toBeVisible();
   data = await (await request.get(base)).json();
   const g03e = data.assets.filter((a: { conceptId: string }) => a.conceptId === "G03E");
   expect(g03e).toHaveLength(3);
   expect(g03e.every((a: { effectiveLayout: string; expertPhotoKey: string }) => a.effectiveLayout === "expert_split" && a.expertPhotoKey === "anna")).toBe(true);
+  expect(data.assets.filter((a: { conceptId: string; expertPhotoKey: string }) => a.conceptId === "G03E2" && a.expertPhotoKey === "marek")).toHaveLength(3);
+  // running it again makes no duplicates
+  await more.getByTestId("variants-expert").click();
+  await expect(page.getByText("Nie ma konceptów do powielenia")).toBeVisible();
+  // the photo changed on the card (all three formats) before downloading
+  const marek = data.photos.find((p: { key: string }) => p.key === "marek").id;
+  await page.getByTestId("concept-card").filter({ hasText: "G03E" }).first().getByTestId("card-photo").selectOption(marek);
+  await expect.poll(async () => (await (await request.get(base)).json()).assets.filter((a: { conceptId: string; expertPhotoId: string }) => a.conceptId === "G03E" && a.expertPhotoId === marek).length).toBe(3);
   const png = await request.get(`${base}/render/${g03e[0].id}`);
   expect([png.status(), png.headers()["x-render-overflow"]]).toEqual([200, "false"]);
 

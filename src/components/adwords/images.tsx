@@ -131,11 +131,37 @@ export function ImagesTab({ data, reload, toast }: { data: AwData; reload: () =>
                   <CreativeCanvas key={r.id} input={toInput(r)} className={cn("rounded border border-line bg-white", sizeOf(r).key === "landscape" ? "w-[46%]" : sizeOf(r).key === "square" ? "w-[26%]" : "w-[22%]")} />
                 ))}
               </div>
-              {ev[0]?.scoreA ? (
-                <div className="mt-3" onClick={(e) => e.stopPropagation()}>
-                  <ScorePair a={ev[0].scoreA} b={ev[0].scoreB} seed={rows[0].scoreSeed} compact />
-                </div>
-              ) : null}
+              <div className="mt-3 flex flex-wrap items-center gap-3" onClick={(e) => e.stopPropagation()}>
+                {ev[0]?.scoreA ? <ScorePair a={ev[0].scoreA} b={ev[0].scoreB} seed={rows[0].scoreSeed} compact /> : null}
+                {/* the expert's photo of the concept, changed in place (all formats) before downloading */}
+                {(rows[0].effectiveLayout === "expert_split" || rows[0].expertPhotoId) && data.photos.length ? (
+                  <label className="ml-auto flex items-center gap-1.5 text-xs text-muted">
+                    Zdjęcie
+                    <NativeSelect
+                      className="h-8 w-44 text-xs"
+                      value={rows[0].expertPhotoId ?? ""}
+                      disabled={!data.canEdit}
+                      aria-label={`Zdjęcie eksperta ${c}`}
+                      data-testid="card-photo"
+                      onChange={async (e) => {
+                        try {
+                          await api(`/api/admin/adwords/${data.project.id}/assets/${rows[0].id}`, { method: "PATCH", json: { expertPhotoId: e.target.value || null, allFormats: true } });
+                          await reload();
+                        } catch (err) {
+                          toast((err as Error).message, "err");
+                        }
+                      }}
+                    >
+                      <option value="">— bez zdjęcia —</option>
+                      {data.photos.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name} ({p.key}){p.consentConfirmed ? "" : " — brak zgody"}
+                        </option>
+                      ))}
+                    </NativeSelect>
+                  </label>
+                ) : null}
+              </div>
             </Card>
           );
         })}

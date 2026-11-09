@@ -29,6 +29,11 @@ export function MoreCreatives({ data, reload, toast, picked }: { data: AwData; r
   const heads = data.assets.filter((a) => (a.rowType === "image" && a.effectiveLayout !== "infographic" && a.headline) || ((a.rowType === "headline" || a.rowType === "long_headline") && a.adText));
   const missing = t ? new Set(heads.filter((a) => !mentionsTopic((a.rowType === "image" ? a.headline : a.adText) ?? "", t)).map((a) => (a.rowType === "image" ? `img:${a.conceptId}` : a.id))).size : 0;
   const photos = data.photos.length;
+  // which photos the expert versions use (one version per photo); default: those with consent
+  const [photoSel, setPhotoSel] = useState<string[]>(() => {
+    const ok = data.photos.filter((p) => p.consentConfirmed).map((p) => p.id);
+    return ok.length ? ok : data.photos.map((p) => p.id);
+  });
 
   // infographic jobs: watch until they are done, then reload the gallery
   const watch = () => {
@@ -115,18 +120,18 @@ export function MoreCreatives({ data, reload, toast, picked }: { data: AwData; r
         </Button>
         <Button
           variant="outline"
-          disabled={!data.canEdit || busy !== null}
+          disabled={!data.canEdit || busy !== null || !photoSel.length}
           title={photos ? "" : "Najpierw dodaj zdjęcia ekspertów"}
           onClick={() =>
             void run("expert", async () => {
-              const r = await api<{ made: string[]; skipped: string[] }>(`${base}/variants`, { method: "POST", json: { kind: "expert", conceptIds: picked.length ? picked : undefined } });
+              const r = await api<{ made: string[]; skipped: string[] }>(`${base}/variants`, { method: "POST", json: { kind: "expert", conceptIds: picked.length ? picked : undefined, photoIds: photoSel } });
               await reload();
               toast(r.made.length ? `Dodano ${r.made.length} koncepty z ekspertem: ${r.made.join(", ")}` : "Nie ma konceptów do powielenia (już mają zdjęcie albo wersję z ekspertem)");
             })
           }
           data-testid="variants-expert"
         >
-          {busy === "expert" ? <Loader2 className="animate-spin" /> : <UserRound />} Wersje z ekspertem {picked.length ? `(${picked.length})` : "(wszystkie)"}
+          {busy === "expert" ? <Loader2 className="animate-spin" /> : <UserRound />} Wersje z ekspertem: {picked.length ? `${picked.length} konc.` : "wszystkie"} × {photoSel.length} zdj.
         </Button>
         <Button
           variant="outline"
@@ -146,8 +151,31 @@ export function MoreCreatives({ data, reload, toast, picked }: { data: AwData; r
           {running ? <Loader2 className="animate-spin" /> : <Sparkles />} {running ? `Generuję infografiki (${running})…` : `Wersje z infografiką AI ${picked.length ? `(${picked.length})` : "— zaznacz koncepty"}`}
         </Button>
       </div>
+      {photos ? (
+        <div className="flex flex-wrap gap-2" data-testid="variant-photos">
+          {data.photos.map((p) => {
+            const on = photoSel.includes(p.id);
+            return (
+              <label key={p.id} className={`flex cursor-pointer items-center gap-2 rounded-lg border px-2 py-1 text-xs ${on ? "border-ink bg-white" : "border-line text-muted"}`} title={p.consentConfirmed ? "" : "Brak zgody — kreacja będzie zablokowana"}>
+                <input type="checkbox" className="h-3.5 w-3.5" checked={on} onChange={(e) => setPhotoSel((x) => (e.target.checked ? [...x, p.id] : x.filter((y) => y !== p.id)))} aria-label={`Zdjęcie ${p.key}`} />
+                {p.url ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={p.url} alt="" className="h-9 w-9 rounded object-cover" />
+                ) : null}
+                <span>
+                  {p.name}
+                  <span className="block font-mono text-[10px] text-muted">
+                    {p.key}
+                    {p.consentConfirmed ? "" : " · brak zgody"}
+                  </span>
+                </span>
+              </label>
+            );
+          })}
+        </div>
+      ) : null}
       <p className="text-xs text-muted">
-        Wersje z ekspertem: ta sama treść ze zdjęciem z biblioteki ({photos} zdjęć; najpierw te ze zgodą) — nowy koncept z literą E. Infografiki: OpenAI w kolorach motywu, jak w reelsach — nowy koncept z literą I, do zatwierdzenia (tekst na obrazie pisze AI).
+        Wersje z ekspertem: ta sama treść z każdym zaznaczonym zdjęciem — nowe koncepty G03E, G03E2… (zdjęcie zmienisz też na karcie konceptu przed pobraniem). Infografiki: OpenAI w kolorach motywu, jak w reelsach — nowy koncept z literą I, do zatwierdzenia (tekst na obrazie pisze AI).
       </p>
       {fixes ? (
         <div className="space-y-2 rounded-lg border border-line p-3" data-testid="copy-fixes">

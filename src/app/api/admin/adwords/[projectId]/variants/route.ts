@@ -8,8 +8,8 @@ import { expertVariants, startInfographics } from "@/lib/server/adwords-variants
 export const POST = route(async (req: Request, ctx: { params: Promise<{ projectId: string }> }) => {
   await requireAdmin();
   const { projectId } = await ctx.params;
-  const b = z.object({ kind: z.enum(["expert", "infographic"]), conceptIds: z.array(z.string().max(40)).max(50).optional() }).parse(await req.json());
-  if (b.kind === "expert") return json(await expertVariants(projectId, b.conceptIds));
+  const b = z.object({ kind: z.enum(["expert", "infographic"]), conceptIds: z.array(z.string().max(40)).max(50).optional(), photoIds: z.array(z.string().max(64)).max(30).optional() }).parse(await req.json());
+  if (b.kind === "expert") return json(await expertVariants(projectId, b.conceptIds, b.photoIds));
   return json(await startInfographics(projectId, b.conceptIds ?? []), 202);
 });
 
