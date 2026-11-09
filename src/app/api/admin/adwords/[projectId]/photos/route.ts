@@ -43,3 +43,14 @@ export const POST = route(async (req: Request, ctx: { params: Promise<{ projectI
   await prisma.adwordsAsset.updateMany({ where: { projectId, expertPhotoKey: m.key, expertPhotoId: null }, data: { expertPhotoId: photo.id } });
   return json(photo, 201);
 });
+
+/** Assign a library photo to every component with this expert_photo_key (from the CSV). */
+export const PUT = route(async (req: Request, ctx: { params: Promise<{ projectId: string }> }) => {
+  await requireAdmin();
+  const { projectId } = await ctx.params;
+  const b = z.object({ key: z.string().min(1).max(60), photoId: z.string().max(64).nullable() }).parse(await req.json());
+  const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { themeId: true } });
+  if (b.photoId) await prisma.adwordsExpertPhoto.findFirstOrThrow({ where: { id: b.photoId, themeId: project.themeId ?? "-" } });
+  const r = await prisma.adwordsAsset.updateMany({ where: { projectId, expertPhotoKey: b.key }, data: { expertPhotoId: b.photoId } });
+  return json({ ok: true, updated: r.count });
+});

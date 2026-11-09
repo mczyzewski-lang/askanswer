@@ -18,6 +18,7 @@ import {
   Share2,
   SlidersHorizontal,
   Sparkles,
+  Target,
   UserCog,
   Users,
   type LucideIcon,
@@ -47,6 +48,7 @@ const lists: Item[] = [
   { href: "/admin/reklamy", label: "Reklamy", icon: Megaphone, match: (p) => p === "/admin/reklamy" },
   { href: "/admin/auto-reels", label: "Auto Reels", icon: Sparkles, match: (p) => p === "/admin/auto-reels" },
   { href: "/admin/ads", label: "Ads Studio", icon: Clapperboard, match: (p) => p === "/admin/ads" },
+  { href: "/admin/adwords", label: "Google Adwords", icon: Target, match: (p) => p === "/admin/adwords" },
 ];
 
 const KIND_ICON: Record<NavProject["kind"], LucideIcon> = { Projekt: FolderOpen, Reklamy: Megaphone, "Ads Studio": Clapperboard, "Auto Reels": Sparkles };
@@ -139,7 +141,7 @@ export function AdminNav({ vertical = false, projects, current: remembered, role
   const path = usePathname();
   const search = useSearchParams();
   // the project of this page (the layout is not rendered again on client navigation), else the remembered one
-  const m = /^\/admin\/(projects|ads|auto-reels)\/([^/?#]+)/.exec(path);
+  const m = /^\/admin\/(projects|ads|auto-reels|adwords)\/([^/?#]+)/.exec(path);
   const [last, setLast] = useState<NavProject | null>(remembered);
   const fromPath = m ? (projects.find((p) => p.id === m[2]) ?? null) : undefined;
   const current = fromPath === undefined ? last : fromPath;
@@ -165,6 +167,7 @@ export function AdminNav({ vertical = false, projects, current: remembered, role
         { href: current.href, label: "Przegląd", icon: LayoutDashboard, match: (p) => p === current.href },
         ...(ads ? [{ href: `/admin/projects/${current.id}`, label: "Montaże i eksport", icon: Clapperboard, match: (p: string) => p === `/admin/projects/${current.id}` }] : []),
         { href: `/admin/projects/${current.id}/social`, label: "Harmonogram social", icon: CalendarDays, match: (p: string) => p === `/admin/projects/${current.id}/social` },
+        { href: `/admin/adwords/${current.id}`, label: "Google Adwords", icon: Target, match: (p: string) => p === `/admin/adwords/${current.id}` },
       ]
     : [];
   // Projekt → Ustawienia: its theme, people (with experts), narrator voices, general

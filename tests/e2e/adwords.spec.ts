@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { unzipSync, strFromU8 } from "fflate";
-import { adminRequest } from "./helpers";
+import { adminRequest, login } from "./helpers";
 
 const CSV = fs.readFileSync("tests/fixtures/adwords/nowy_etap_google_adwords_pmax.csv", "utf-8");
 const ffprobe = (file: string) => JSON.parse(execFileSync("ffprobe", ["-v", "error", "-show_streams", "-show_format", "-of", "json", file]).toString());
@@ -88,5 +88,128 @@ test("Google Adwords API: idempotent CSV import, real PNG renders, ZIP with mani
     expect(sub.codec_name).toBe("mov_text");
     expect(Number(info.format.duration)).toBeGreaterThan(24.5);
     expect(Number(info.format.duration)).toBeLessThan(25.6);
+  }
+});
+
+test("Google Adwords UI: import, gallery, editor (preview = export), expert photo with consent, texts, video, brief", async ({ page, request }) => {
+  test.setTimeout(300_000);
+  await adminRequest(request);
+  const project = await (await request.post("/api/admin/projects", { data: { name: "Nowy Etap UI", preset: "nowy-etap" } })).json();
+  await login(page);
+  await page.setViewportSize({ width: 1500, height: 1000 });
+  // from the menu: the project's Google Adwords
+  await page.goto(`/admin/projects/${project.id}`);
+  await page.getByTestId("nav-project").getByRole("link", { name: "Google Adwords" }).click();
+  await expect(page.getByTestId("adwords")).toBeVisible();
+  await page.getByTestId("adwords-tabs").getByRole("button", { name: "Import CSV" }).click();
+  await page.getByTestId("import-file").setInputFiles({ name: "nowy_etap_google_adwords_pmax.csv", mimeType: "text/csv", buffer: Buffer.from(CSV, "utf-8") });
+  await expect(page.getByTestId("import-counts")).toContainText("6 koncepty graficzne, 2 czyste zdjęcia, 5 koncepty wideo, 21 scen, 25 tekstów");
+  await expect(page.getByTestId("import-table").locator("tbody tr")).toHaveCount(10);
+  await page.getByTestId("import-confirm").click();
+  await expect(page.getByText("Zaimportowano: 81 nowych")).toBeVisible();
+
+  // campaigns: sales and educational kept apart, completeness, the landing URL
+  await expect(page.getByTestId("campaign")).toHaveCount(2);
+  await expect(page.getByTestId("policy-note")).toContainText("trudności w związkach");
+  await expect(page.getByTestId("campaign").first().getByTestId("group-checklist")).toContainText("Krótki nagłówek: 15/15");
+  await page.getByTestId("campaign").first().getByLabel("Docelowy URL").fill("https://nowyetap.pl/konsultacja");
+  await page.getByTestId("campaign").first().getByLabel("Nazwa firmy").click();
+  await expect(page.getByTestId("campaign").first().getByTestId("group-checklist")).toContainText("URL: https://nowyetap.pl/konsultacja");
+
+  // expert photo (private upload) with consent, assigned to the CSV key
+  const photo = path.join(os.tmpdir(), `ekspert-${Date.now()}.jpg`);
+  execFileSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=size=800x1000:duration=1", "-frames:v", "1", photo]);
+  await page.getByTestId("adwords-tabs").getByRole("button", { name: "Zdjęcia ekspertów" }).click();
+  await page.getByLabel("Klucz zdjęcia").fill("ekspert_marek");
+  await page.getByLabel("Imię i nazwisko").fill("Marek Mediator");
+  await page.getByTestId("photo-file").setInputFiles(photo);
+  await page.getByTestId("photo-add").click();
+  await expect(page.getByTestId("expert-photo")).toHaveCount(1);
+  await expect(page.getByTestId("photo-keys")).toContainText("ekspert_marek");
+  // a text file renamed to .jpg is refused
+  await page.getByLabel("Klucz zdjęcia").fill("zly_plik");
+  await page.getByLabel("Imię i nazwisko").fill("Ktoś");
+  await page.getByTestId("photo-file").setInputFiles({ name: "zdjecie.jpg", mimeType: "image/jpeg", buffer: Buffer.from("to nie jest obraz") });
+  await page.getByTestId("photo-add").click();
+  await expect(page.getByText(/uszkodzony|format/)).toBeVisible();
+
+  // the gallery: 6 concepts + 2 clean photos; G02 uses the photo → blocked until consent is confirmed
+  await page.getByTestId("adwords-tabs").getByRole("button", { name: "Kreacje graficzne" }).click();
+  await expect(page.getByTestId("concept-card")).toHaveCount(8);
+  await page.getByTestId("concept-card").filter({ hasText: "G02" }).click();
+  const editor = page.getByTestId("concept-editor");
+  await expect(editor.getByTestId("gate-problems")).toContainText("zgody");
+  await page.getByTestId("adwords-tabs").getByRole("button", { name: "Zdjęcia ekspertów" }).click();
+  await page.getByTestId("photo-consent").check();
+  await page.getByTestId("adwords-tabs").getByRole("button", { name: "Kreacje graficzne" }).click();
+  await page.getByTestId("concept-card").filter({ hasText: "G02" }).click();
+  await expect(editor).not.toContainText("Brak potwierdzonej zgody");
+
+  // edit in all three formats, save; the export is the same picture as the preview
+  await editor.getByTestId("edit-headline").fill("Najpierw plan, potem pozew — ąęż");
+  await editor.getByTestId("concept-save").click();
+  await expect(page.getByText("Zapisano koncept")).toBeVisible();
+  const data = await (await request.get(`/api/admin/adwords/${project.id}`)).json();
+  expect(data.assets.filter((a: { conceptId: string; headline: string }) => a.conceptId === "G02" && a.headline === "Najpierw plan, potem pozew — ąęż")).toHaveLength(3);
+  await editor.getByText("Safe area (80%)").click(); // preview without the frame, like the export
+  await page.waitForTimeout(800);
+  const diff = await page.evaluate(async ({ id, pid }) => {
+    const canvas = document.querySelector('[data-testid="concept-editor"] [data-testid="preview-landscape"]') as HTMLCanvasElement;
+    const a = canvas.getContext("2d")!.getImageData(0, 0, canvas.width, canvas.height).data;
+    const img = new Image();
+    img.src = URL.createObjectURL(await (await fetch(`/api/admin/adwords/${pid}/render/${id}?fmt=png`)).blob());
+    await img.decode();
+    const c2 = document.createElement("canvas");
+    c2.width = img.width;
+    c2.height = img.height;
+    const ctx = c2.getContext("2d")!;
+    ctx.drawImage(img, 0, 0);
+    const b = ctx.getImageData(0, 0, img.width, img.height).data;
+    let sum = 0;
+    for (let i = 0; i < a.length; i += 4) sum += Math.abs(a[i] - b[i]) + Math.abs(a[i + 1] - b[i + 1]) + Math.abs(a[i + 2] - b[i + 2]);
+    return { w: img.width, h: img.height, cw: canvas.width, ch: canvas.height, mean: sum / (a.length / 4) / 3 };
+  }, { id: data.assets.find((a: { assetKey: string }) => a.assetKey === "G02-L").id, pid: project.id });
+  expect([diff.w, diff.h, diff.cw, diff.ch]).toEqual([1200, 628, 1200, 628]);
+  // the same drawing in Chrome and on the server (font anti-aliasing differs a little)
+  expect(diff.mean).toBeLessThan(6);
+
+  // G05 is blocked until its source is approved
+  await page.getByTestId("concept-card").filter({ hasText: "G05" }).click();
+  await expect(editor.getByTestId("gate-problems")).toContainText("Wymaga zatwierdzenia");
+  await editor.getByTestId("approval").getByRole("button").click();
+  await expect(editor.getByTestId("approval")).toContainText("Zatwierdzone przez");
+  await expect(editor).not.toContainText("Wymaga zatwierdzenia źródła");
+
+  // texts: live counter, a too long one is blocked
+  await page.getByTestId("adwords-tabs").getByRole("button", { name: "Teksty reklam" }).click();
+  const first = page.getByTestId("texts-headline").getByTestId("text-row").first();
+  await first.getByRole("textbox").fill("Rozwód bez wojny i bez długich spraw");
+  await expect(first.getByTestId("char-count")).toHaveText("36/30");
+  await expect(first.getByTestId("gate")).toHaveAttribute("data-status", "blokada");
+  await expect(page.getByTestId("combo-preview")).toContainText("Sponsorowane");
+
+  // video: the scenes, the SRT
+  await page.getByTestId("adwords-tabs").getByRole("button", { name: "Wideo" }).click();
+  await expect(page.getByTestId("video-concept")).toHaveCount(5);
+  await expect(page.getByTestId("scene-row")).toHaveCount(5);
+  const srt = page.waitForEvent("download");
+  await page.getByTestId("download-srt").click();
+  expect((await srt).suggestedFilename()).toBe("nowy-etap-ui_V01.srt");
+
+  // the brief: generated, edited, exported
+  await page.getByTestId("adwords-tabs").getByRole("button", { name: "Raport dla agencji" }).click();
+  const brief = page.getByLabel("Brief");
+  await expect(brief).toHaveValue(/NOWY ETAP UI — PMAX/);
+  await expect(brief).toHaveValue(/Top koncepty: G\d\d \[A \d+ \/ B \d+/);
+  await brief.fill(`${await brief.inputValue()}\nUwaga ręczna: test`);
+  await page.getByTestId("brief-save").click();
+  await expect(page.getByText("Zapisano brief")).toBeVisible();
+  await page.reload();
+  await expect(page.getByLabel("Brief")).toHaveValue(/Uwaga ręczna: test/);
+  if (process.env.AW_SHOT) {
+    await page.getByTestId("adwords-tabs").getByRole("button", { name: "Kreacje graficzne" }).click();
+    await page.getByTestId("concept-card").filter({ hasText: "G02" }).click();
+    await page.waitForTimeout(1500);
+    await page.screenshot({ path: process.env.AW_SHOT, fullPage: true });
   }
 });

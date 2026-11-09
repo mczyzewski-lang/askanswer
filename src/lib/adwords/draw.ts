@@ -241,8 +241,8 @@ export function drawCreative(ctx: Ctx2D, input: CreativeInput): Measure {
       region = { x: W * 0.5, y: 0, w: W * 0.5, h: H };
       T = { x: S.x, y: S.y, w: W * 0.5 - S.x - W * 0.035, h: S.h };
     } else {
-      region = { x: 0, y: 0, w: W, h: H * 0.52 };
-      T = { x: S.x, y: H * 0.54, w: S.w, h: S.y + S.h - H * 0.54 };
+      region = { x: 0, y: 0, w: W, h: H * 0.5 };
+      T = { x: S.x, y: H * 0.5, w: S.w, h: S.y + S.h - H * 0.5 };
     }
     const f = drawPhoto(ctx, photo, region.x, region.y, region.w, region.h);
     if (f.fx < S.x || f.fx > S.x + S.w || f.fy < S.y || f.fy > S.y + S.h) outsideSafe = true;
@@ -270,8 +270,11 @@ export function drawCreative(ctx: Ctx2D, input: CreativeInput): Measure {
   contrasts.push(contrast(ink, panelBg));
 
   let y = T.y;
-  // logo (top of the text area)
-  if (input.logo) {
+  // logo: top of the text area (portrait with a photo: over the photo, top-left of the safe area)
+  if (input.logo && layout === "expert_split" && photo && kind === "portrait") {
+    const d = drawLogo(ctx, input.logo, S.x, S.y, S.w * 0.36, H * 0.06);
+    boxes.push({ x: S.x, y: S.y, w: d.w, h: d.h });
+  } else if (input.logo) {
     const lh = (kind === "landscape" ? 0.1 : 0.075) * H;
     const d = drawLogo(ctx, input.logo, T.x, y, T.w * 0.42, lh);
     boxes.push({ x: T.x, y, w: d.w, h: d.h });
@@ -283,7 +286,7 @@ export function drawCreative(ctx: Ctx2D, input: CreativeInput): Measure {
   let ctaFit: Fitted | null = null;
   const ctaPx = unit * (kind === "landscape" ? 0.058 : 0.045);
   if (ctaText) {
-    ctaFit = fit(ctx, ctaText, label, ctaPx, ctaPx * 0.7, T.w - ctaPx * 1.8, 1, 1);
+    ctaFit = fit(ctx, ctaText, label, ctaPx, ctaPx * 0.55, T.w - ctaPx * 1.4, 1, 1);
     ctaH = ctaFit.px * 2.1;
   }
   const bottom = T.y + T.h - (ctaText ? ctaH + unit * 0.04 : 0);
@@ -293,7 +296,8 @@ export function drawCreative(ctx: Ctx2D, input: CreativeInput): Measure {
   const steps = layout === "process_steps" ? stepsOf(input.copy.body) : [];
   const proof = layout !== "process_steps" ? (input.copy.body ?? "").trim() : "";
   const room = bottom - y;
-  const headStart = unit * (kind === "landscape" ? 0.105 : kind === "portrait" ? 0.1 : 0.095);
+  // a narrow text column (next to the photo) starts smaller
+  const headStart = unit * (kind === "landscape" ? 0.105 : kind === "portrait" ? 0.1 : 0.095) * Math.min(1, T.w / unit / 0.55);
   const hf = fit(ctx, headline, head, headStart, headStart * 0.45, T.w, kind === "landscape" ? 3 : 4, 1.08);
   overflow ||= hf.overflow;
   fonts.push(hf.px);
@@ -341,7 +345,9 @@ export function drawCreative(ctx: Ctx2D, input: CreativeInput): Measure {
     });
   } else {
     // the copy block, vertically centred in its room
-    const proofFit = proof && proof.length <= 70 ? fit(ctx, proof, label, unit * 0.032, unit * 0.024, T.w - unit * 0.05, 2, 1.2) : null;
+    let proofFit = proof && proof.length <= 70 ? fit(ctx, proof, label, unit * 0.032, unit * 0.024, T.w - unit * 0.05, 2, 1.2) : null;
+    // the proof chip is optional: left out when the format has no room for it
+    if (proofFit && (proofFit.overflow || used + proofFit.lines.length * proofFit.lineH + unit * 0.065 > room)) proofFit = null;
     const proofH = proofFit ? proofFit.lines.length * proofFit.lineH + unit * 0.035 + unit * 0.03 : 0;
     const block = used + proofH;
     if (block > room + 1) overflow = true;

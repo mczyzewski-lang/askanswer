@@ -13,6 +13,14 @@ export async function storeUpload(file: File, kind: "MUSIC" | "IMAGE" | "LOGO" |
   try {
     const p = path.join(dir, `f.${ext}`);
     await fsp.writeFile(p, Buffer.from(await file.arrayBuffer()));
+    // images: the file's own signature (ffprobe alone would "recognise" plain text as video)
+    if (kind === "IMAGE" || kind === "LOGO") {
+      const head = (await fsp.readFile(p)).subarray(0, 12);
+      const png = head[0] === 0x89 && head.toString("latin1", 1, 4) === "PNG";
+      const jpg = head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff;
+      const webp = head.toString("latin1", 0, 4) === "RIFF" && head.toString("latin1", 8, 12) === "WEBP";
+      if (!png && !jpg && !webp) throw new HttpError(415, "Plik jest uszkodzony lub ma nieprawidłowy format");
+    }
     const info = await probe(p).catch(() => null);
     const mime = file.type;
     if (kind === "OVERLAY_VIDEO") {

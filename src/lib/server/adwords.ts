@@ -19,37 +19,15 @@ import { gateImage, gateText, gateVideo, scoreImageA, scoreImageB, scoreTextA, s
 import { scenesToSrt, shotlistCsv, shotlistMarkdown, teleprompterScript, videoConcepts } from "../adwords/video";
 import type { ThemeTokens } from "../editor/types";
 
-export type AssetEdit = {
-  photoHidden?: boolean;
-  zoom?: number;
-  offsetX?: number;
-  offsetY?: number;
-  cleanPhoto?: boolean;
-};
+export type { AssetEdit } from "../adwords/context";
+import { brandContext, layoutOf, type AssetEdit } from "../adwords/context";
+export { brandContext, layoutOf };
 
 export async function adwordsProject(projectId: string) {
   const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, include: { theme: { include: { expertPhotos: { orderBy: { createdAt: "asc" } } } }, adwordsCampaigns: { orderBy: { createdAt: "asc" } } } });
   const theme: ThemeTokens = project.theme ? themeFromRow(project.theme) : DEFAULT_THEME;
   const assets = await prisma.adwordsAsset.findMany({ where: { projectId }, orderBy: [{ order: "asc" }, { createdAt: "asc" }] });
   return { project, theme, assets, photos: project.theme?.expertPhotos ?? [], campaigns: project.adwordsCampaigns };
-}
-
-/** words of the offer: project name + campaign names + brief, for relevance checks */
-export function brandContext(p: { name: string; description: string | null; adwordsBrief: string | null }, landingUrl: string | null, hasLogo: boolean): BrandContext {
-  const stop = new Set(["oraz", "jest", "dla", "the", "and", "lub", "bez", "nie", "się", "jak", "aby", "czy", "przez", "które", "który"]);
-  const text = `${p.name} ${p.description ?? ""} ${p.adwordsBrief ?? ""}`.toLowerCase();
-  const keywords = [...new Set(text.split(/[^a-ząćęłńóśźż0-9]+/).filter((w) => w.length > 3 && !stop.has(w)))].slice(0, 40);
-  return { brandName: p.name, keywords: [...keywords, "rozwód", "rozstanie", "mediator", "mediacja", "plan", "konsultacja"].filter((v, i, a) => a.indexOf(v) === i), landingUrl, hasLogo };
-}
-
-/** the layout of an image row: chosen in the editor, else from the CSV art direction, else by photo */
-export function layoutOf(a: { rowType: string; layout: string | null; visualBrief: string | null; expertPhotoKey: string | null; expertPhotoId: string | null; edit: unknown }): LayoutKey {
-  const e = (a.edit ?? {}) as AssetEdit;
-  if (a.rowType === "image_clean" || e.cleanPhoto) return "clean_photo";
-  if (a.layout === "typographic" || a.layout === "expert_split" || a.layout === "process_steps") return a.layout;
-  const m = /^(typographic|expert_split|process_steps)\b/.exec((a.visualBrief ?? "").trim());
-  if (m) return m[1] as LayoutKey;
-  return a.expertPhotoKey || a.expertPhotoId ? "expert_split" : "typographic";
 }
 
 export const toAdAsset = (a: Prisma.AdwordsAssetGetPayload<object>): AdAsset => ({ ...a, approvedAt: a.approvedAt, edit: (a.edit ?? null) as AdAsset["edit"] });

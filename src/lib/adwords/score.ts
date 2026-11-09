@@ -224,6 +224,27 @@ export const SCORING_B = {
   accessed: "2026-11-09 (przez wyniki wyszukiwania; strony Google nie były dostępne bezpośrednio z serwera budującego moduł)",
 } as const;
 
+/** the criteria of scoring B, for the "Wytyczne PMax" screen */
+export const SCORING_B_CRITERIA: Array<{ kind: "grafika" | "wideo" | "tekst"; label: string; weight: number; basis: "oficjalne" | "heurystyka"; why: string; sources: Array<keyof typeof SCORING_B.sources> }> = [
+  { kind: "grafika", label: "Jeden komunikat", weight: 25, basis: "heurystyka", why: "Jedno hasło i najwyżej jeden podtytuł czytają się w ułamku sekundy; Google zaleca pokazanie wyróżnika, nie listy komunikatów.", sources: ["pmaxCreative"] },
+  { kind: "grafika", label: "Czytelność w małym formacie i safe area", weight: 20, basis: "oficjalne", why: "Treść w środkowych 80% kadru; minimalny rozmiar tekstu względem wysokości grafiki.", sources: ["pmaxSpecs"] },
+  { kind: "grafika", label: "Konkretny wyróżnik oferty", weight: 15, basis: "oficjalne", why: "Komponenty mają przekazywać unikalną wartość oferty.", sources: ["pmaxCreative"] },
+  { kind: "grafika", label: "Prawdziwy człowiek / autentyczny obraz", weight: 15, basis: "heurystyka", why: "Wysokiej jakości, trafne obrazy; ekspert ze zgodą wzmacnia wiarygodność usług.", sources: ["pmaxCreative", "abcd"] },
+  { kind: "grafika", label: "Marka widoczna", weight: 15, basis: "heurystyka", why: "Zasada „Brand” z ABCD przeniesiona na statykę.", sources: ["abcd"] },
+  { kind: "grafika", label: "Kierunek działania", weight: 10, basis: "oficjalne", why: "„Direct”: jasne wezwanie do działania.", sources: ["abcd"] },
+  { kind: "wideo", label: "Attract — pierwsze sekundy", weight: 25, basis: "oficjalne", why: "ABCD: mocne otwarcie, kilka ujęć w pierwszych 5 s.", sources: ["abcd"] },
+  { kind: "wideo", label: "Brand — marka w pierwszych 5 s", weight: 20, basis: "oficjalne", why: "ABCD: marka / produkt wcześnie (zwiększa zapamiętanie, ale może zwiększać pomijanie).", sources: ["abcd"] },
+  { kind: "wideo", label: "Connect — problem widza i człowiek", weight: 20, basis: "oficjalne", why: "ABCD: emocja i ludzie.", sources: ["abcd"] },
+  { kind: "wideo", label: "Direct — jedno wezwanie na końcu", weight: 15, basis: "oficjalne", why: "ABCD: oferta / CTA na planszy lub lektorem.", sources: ["abcd"] },
+  { kind: "wideo", label: "Mobile-first: pion + napisy", weight: 10, basis: "heurystyka", why: "Pionowy film 10–60 s do Shorts; napisy pomagają przy oglądaniu bez dźwięku (źródła branżowe, nie Google).", sources: ["abcd"] },
+  { kind: "wideo", label: "Długość 10–60 s", weight: 10, basis: "oficjalne", why: "Minimum 10 s w PMax; praktyczny zakres do 60 s.", sources: ["pmaxSpecs"] },
+  { kind: "tekst", label: "Różnorodność", weight: 30, basis: "oficjalne", why: "Siła reklamy uwzględnia różnorodność; nie powtarzać tych samych treści.", sources: ["adStrength", "rsaStrength"] },
+  { kind: "tekst", label: "Słowa oferty / zapytań", weight: 25, basis: "oficjalne", why: "Trafne słowa kluczowe w nagłówkach i opisach.", sources: ["rsaStrength"] },
+  { kind: "tekst", label: "Konkret i wyróżnik", weight: 20, basis: "oficjalne", why: "Przekazać unikalną wartość.", sources: ["pmaxCreative"] },
+  { kind: "tekst", label: "Wezwanie / intencja", weight: 15, basis: "heurystyka", why: "Krótki nagłówek ≤15 znaków dobrze sprawdza się jako CTA (poradniki branżowe).", sources: ["rsaStrength"] },
+  { kind: "tekst", label: "Zgodność z zasadami", weight: 10, basis: "oficjalne", why: "Bez gwarancji i obietnic bez pokrycia (zasady reklam, kategorie wrażliwe).", sources: ["adStrength"] },
+];
+
 type SrcKey = keyof typeof SCORING_B.sources;
 const b = (key: string, label: string, max: number, ratio: number, why: string, basis: "oficjalne" | "heurystyka", sources: SrcKey[]): ScoreItem => ({ key, label, max, points: clamp(ratio * max, max), why, basis, sources: sources.map((s) => SCORING_B.sources[s].url) });
 
