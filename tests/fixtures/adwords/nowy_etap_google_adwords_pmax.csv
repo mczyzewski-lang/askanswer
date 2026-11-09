@@ -1,0 +1,83 @@
+﻿schema_version;row_type;project_slug;funnel;campaign_code;asset_group;concept_id;asset_id;aspect_ratio;width;height;duration_sec;scene_index;start_s;end_s;headline;subheadline;body;cta;ad_text;spoken_text;screen_text;visual_brief;expert_photo_key;landing_url;claim_source;approval_required;status;score_seed;score_note
+1;image;nowy-etap;sprzedaz;NE-PMAX-SPRZ;AG-SPRZEDAZ;G01;G01-L;1.91:1;1200;628;;;;;Rozwód bez wojny;Spokojne ustalenia zamiast sali sądowej;1. Rozmowa z mediatorem | 2. Wspólny plan | 3. Krótki proces;Umów konsultację;;;;typographic: duże hasło na tle motywu;;;;false;draft;82;ręczna ocena priorytetu
+1;image;nowy-etap;sprzedaz;NE-PMAX-SPRZ;AG-SPRZEDAZ;G01;G01-SQ;1:1;1200;1200;;;;;Rozwód bez wojny;Spokojne ustalenia zamiast sali sądowej;1. Rozmowa z mediatorem | 2. Wspólny plan | 3. Krótki proces;Umów konsultację;;;;typographic: duże hasło na tle motywu;;;;false;draft;82;ręczna ocena priorytetu
+1;image;nowy-etap;sprzedaz;NE-PMAX-SPRZ;AG-SPRZEDAZ;G01;G01-P;4:5;960;1200;;;;;Rozwód bez wojny;Spokojne ustalenia zamiast sali sądowej;1. Rozmowa z mediatorem | 2. Wspólny plan | 3. Krótki proces;Umów konsultację;;;;typographic: duże hasło na tle motywu;;;;false;draft;82;ręczna ocena priorytetu
+1;image;nowy-etap;sprzedaz;NE-PMAX-SPRZ;AG-SPRZEDAZ;G02;G02-L;1.91:1;1200;628;;;;;Najpierw plan, potem pozew;Ustalenia przed sądem oszczędzają nerwy;1. Plan rozstania | 2. Porozumienie | 3. Pozew bez sporu;Zaplanuj rozstanie;;;;expert_split: ekspert przy stole, notatnik;ekspert_marek;;;false;draft;90;ręczna ocena priorytetu
+1;image;nowy-etap;sprzedaz;NE-PMAX-SPRZ;AG-SPRZEDAZ;G02;G02-SQ;1:1;1200;1200;;;;;Najpierw plan, potem pozew;Ustalenia przed sądem oszczędzają nerwy;1. Plan rozstania | 2. Porozumienie | 3. Pozew bez sporu;Zaplanuj rozstanie;;;;expert_split: ekspert przy stole, notatnik;ekspert_marek;;;false;draft;90;ręczna ocena priorytetu
+1;image;nowy-etap;sprzedaz;NE-PMAX-SPRZ;AG-SPRZEDAZ;G02;G02-P;4:5;960;1200;;;;;Najpierw plan, potem pozew;Ustalenia przed sądem oszczędzają nerwy;1. Plan rozstania | 2. Porozumienie | 3. Pozew bez sporu;Zaplanuj rozstanie;;;;expert_split: ekspert przy stole, notatnik;ekspert_marek;;;false;draft;90;ręczna ocena priorytetu
+1;image;nowy-etap;sprzedaz;NE-PMAX-SPRZ;AG-SPRZEDAZ;G03;G03-L;1.91:1;1200;628;;;;;Cena znana z góry;Bez ukrytych kosztów i godzinówek;"Pakiet konsultacji; zakres opisany przed startem";Sprawdź zakres;;;;typographic: liczba/ikona ceny;;;;false;draft;78;ręczna ocena priorytetu
+1;image;nowy-etap;sprzedaz;NE-PMAX-SPRZ;AG-SPRZEDAZ;G03;G03-SQ;1:1;1200;1200;;;;;Cena znana z góry;Bez ukrytych kosztów i godzinówek;"Pakiet konsultacji; zakres opisany przed startem";Sprawdź zakres;;;;typographic: liczba/ikona ceny;;;;false;draft;78;ręczna ocena priorytetu
+1;image;nowy-etap;sprzedaz;NE-PMAX-SPRZ;AG-SPRZEDAZ;G03;G03-P;4:5;960;1200;;;;;Cena znana z góry;Bez ukrytych kosztów i godzinówek;"Pakiet konsultacji; zakres opisany przed startem";Sprawdź zakres;;;;typographic: liczba/ikona ceny;;;;false;draft;78;ręczna ocena priorytetu
+1;image;nowy-etap;sprzedaz;NE-PMAX-SPRZ;AG-SPRZEDAZ;G04;G04-L;1.91:1;1200;628;;;;;Dzieci poza konfliktem;Plan opieki ustalony spokojnie;1. Potrzeby dzieci | 2. Plan kontaktów | 3. Zapis w porozumieniu;Porozmawiajmy;;;;expert_split: ekspertka, ciepłe światło;ekspert_anna;;;false;draft;74;ręczna ocena priorytetu
+1;image;nowy-etap;sprzedaz;NE-PMAX-SPRZ;AG-SPRZEDAZ;G04;G04-SQ;1:1;1200;1200;;;;;Dzieci poza konfliktem;Plan opieki ustalony spokojnie;1. Potrzeby dzieci | 2. Plan kontaktów | 3. Zapis w porozumieniu;Porozmawiajmy;;;;expert_split: ekspertka, ciepłe światło;ekspert_anna;;;false;draft;74;ręczna ocena priorytetu
+1;image;nowy-etap;sprzedaz;NE-PMAX-SPRZ;AG-SPRZEDAZ;G04;G04-P;4:5;960;1200;;;;;Dzieci poza konfliktem;Plan opieki ustalony spokojnie;1. Potrzeby dzieci | 2. Plan kontaktów | 3. Zapis w porozumieniu;Porozmawiajmy;;;;expert_split: ekspertka, ciepłe światło;ekspert_anna;;;false;draft;74;ręczna ocena priorytetu
+1;image;nowy-etap;sprzedaz;NE-PMAX-SPRZ;AG-SPRZEDAZ;G05;G05-L;1.91:1;1200;628;;;;;Pomogliśmy już 1200 parom;Sprawdzony proces mediacji;Dane z CRM do potwierdzenia;Umów konsultację;;;;typographic: liczba jako dowód;;;CRM 2025 — do potwierdzenia;true;blocked_until_verified;60;ręczna ocena priorytetu
+1;image;nowy-etap;sprzedaz;NE-PMAX-SPRZ;AG-SPRZEDAZ;G05;G05-SQ;1:1;1200;1200;;;;;Pomogliśmy już 1200 parom;Sprawdzony proces mediacji;Dane z CRM do potwierdzenia;Umów konsultację;;;;typographic: liczba jako dowód;;;CRM 2025 — do potwierdzenia;true;blocked_until_verified;60;ręczna ocena priorytetu
+1;image;nowy-etap;sprzedaz;NE-PMAX-SPRZ;AG-SPRZEDAZ;G05;G05-P;4:5;960;1200;;;;;Pomogliśmy już 1200 parom;Sprawdzony proces mediacji;Dane z CRM do potwierdzenia;Umów konsultację;;;;typographic: liczba jako dowód;;;CRM 2025 — do potwierdzenia;true;blocked_until_verified;60;ręczna ocena priorytetu
+1;image;nowy-etap;sprzedaz;NE-PMAX-SPRZ;AG-SPRZEDAZ;G06;G06-L;1.91:1;1200;628;;;;;Rozstanie krok po kroku;3 kroki do porozumienia;1. Diagnoza | 2. Mediacja | 3. Porozumienie w sądzie;Zobacz jak działamy;;;;process_steps: trzy kroki z numerami;;;;false;draft;70;ręczna ocena priorytetu
+1;image;nowy-etap;sprzedaz;NE-PMAX-SPRZ;AG-SPRZEDAZ;G06;G06-SQ;1:1;1200;1200;;;;;Rozstanie krok po kroku;3 kroki do porozumienia;1. Diagnoza | 2. Mediacja | 3. Porozumienie w sądzie;Zobacz jak działamy;;;;process_steps: trzy kroki z numerami;;;;false;draft;70;ręczna ocena priorytetu
+1;image;nowy-etap;sprzedaz;NE-PMAX-SPRZ;AG-SPRZEDAZ;G06;G06-P;4:5;960;1200;;;;;Rozstanie krok po kroku;3 kroki do porozumienia;1. Diagnoza | 2. Mediacja | 3. Porozumienie w sądzie;Zobacz jak działamy;;;;process_steps: trzy kroki z numerami;;;;false;draft;70;ręczna ocena priorytetu
+1;image_clean;nowy-etap;sprzedaz;NE-PMAX-SPRZ;AG-SPRZEDAZ;G90;G90-SQ;1:1;1200;1200;;;;;;;;;;;;Portret eksperta, neutralne tło, bez tekstu;ekspert_marek;;;;draft;;
+1;image_clean;nowy-etap;sprzedaz;NE-PMAX-SPRZ;AG-SPRZEDAZ;G91;G91-L;1.91:1;1200;628;;;;;;;;;;;;"Ekspertka przy biurku; rozmowa z klientem (tył głowy)";ekspert_anna;;;;draft;;
+1;video;nowy-etap;sprzedaz;NE-PMAX-SPRZ;AG-SPRZEDAZ;V01;V01-169;16:9;1920;1080;25;;;;;;;;;;;;ekspert_marek;;;;draft;80;
+1;video;nowy-etap;sprzedaz;NE-PMAX-SPRZ;AG-SPRZEDAZ;V01;V01-11;1:1;1080;1080;25;;;;;;;;;;;;ekspert_marek;;;;draft;80;
+1;video;nowy-etap;sprzedaz;NE-PMAX-SPRZ;AG-SPRZEDAZ;V01;V01-916;9:16;1080;1920;25;;;;;;;;;;;;ekspert_marek;;;;draft;80;
+1;video;nowy-etap;sprzedaz;NE-PMAX-SPRZ;AG-SPRZEDAZ;V02;V02-169;16:9;1920;1080;25;;;;;;;;;;;;ekspert_marek;;;;draft;80;
+1;video;nowy-etap;sprzedaz;NE-PMAX-SPRZ;AG-SPRZEDAZ;V02;V02-11;1:1;1080;1080;25;;;;;;;;;;;;ekspert_marek;;;;draft;80;
+1;video;nowy-etap;sprzedaz;NE-PMAX-SPRZ;AG-SPRZEDAZ;V02;V02-916;9:16;1080;1920;25;;;;;;;;;;;;ekspert_marek;;;;draft;80;
+1;video;nowy-etap;sprzedaz;NE-PMAX-SPRZ;AG-SPRZEDAZ;V03;V03-169;16:9;1920;1080;20;;;;;;;;;;;;ekspert_marek;;;;draft;80;
+1;video;nowy-etap;sprzedaz;NE-PMAX-SPRZ;AG-SPRZEDAZ;V03;V03-11;1:1;1080;1080;20;;;;;;;;;;;;ekspert_marek;;;;draft;80;
+1;video;nowy-etap;sprzedaz;NE-PMAX-SPRZ;AG-SPRZEDAZ;V03;V03-916;9:16;1080;1920;20;;;;;;;;;;;;ekspert_marek;;;;draft;80;
+1;video;nowy-etap;sprzedaz;NE-PMAX-SPRZ;AG-SPRZEDAZ;V04;V04-169;16:9;1920;1080;30;;;;;;;;;;;;ekspert_marek;;;;draft;80;
+1;video;nowy-etap;sprzedaz;NE-PMAX-SPRZ;AG-SPRZEDAZ;V04;V04-11;1:1;1080;1080;30;;;;;;;;;;;;ekspert_marek;;;;draft;80;
+1;video;nowy-etap;sprzedaz;NE-PMAX-SPRZ;AG-SPRZEDAZ;V04;V04-916;9:16;1080;1920;30;;;;;;;;;;;;ekspert_marek;;;;draft;80;
+1;video;nowy-etap;poradnik;NE-PMAX-PORADNIK;AG-PORADNIK;V05;V05-169;16:9;1920;1080;30;;;;;;;;;;;;ekspert_marek;;;;draft;65;
+1;video;nowy-etap;poradnik;NE-PMAX-PORADNIK;AG-PORADNIK;V05;V05-11;1:1;1080;1080;30;;;;;;;;;;;;ekspert_marek;;;;draft;65;
+1;video;nowy-etap;poradnik;NE-PMAX-PORADNIK;AG-PORADNIK;V05;V05-916;9:16;1080;1920;30;;;;;;;;;;;;ekspert_marek;;;;draft;65;
+1;video_scene;nowy-etap;sprzedaz;;;V01;V01-S1;;;;;1;0;3;;;;;;Czy rozwód musi oznaczać wojnę?;Rozwód bez wojny?;Ekspert patrzy w kamerę, zbliżenie;ekspert_marek;;;;;;
+1;video_scene;nowy-etap;sprzedaz;;;V01;V01-S2;;;;;2;3;8;;;;;;Najczęściej to nie sąd, tylko brak planu nakręca konflikt.;Problem: brak planu;Półzbliżenie, gest dłoni;ekspert_marek;;;;;;
+1;video_scene;nowy-etap;sprzedaz;;;V01;V01-S3;;;;;3;8;16;;;;;;U nas najpierw ustalamy plan: majątek, dzieci, terminy. Dopiero potem pozew.;Plan → ustalenia → pozew;B-roll: notatki, kalendarz;ekspert_marek;;;;;;
+1;video_scene;nowy-etap;sprzedaz;;;V01;V01-S4;;;;;4;16;21;;;;;;Pracuje z Wami mediator, a cenę znacie z góry.;"Mediator; cena znana z góry";Ekspert przy stole;ekspert_marek;;;;;;
+1;video_scene;nowy-etap;sprzedaz;;;V01;V01-S5;;;;;5;21;25;;;;;;Umów konsultację na nowyetap.pl;Umów konsultację;Plansza z logo i adresem;ekspert_marek;;;;;;
+1;video_scene;nowy-etap;sprzedaz;;;V02;V02-S1;;;;;1;0;3;;;;;;Najpierw plan, potem pozew.;Najpierw plan;Ekspert w ruchu, wejście w kadr;ekspert_marek;;;;;;
+1;video_scene;nowy-etap;sprzedaz;;;V02;V02-S2;;;;;2;3;9;;;;;;Pozew bez ustaleń to zaproszenie do długiego sporu.;Pozew bez ustaleń = spór;Zbliżenie na dokumenty;ekspert_marek;;;;;;
+1;video_scene;nowy-etap;sprzedaz;;;V02;V02-S3;;;;;3;9;17;;;;;;Krok pierwszy: rozmowa. Drugi: wspólny plan. Trzeci: pozew, który sąd szybko zatwierdza.;3 kroki;Plansze 1-2-3;ekspert_marek;;;;;;
+1;video_scene;nowy-etap;sprzedaz;;;V02;V02-S4;;;;;4;17;22;;;;;;"Sprawdzony proces; zakres i cena przed startem.";Zakres i cena z góry;Ekspert, plan średni;ekspert_marek;;;;;;
+1;video_scene;nowy-etap;sprzedaz;;;V02;V02-S5;;;;;5;22;25;;;;;;Zaplanuj rozstanie z nami.;Zaplanuj rozstanie;Logo, adres strony;ekspert_marek;;;;;;
+1;video_scene;nowy-etap;sprzedaz;;;V03;V03-S1;;;;;1;0;3;;;;;;Ile kosztuje rozwód? Mówimy od razu.;Cena znana z góry;Ekspert z kartką;ekspert_marek;;;;;;
+1;video_scene;nowy-etap;sprzedaz;;;V03;V03-S2;;;;;2;3;8;;;;;;Bez godzinówek i niespodzianek na fakturze.;Bez ukrytych kosztów;Zbliżenie: dłoń, długopis;ekspert_marek;;;;;;
+1;video_scene;nowy-etap;sprzedaz;;;V03;V03-S3;;;;;3;8;12;;;;;;"Pakiet obejmuje konsultację i plan rozstania;";Konsultacja + plan;Lista punktów;ekspert_marek;;;;;;
+1;video_scene;nowy-etap;sprzedaz;;;V03;V03-S4;;;;;4;12;15;;;;;;a także przygotowanie dokumentów do sądu.;Dokumenty do sądu;Zbliżenie: teczka;ekspert_marek;;;;;;
+1;video_scene;nowy-etap;sprzedaz;;;V03;V03-S5;;;;;5;15;20;;;;;;Zobacz zakres na stronie.;Sprawdź zakres;Logo;ekspert_marek;;;;;;
+1;video_scene;nowy-etap;sprzedaz;;;V04;V04-S1;;;;;1;0;3;;;;;;Dzieci nie muszą być w środku konfliktu.;Dzieci poza konfliktem;Ekspertka, spokojne światło;ekspert_marek;;;;;;
+1;video_scene;nowy-etap;sprzedaz;;;V04;V04-S2;;;;;2;3;9;;;;;;Najtrudniejsze są rozmowy o opiece — dlatego zaczynamy od nich.;Opieka na początek;B-roll: rodzinne zdjęcie (bez twarzy);ekspert_marek;;;;;;
+1;video_scene;nowy-etap;sprzedaz;;;V04;V04-S3;;;;;3;9;19;;;;;;"Wspólnie ustalacie plan kontaktów; mediator pilnuje, by rozmowa była bezpieczna.";Plan kontaktów;Ekspertka przy stole;ekspert_marek;;;;;;
+1;video_scene;nowy-etap;sprzedaz;;;V04;V04-S4;;;;;4;19;25;;;;;;Jeśli w związku jest przemoc, mediacja nie jest właściwą drogą — powiemy, co zrobić zamiast niej.;Bezpieczeństwo przede wszystkim;Ekspertka, poważny ton;ekspert_marek;;;;;;
+1;video_scene;nowy-etap;sprzedaz;;;V04;V04-S5;;;;;5;25;30;;;;;;Porozmawiajmy — nowyetap.pl;Porozmawiajmy;Logo;ekspert_marek;;;;;;
+1;video_scene;nowy-etap;poradnik;;;V05;V05-S1;;;;;1;0;30;;;;;;"Poradnik: 5 pytań, które warto sobie zadać przed złożeniem pozwu.
+Bez sprzedaży — sama wiedza.";5 pytań przed pozwem;"Ekspert, jedno ujęcie; plansze z pytaniami";ekspert_marek;;;;;;
+1;headline;nowy-etap;sprzedaz;NE-PMAX-SPRZ;AG-SPRZEDAZ;;H01;;;;;;;;;;;;Rozwód bez wojny;;;;;;;;;;
+1;headline;nowy-etap;sprzedaz;NE-PMAX-SPRZ;AG-SPRZEDAZ;;H02;;;;;;;;;;;;Najpierw plan, potem pozew;;;;;;;;;;
+1;headline;nowy-etap;sprzedaz;NE-PMAX-SPRZ;AG-SPRZEDAZ;;H03;;;;;;;;;;;;Cena znana z góry;;;;;;;;;;
+1;headline;nowy-etap;sprzedaz;NE-PMAX-SPRZ;AG-SPRZEDAZ;;H04;;;;;;;;;;;;Mediator zamiast sporu;;;;;;;;;;
+1;headline;nowy-etap;sprzedaz;NE-PMAX-SPRZ;AG-SPRZEDAZ;;H05;;;;;;;;;;;;Dzieci poza konfliktem;;;;;;;;;;
+1;headline;nowy-etap;sprzedaz;NE-PMAX-SPRZ;AG-SPRZEDAZ;;H06;;;;;;;;;;;;Plan rozstania;;;;;;;;;;
+1;headline;nowy-etap;sprzedaz;NE-PMAX-SPRZ;AG-SPRZEDAZ;;H07;;;;;;;;;;;;Spokojny rozwód;;;;;;;;;;
+1;headline;nowy-etap;sprzedaz;NE-PMAX-SPRZ;AG-SPRZEDAZ;;H08;;;;;;;;;;;;Rozstanie krok po kroku;;;;;;;;;;
+1;headline;nowy-etap;sprzedaz;NE-PMAX-SPRZ;AG-SPRZEDAZ;;H09;;;;;;;;;;;;Konsultacja z mediatorem;;;;;;;;;;
+1;headline;nowy-etap;sprzedaz;NE-PMAX-SPRZ;AG-SPRZEDAZ;;H10;;;;;;;;;;;;Ustalenia przed sądem;;;;;;;;;;
+1;headline;nowy-etap;sprzedaz;NE-PMAX-SPRZ;AG-SPRZEDAZ;;H11;;;;;;;;;;;;Bez ukrytych kosztów;;;;;;;;;;
+1;headline;nowy-etap;sprzedaz;NE-PMAX-SPRZ;AG-SPRZEDAZ;;H12;;;;;;;;;;;;Rozwód z planem;;;;;;;;;;
+1;headline;nowy-etap;sprzedaz;NE-PMAX-SPRZ;AG-SPRZEDAZ;;H13;;;;;;;;;;;;Porozumienie zamiast sporu;;;;;;;;;;
+1;headline;nowy-etap;sprzedaz;NE-PMAX-SPRZ;AG-SPRZEDAZ;;H14;;;;;;;;;;;;Zaplanuj rozstanie;;;;;;;;;;
+1;headline;nowy-etap;sprzedaz;NE-PMAX-SPRZ;AG-SPRZEDAZ;;H15;;;;;;;;;;;;Nowy Etap;;;;;;;;;;
+1;long_headline;nowy-etap;sprzedaz;NE-PMAX-SPRZ;AG-SPRZEDAZ;;LH01;;;;;;;;;;;;Najpierw plan i ustalenia, dopiero potem pozew o rozwód;;;;;;;;;;
+1;long_headline;nowy-etap;sprzedaz;NE-PMAX-SPRZ;AG-SPRZEDAZ;;LH02;;;;;;;;;;;;Rozwód bez wojny: mediator pomaga ustalić majątek, dzieci i terminy;;;;;;;;;;
+1;long_headline;nowy-etap;sprzedaz;NE-PMAX-SPRZ;AG-SPRZEDAZ;;LH03;;;;;;;;;;;;Cena znana z góry — konsultacja, plan i dokumenty w jednym pakiecie;;;;;;;;;;
+1;long_headline;nowy-etap;sprzedaz;NE-PMAX-SPRZ;AG-SPRZEDAZ;;LH04;;;;;;;;;;;;Dzieci poza konfliktem: plan opieki ustalony spokojnie, zanim trafi do sądu;;;;;;;;;;
+1;long_headline;nowy-etap;sprzedaz;NE-PMAX-SPRZ;AG-SPRZEDAZ;;LH05;;;;;;;;;;;;"Rozstanie krok po kroku; od pierwszej rozmowy do porozumienia";;;;;;;;;;
+1;description;nowy-etap;sprzedaz;NE-PMAX-SPRZ;AG-SPRZEDAZ;;D01;;;;;;;;;;;;Ustal z mediatorem plan rozstania: majątek, dzieci, terminy. Cena znana z góry.;;;;;;;;;;
+1;description;nowy-etap;sprzedaz;NE-PMAX-SPRZ;AG-SPRZEDAZ;;D02;;;;;;;;;;;;Najpierw porozumienie, potem pozew — krótszy proces i mniej nerwów.;;;;;;;;;;
+1;description;nowy-etap;sprzedaz;NE-PMAX-SPRZ;AG-SPRZEDAZ;;D03;;;;;;;;;;;;Konsultacja z doświadczonym mediatorem. Zakres opisany przed startem.;;;;;;;;;;
+1;description;nowy-etap;sprzedaz;NE-PMAX-SPRZ;AG-SPRZEDAZ;;D04;;;;;;;;;;;;Zadbaj o dzieci: plan kontaktów ustalony spokojnie i zapisany w porozumieniu.;;;;;;;;;;
+1;description;nowy-etap;sprzedaz;NE-PMAX-SPRZ;AG-SPRZEDAZ;;D05;;;;;;;;;;;;Umów konsultację i sprawdź, jak wygląda rozstanie krok po kroku.;;;;;;;;;;

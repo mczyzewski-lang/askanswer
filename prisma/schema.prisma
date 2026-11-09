@@ -121,6 +121,8 @@ model Expert {
 
 model Theme {
   id               String    @id @default(cuid())
+  /// real photos of the brand's experts (Google Adwords creatives), with the consent to use them
+  expertPhotos      AdwordsExpertPhoto[]
   /// the prompt template of infographics drawn by OpenAI (null = the base one in the code)
   infographicPrompt String?
   name             String
@@ -173,6 +175,10 @@ model Project {
   access             ProjectAccess[]
   /// the Social Media Studio project its videos are published from (its schedule shows under the project)
   socialProjectId    String?
+  /// Google Adwords (PMax): campaigns, creative components, and the editable brief for the agency
+  adwordsCampaigns   AdwordsCampaign[]
+  adwordsAssets      AdwordsAsset[]
+  adwordsBrief       String?
   adFootage          AdFootage[]
   adReels            AdReel[]
   name               String
@@ -1335,4 +1341,101 @@ model ProjectAccess {
 
   @@id([userId, projectId])
   @@index([projectId])
+}
+
+/// Google Adwords (PMax): one campaign of a project (sales / educational goal kept apart)
+model AdwordsCampaign {
+  id           String   @id @default(cuid())
+  projectId    String
+  project      Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// campaign_code from the CSV (e.g. NE-PMAX-SPRZ)
+  code         String
+  name         String
+  /// sprzedaz | poradnik
+  goal         String   @default("sprzedaz")
+  /// the final URL — never invented; empty = to fill in before publishing
+  landingUrl   String?
+  businessName String?
+  /// draft | ready | paused
+  status       String   @default("draft")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([projectId, code])
+}
+
+/// Google Adwords (PMax): one component — an image variant, a clean photo, a video variant, a video
+/// scene or a text (headline / long headline / description). `assetKey` = asset_id of the CSV (upsert key).
+model AdwordsAsset {
+  id               String    @id @default(cuid())
+  projectId        String
+  project          Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  assetKey         String
+  /// image | image_clean | video | video_scene | headline | long_headline | description
+  rowType          String
+  funnel           String?
+  campaignCode     String?
+  assetGroup       String?
+  conceptId        String?
+  aspectRatio      String?
+  width            Int?
+  height           Int?
+  durationSec      Float?
+  sceneIndex       Int?
+  startS           Float?
+  endS             Float?
+  headline         String?
+  subheadline      String?
+  body             String?
+  cta              String?
+  adText           String?
+  spokenText       String?
+  screenText       String?
+  visualBrief      String?
+  /// logical key from the CSV; expertPhotoId = the photo it was assigned to
+  expertPhotoKey   String?
+  expertPhotoId    String?
+  landingUrl       String?
+  claimSource      String?
+  approvalRequired Boolean   @default(false)
+  /// the claim / source confirmed by a person (unblocks the component)
+  approvedAt       DateTime?
+  approvedBy       String?
+  status           String?
+  /// a person's priority score from the CSV (0–100) — never a campaign result
+  scoreSeed        Float?
+  scoreNote        String?
+  /// typographic | expert_split | process_steps (image concepts)
+  layout           String?
+  /// editor state: photo focal point / zoom / offset / hidden, clean photo flag…
+  edit             Json?
+  /// columns of the CSV the module does not use — kept for a lossless export
+  extra            Json?
+  order            Int       @default(0)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@unique([projectId, assetKey])
+  @@index([projectId, rowType])
+}
+
+/// A real photo of an expert in the theme's library (Google Adwords creatives) — used only with consent
+model AdwordsExpertPhoto {
+  id               String    @id @default(cuid())
+  themeId          String
+  theme            Theme     @relation(fields: [themeId], references: [id], onDelete: Cascade)
+  /// logical key (expert_photo_key in the CSV)
+  key              String
+  name             String
+  role             String?
+  assetId          String
+  altText          String?
+  consentConfirmed Boolean   @default(false)
+  consentNote      String?
+  consentAt        DateTime?
+  focalX           Float     @default(0.5)
+  focalY           Float     @default(0.35)
+  createdAt        DateTime  @default(now())
+
+  @@unique([themeId, key])
 }

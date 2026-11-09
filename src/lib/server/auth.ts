@@ -68,6 +68,7 @@ export async function projectOfPath(path: string): Promise<string | null> {
   switch (kind) {
     case "projects":
     case "auto-reels":
+    case "adwords":
       return id;
     case "ads":
       if (id === "footage") return sub ? pick(await prisma.adFootage.findUnique({ where: { id: sub }, select: { projectId: true } })) : null;
