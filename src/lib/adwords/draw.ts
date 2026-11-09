@@ -8,12 +8,27 @@
 import type { ThemeTokens } from "../editor/types";
 import type { Measure } from "./score";
 
-export type LayoutKey = "typographic" | "expert_split" | "process_steps" | "clean_photo";
+export type LayoutKey = "typographic" | "expert_split" | "process_steps" | "comparison" | "clean_photo";
 export const LAYOUTS: Record<Exclude<LayoutKey, "clean_photo">, string> = {
   typographic: "Typograficzny",
   expert_split: "Ekspert + tekst",
   process_steps: "Kroki procesu",
+  comparison: "Porównanie (A vs B)",
 };
+
+/** the two sides of a comparison creative (CSV v5 comparison_*) */
+export interface ComparisonCopy {
+  title?: string | null;
+  leftLabel?: string | null;
+  left: string;
+  rightLabel?: string | null;
+  right: string;
+}
+/** comparison_* fields of a record → the comparison copy (null when a side is missing) */
+export function comparisonOf(lp: Record<string, string | undefined> | null | undefined): ComparisonCopy | null {
+  if (!lp?.comparison_left?.trim() || !lp?.comparison_right?.trim()) return null;
+  return { title: lp.comparison_title ?? null, leftLabel: lp.comparison_left_label ?? null, left: lp.comparison_left, rightLabel: lp.comparison_right_label ?? null, right: lp.comparison_right };
+}
 
 export interface ImageLike {
   width: number;
@@ -65,7 +80,7 @@ export interface CreativeInput {
   width: number;
   height: number;
   layout: LayoutKey;
-  copy: { headline: string; subheadline?: string | null; body?: string | null; cta?: string | null };
+  copy: { headline: string; subheadline?: string | null; body?: string | null; cta?: string | null; comparison?: ComparisonCopy | null };
   theme: ThemeTokens;
   logo?: ImageLike | null;
   photo?: PhotoInput | null;
@@ -294,7 +309,8 @@ export function drawCreative(ctx: Ctx2D, input: CreativeInput): Measure {
   const headline = input.copy.headline.trim();
   const subline = (input.copy.subheadline ?? "").trim();
   const steps = layout === "process_steps" ? stepsOf(input.copy.body) : [];
-  const proof = layout !== "process_steps" ? (input.copy.body ?? "").trim() : "";
+  const cmp = layout === "comparison" ? (input.copy.comparison ?? null) : null;
+  const proof = layout !== "process_steps" && !cmp ? (input.copy.body ?? "").trim() : "";
   const room = bottom - y;
   // a narrow text column (next to the photo) starts smaller
   const headStart = unit * (kind === "landscape" ? 0.105 : kind === "portrait" ? 0.1 : 0.095) * Math.min(1, T.w / unit / 0.55);
@@ -308,7 +324,47 @@ export function drawCreative(ctx: Ctx2D, input: CreativeInput): Measure {
   }
   const used = hf.lines.length * hf.lineH + (sf ? unit * 0.025 + sf.lines.length * sf.lineH : 0);
 
-  if (layout === "process_steps" && steps.length) {
+  if (cmp) {
+    // headline on top, then two cards: the usual way (muted) vs ours (accent) — side by side when wide, stacked when tall
+    y += drawLines(ctx, hf, head, T.x, y, ink);
+    boxes.push({ x: T.x, y: y - hf.lines.length * hf.lineH, w: T.w, h: hf.lines.length * hf.lineH });
+    y += unit * 0.035;
+    const side = kind !== "portrait";
+    const gap = unit * 0.03;
+    const cw = side ? (T.w - gap) / 2 : T.w;
+    const avail = bottom - y;
+    const ch = side ? avail : (avail - gap) / 2;
+    const pad = unit * 0.03;
+    const cards = [
+      { label: cmp.leftLabel || "Tradycyjnie", text: cmp.left, ours: false },
+      { label: cmp.rightLabel || "Z nami", text: cmp.right, ours: true },
+    ];
+    cards.forEach((c, i) => {
+      const cx = side ? T.x + i * (cw + gap) : T.x;
+      const cy = side ? y : y + i * (ch + gap);
+      ctx.fillStyle = c.ours ? rgba(theme.accent, 0.18) : rgba(theme.text, 0.06);
+      roundRect(ctx, cx, cy, cw, ch, unit * 0.025);
+      ctx.fill();
+      if (c.ours) {
+        ctx.strokeStyle = theme.accent;
+        ctx.lineWidth = Math.max(2, unit * 0.006);
+        roundRect(ctx, cx, cy, cw, ch, unit * 0.025);
+        ctx.stroke();
+      }
+      const lf = fit(ctx, c.label.toUpperCase(), label, unit * 0.03, unit * 0.022, cw - pad * 2, 1, 1.2);
+      const labInk = c.ours ? inkOn(bg, theme.accent) : rgba(ink, 0.7);
+      if (c.ours) contrasts.push(contrast(inkOn(bg, theme.accent), bg));
+      const tf = fit(ctx, c.text, head, unit * (side ? 0.06 : 0.055), unit * 0.03, cw - pad * 2, side ? 4 : 2, 1.12);
+      const blockH = lf.lines.length * lf.lineH + unit * 0.015 + tf.lines.length * tf.lineH;
+      overflow ||= tf.overflow || blockH > ch - pad * 2 + 1;
+      fonts.push(lf.px, tf.px);
+      // label + text centred in the card
+      const ty = cy + Math.max(pad, (ch - blockH) / 2);
+      drawLines(ctx, lf, label, cx + pad, ty, labInk);
+      drawLines(ctx, tf, head, cx + pad, ty + lf.lines.length * lf.lineH + unit * 0.015, ink);
+      boxes.push({ x: cx, y: cy, w: cw, h: ch });
+    });
+  } else if (layout === "process_steps" && steps.length) {
     // headline on top, then the steps (columns when wide, rows when tall)
     y += drawLines(ctx, hf, head, T.x, y, ink);
     boxes.push({ x: T.x, y: y - hf.lines.length * hf.lineH, w: T.w, h: hf.lines.length * hf.lineH });

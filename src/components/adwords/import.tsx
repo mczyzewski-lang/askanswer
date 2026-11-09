@@ -5,7 +5,7 @@ import { Button, Card, NativeSelect } from "@/components/ui";
 import { DropZone } from "@/components/drop-zone";
 import { api, cn } from "@/lib/utils";
 import { decodeCsv } from "@/lib/csv-import";
-import { ALL_COLUMNS as ADWORDS_COLUMNS, ROW_TYPE_LABEL, type AdwordsColumn, type CsvIssue, type RowType } from "@/lib/adwords/csv";
+import { ALL_COLUMNS as ADWORDS_COLUMNS, ROW_TYPE_LABEL, V5_GROUPS, groupOf, type AdwordsColumn, type CsvIssue, type RowType } from "@/lib/adwords/csv";
 import type { AwData, Toast } from "./types";
 
 interface DryRun {
@@ -18,6 +18,10 @@ interface DryRun {
   counts: Record<RowType, number>;
   concepts: { images: number; cleanPhotos: number; videos: number; scenes: number; texts: number; experiments?: number; meta?: number; sitelinks?: number; landing?: number };
   scopes?: { adAssets: number; landingContent: number };
+  schema?: "v1" | "v2" | "v5";
+  columns?: { core: string[]; groups: Record<string, string[]>; unknown: string[] };
+  missing?: Array<{ rowType: string; field: string; level: "error" | "warning"; rows: number[] }>;
+  derivedScenes?: number;
   projectSlugMismatch: string[];
   applied: boolean;
   created: number;
@@ -82,7 +86,10 @@ export function ImportTab({ data, reload, toast, onDone }: { data: AwData; reloa
               <Upload /> Wybierz plik
             </Button>
             <a href={`${base}/csv?template=1`} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-line px-3 text-sm hover:bg-black/[.03]">
-              <Download className="h-4 w-4" /> Pobierz szablon CSV
+              <Download className="h-4 w-4" /> Szablon CSV v5 (99 kolumn)
+            </a>
+            <a href={`${base}/csv?template=v1`} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-line px-3 text-sm hover:bg-black/[.03]">
+              Szablon v1 (30 kolumn)
             </a>
             <a href={`${base}/csv`} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-line px-3 text-sm hover:bg-black/[.03]" data-testid="export-csv">
               <Download className="h-4 w-4" /> Eksportuj CSV
@@ -130,7 +137,7 @@ export function ImportTab({ data, reload, toast, onDone }: { data: AwData; reloa
               {name} · {dry.total} rekordów · separator „{dry.delimiter}”
             </p>
             <p className="text-sm text-muted" data-testid="import-counts">
-              {dry.concepts.images} koncepty graficzne, {dry.concepts.cleanPhotos} czyste zdjęcia, {dry.concepts.videos} koncepty wideo, {dry.concepts.scenes} scen, {dry.concepts.texts} tekstów
+              {dry.concepts.images} koncepty graficzne, {dry.concepts.cleanPhotos} czyste zdjęcia, {dry.concepts.videos} koncepty wideo, {dry.concepts.scenes} scen{dry.derivedScenes ? ` (${dry.derivedScenes} ze skryptów wideo, edytowalne)` : ""}, {dry.concepts.texts} tekstów
               {dry.concepts.experiments ? `, ${dry.concepts.experiments} eksperymentów, ${dry.concepts.meta} wierszy planu / archiwum` : ""}
               {dry.concepts.sitelinks ? `, ${dry.concepts.sitelinks} sitelinków` : ""}
               {dry.scopes?.landingContent ? (
@@ -147,12 +154,50 @@ export function ImportTab({ data, reload, toast, onDone }: { data: AwData; reloa
               </span>
             ))}
           </div>
+          {dry.columns ? (
+            <div className="space-y-2 rounded-lg border border-line p-3 text-xs" data-testid="import-columns">
+              <p className="text-sm font-medium">
+                Schemat {dry.schema?.toUpperCase()} · {dry.headers.length} kolumn: {dry.columns.core.length} kolumn modułu
+                {Object.keys(dry.columns.groups).length ? `, ${Object.values(dry.columns.groups).flat().length} kolumn v5 w ${Object.keys(dry.columns.groups).length} grupach` : ""}
+                {dry.columns.unknown.length ? `, ${dry.columns.unknown.length} zachowanych bez zmian` : ""}
+              </p>
+              <div className="grid gap-1 sm:grid-cols-2">
+                {V5_GROUPS.filter((g) => dry.columns!.groups[g.key]?.length).map((g) => (
+                  <p key={g.key}>
+                    <b>{g.label}</b> ({dry.columns!.groups[g.key].length}): <span className="font-mono text-muted">{dry.columns!.groups[g.key].join(", ")}</span>
+                  </p>
+                ))}
+              </div>
+              {dry.columns.unknown.length ? (
+                <p className="text-muted">
+                  Nierozpoznane (zapisane i eksportowane z powrotem): <span className="font-mono">{dry.columns.unknown.join(", ")}</span>
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+          {dry.missing?.length ? (
+            <div className="rounded-lg border border-line p-3 text-xs" data-testid="import-missing">
+              <p className="mb-1 text-sm font-medium">Brakujące pola ({dry.missing.reduce((n, m) => n + m.rows.length, 0)})</p>
+              <table className="w-full text-left">
+                <tbody>
+                  {dry.missing.map((m) => (
+                    <tr key={`${m.rowType}|${m.field}`} className="border-t border-line/60">
+                      <td className="py-1 pr-2">{ROW_TYPE_LABEL[m.rowType as RowType] ?? m.rowType}</td>
+                      <td className="pr-2 font-mono">{m.field}</td>
+                      <td className={cn("pr-2", m.level === "error" ? "text-red-700" : "text-amber-800")}>{m.rows.length} rek.</td>
+                      <td className="text-muted">wiersze {m.rows.slice(0, 12).join(", ")}{m.rows.length > 12 ? "…" : ""}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
           {dry.projectSlugMismatch.length ? (
             <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
               W pliku jest project_slug „{dry.projectSlugMismatch.join(", ")}”, a ten projekt to „{data.project.slug}”. Import trafi do bieżącego projektu.
             </p>
           ) : null}
-          <details open={errors.length > 0 || Object.values(mapping).some((v) => v === null)}>
+          <details open={errors.length > 0 || (dry.columns?.unknown.length ?? 0) > 0}>
             <summary className="cursor-pointer text-sm font-medium">Mapowanie kolumn ({Object.values(mapping).filter(Boolean).length}/{dry.headers.length})</summary>
             <div className="mt-2 grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
               {dry.headers.map((h) => (
@@ -170,7 +215,7 @@ export function ImportTab({ data, reload, toast, onDone }: { data: AwData; reloa
                       void check(text, m);
                     }}
                   >
-                    <option value="">— zachowaj jako dodatkową —</option>
+                    <option value="">{groupOf(h.trim().toLowerCase()) ? `— v5: ${V5_GROUPS.find((g) => g.key === groupOf(h.trim().toLowerCase()))?.label} —` : "— zachowaj jako dodatkową —"}</option>
                     {ADWORDS_COLUMNS.map((c) => (
                       <option key={c} value={c}>
                         {c}

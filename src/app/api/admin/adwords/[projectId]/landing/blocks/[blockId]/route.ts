@@ -14,6 +14,7 @@ export const PATCH = route(async (req: Request, ctx: { params: Promise<{ project
       landing_section: z.enum(SECTIONS).optional(),
       landing_order: z.number().int().min(0).max(999).optional(),
       landing_eyebrow: t(200),
+      landing_social_proof: t(300),
       landing_h1: t(200),
       landing_h2: t(600),
       landing_bullets: t(3000),

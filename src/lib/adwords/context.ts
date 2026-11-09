@@ -19,10 +19,13 @@ export interface AssetEdit {
 }
 
 /** the layout of an image row: chosen in the editor, else from the CSV art direction, else by photo */
-export function layoutOf(a: { rowType: string; layout: string | null; visualBrief: string | null; expertPhotoKey: string | null; expertPhotoId: string | null; edit: unknown }): LayoutKey {
+export function layoutOf(a: { rowType: string; layout: string | null; visualBrief: string | null; expertPhotoKey: string | null; expertPhotoId: string | null; edit: unknown; lp?: unknown }): LayoutKey {
   const e = (a.edit ?? {}) as AssetEdit;
   if (a.rowType === "image_clean" || e.cleanPhoto) return "clean_photo";
-  if (a.layout === "typographic" || a.layout === "expert_split" || a.layout === "process_steps") return a.layout;
+  if (a.layout === "typographic" || a.layout === "expert_split" || a.layout === "process_steps" || a.layout === "comparison") return a.layout;
+  // CSV v5: layout_id of the file
+  const lid = ((a.lp ?? {}) as Record<string, string>).layout_id;
+  if (lid === "typographic" || lid === "expert_split" || lid === "process_steps" || lid === "comparison") return lid;
   const m = /^(typographic|expert_split|process_steps)\b/.exec((a.visualBrief ?? "").trim());
   if (m) return m[1] as LayoutKey;
   return a.expertPhotoKey || a.expertPhotoId ? "expert_split" : "typographic";

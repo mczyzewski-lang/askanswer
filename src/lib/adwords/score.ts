@@ -52,7 +52,8 @@ export interface AdAsset {
   evidenceNote?: string | null;
   recordScope?: string | null;
   landingVariantId?: string | null;
-  lp?: Record<string, string> | null;
+  testPriority?: number | null;
+  lp?: Record<string, string | undefined> | null;
 }
 
 export interface ScoreItem {

@@ -3,7 +3,7 @@ import { useMemo, useState } from "react";
 import { Check, Download, Eye, EyeOff } from "lucide-react";
 import { Button, Card, Input, Label, NativeSelect, Switch, Textarea } from "@/components/ui";
 import { api, cn } from "@/lib/utils";
-import { LAYOUTS, type LayoutKey } from "@/lib/adwords/draw";
+import { LAYOUTS, type LayoutKey, comparisonOf } from "@/lib/adwords/draw";
 import { FORMAT_LABEL, formatKeyOf, imageFormat, PMAX_SPEC } from "@/lib/adwords/spec";
 import { brandContext, gateOptionsOf, layoutOf } from "@/lib/adwords/context";
 import { gateImage, scoreImageA, scoreImageB, type Measure } from "@/lib/adwords/score";
@@ -11,6 +11,7 @@ import { CreativeCanvas } from "./canvas";
 import { GateBadge, GateList, ScorePair } from "./scores";
 import { HistoricalEvidence } from "./history";
 import { AdLandingInfo } from "./landing-content";
+import { CsvV5Fields } from "./v5-fields";
 import type { AwAsset, AwData, Toast } from "./types";
 
 const sizeOf = (a: AwAsset) => {
@@ -29,7 +30,7 @@ export function useCreativeInput(data: AwData) {
       width: w,
       height: h,
       layout: (a.effectiveLayout ?? "typographic") as LayoutKey,
-      copy: { headline: a.headline ?? "", subheadline: a.subheadline, body: a.body, cta: a.cta },
+      copy: { headline: a.headline || comparisonOf(a.lp)?.title || "", subheadline: a.subheadline, body: a.body, cta: a.cta, comparison: comparisonOf(a.lp) },
       theme: data.theme,
       logoUrl: data.logoUrl,
       photo: photo && !e.photoHidden ? { url: photo.url, focalX: photo.focalX, focalY: photo.focalY, zoom: e.zoom, offsetX: e.offsetX, offsetY: e.offsetY } : null,
@@ -171,6 +172,7 @@ function ConceptEditor({ conceptId, data, reload, toast, onClose }: { conceptId:
       for (const id of all ? Object.keys(d) : [sel]) {
         const next = { ...n[id], ...patch };
         if (patch.edit) next.edit = { ...(n[id].edit ?? {}), ...patch.edit };
+        if (patch.lp) next.lp = { ...(n[id].lp ?? {}), ...patch.lp };
         next.effectiveLayout = layoutOf(next);
         n[id] = next;
       }
@@ -185,7 +187,7 @@ function ConceptEditor({ conceptId, data, reload, toast, onClose }: { conceptId:
         if (JSON.stringify(r) === JSON.stringify(d)) continue;
         await api(`/api/admin/adwords/${data.project.id}/assets/${r.id}`, {
           method: "PATCH",
-          json: { headline: d.headline, subheadline: d.subheadline, body: d.body, cta: d.cta, claimSource: d.claimSource, layout: d.layout as never, expertPhotoId: d.expertPhotoId, edit: d.edit ?? undefined },
+          json: { headline: d.headline, subheadline: d.subheadline, body: d.body, cta: d.cta, claimSource: d.claimSource, layout: d.layout as never, expertPhotoId: d.expertPhotoId, edit: d.edit ?? undefined, ...(JSON.stringify(r.lp ?? {}) !== JSON.stringify(d.lp ?? {}) ? { lp: Object.fromEntries(Object.entries({ ...Object.fromEntries(Object.keys(r.lp ?? {}).map((k) => [k, ""])), ...(d.lp ?? {}) }).filter(([k]) => !k.startsWith("_")).map(([k, v]) => [k, v ?? ""])) } : {}) },
         });
       }
       toast("Zapisano koncept");
@@ -274,10 +276,28 @@ function ConceptEditor({ conceptId, data, reload, toast, onClose }: { conceptId:
                 <Label>Podtytuł (najwyżej jeden)</Label>
                 <Input value={cur.subheadline ?? ""} onChange={(e) => change({ subheadline: e.target.value })} aria-label="Podtytuł" />
               </div>
-              <div className="space-y-1">
-                <Label>{cur.effectiveLayout === "process_steps" ? "Kroki (rozdziel |)" : "Punkt dowodu (krótko)"}</Label>
-                <Textarea rows={2} value={cur.body ?? ""} onChange={(e) => change({ body: e.target.value })} aria-label="Punkt dowodu" />
-              </div>
+              {cur.effectiveLayout === "comparison" ? (
+                <div className="grid grid-cols-2 gap-2 rounded-lg border border-line p-2" data-testid="comparison-fields">
+                  {(
+                    [
+                      ["comparison_left_label", "Lewa — etykieta", "Tradycyjnie"],
+                      ["comparison_right_label", "Prawa — etykieta", "Z nami"],
+                      ["comparison_left", "Lewa — treść", ""],
+                      ["comparison_right", "Prawa — treść", ""],
+                    ] as const
+                  ).map(([k, l, ph]) => (
+                    <div key={k} className="space-y-1">
+                      <Label>{l}</Label>
+                      <Input value={cur.lp?.[k] ?? ""} placeholder={ph} onChange={(e) => change({ lp: { ...(cur.lp ?? {}), [k]: e.target.value } })} aria-label={l} />
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="space-y-1">
+                  <Label>{cur.effectiveLayout === "process_steps" ? "Kroki (rozdziel |)" : "Punkt dowodu (krótko)"}</Label>
+                  <Textarea rows={2} value={cur.body ?? ""} onChange={(e) => change({ body: e.target.value })} aria-label="Punkt dowodu" />
+                </div>
+              )}
             </>
           ) : null}
           <div className="grid grid-cols-2 gap-3">
@@ -352,6 +372,7 @@ function ConceptEditor({ conceptId, data, reload, toast, onClose }: { conceptId:
           {cur.visualBrief ? <p className="text-xs text-muted">Kierunek artystyczny: {cur.visualBrief}</p> : null}
           {cur.evidenceNote ? <p className="text-xs text-muted">Dowód / kontekst: {cur.evidenceNote}</p> : null}
           {!clean ? <AdLandingInfo data={data} asset={cur} /> : null}
+          <CsvV5Fields asset={cur} />
           {!clean ? <HistoricalEvidence data={data} conceptId={cur.conceptId} text={cur.headline ?? ""} /> : null}
         </div>
       </div>

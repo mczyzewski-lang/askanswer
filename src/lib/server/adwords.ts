@@ -13,9 +13,9 @@ import { signedUrl, toLocalFile } from "./storage";
 import { registerFonts } from "../render/server-render";
 import { themeFromRow, DEFAULT_THEME } from "../themes";
 import { landingMarkdown, landingPlan } from "../adwords/landing";
-import { exportAdwordsCsv, parseAdwordsCsv, slugify, type AdwordsColumn, type LpData, type ParseResult, type ParsedAsset } from "../adwords/csv";
+import { canonicalHeaders, collapseDerivedScenes, exportAdwordsCsv, parseAdwordsCsv, slugify, type AdwordsColumn, type LpData, type ParseResult, type ParsedAsset } from "../adwords/csv";
 import { gateLpOf, isV5Project, landingContext, landingZipFiles, seedClaims } from "./adwords-landing";
-import { drawCreative, type LayoutKey } from "../adwords/draw";
+import { drawCreative, type LayoutKey, comparisonOf } from "../adwords/draw";
 import { PMAX_SPEC, formatKeyOf } from "../adwords/spec";
 import { gateImage, gateSitelink, gateText, gateVideo, scoreImageA, scoreImageB, scoreTextA, scoreTextB, scoreVideoA, scoreVideoB, type AdAsset, type BrandContext, type Measure } from "../adwords/score";
 import { scenesToSrt, shotlistCsv, shotlistMarkdown, teleprompterScript, videoConcepts } from "../adwords/video";
@@ -35,6 +35,26 @@ export async function adwordsProject(projectId: string) {
 }
 
 export const toExportable = (a: Prisma.AdwordsAssetGetPayload<object>) => ({ ...a, extra: (a.extra ?? null) as Record<string, string> | null, lp: (a.lp ?? null) as LpData | null });
+/**
+ * Scenes derived from a video row's script columns are edited as scenes; the script columns of the video
+ * rows they came from follow at once (one source of truth for the export, the brief and the share link).
+ */
+export async function syncScriptColumns(projectId: string, conceptId: string | null) {
+  if (!conceptId) return;
+  const rows = await prisma.adwordsAsset.findMany({ where: { projectId, conceptId, rowType: { in: ["video", "video_scene"] } } });
+  if (!rows.some((r) => r.rowType === "video_scene" && (r.extra as Record<string, string> | null)?.derived_from)) return;
+  const out = collapseDerivedScenes(rows.map(toExportable));
+  for (const o of out) {
+    const prev = rows.find((r) => r.assetKey === o.assetKey);
+    if (prev && prev.rowType === "video" && !same(prev.lp, o.lp)) await prisma.adwordsAsset.update({ where: { id: prev.id }, data: { lp: (o.lp ?? Prisma.JsonNull) as Prisma.InputJsonValue } });
+  }
+}
+
+/** the module's records as the CSV, in the column order of the last imported file */
+export async function projectCsv(projectId: string) {
+  const { project, assets } = await adwordsProject(projectId);
+  return exportAdwordsCsv(assets.map(toExportable), slugify(project.name), "1", (project.adwordsCsvColumns ?? null) as string[] | null);
+}
 
 export const toAdAsset = (a: Prisma.AdwordsAssetGetPayload<object>): AdAsset => ({ ...a, approvedAt: a.approvedAt, edit: (a.edit ?? null) as AdAsset["edit"], lp: (a.lp ?? null) as Record<string, string> | null });
 
@@ -69,14 +89,15 @@ export async function importAdwordsCsv(projectId: string, text: string, opts: { 
     images: new Set(parsed.assets.filter((a) => a.rowType === "image").map((a) => a.data.conceptId)).size,
     cleanPhotos: parsed.assets.filter((a) => a.rowType === "image_clean").length,
     videos: new Set(parsed.assets.filter((a) => a.rowType === "video").map((a) => a.data.conceptId)).size,
-    scenes: parsed.assets.filter((a) => a.rowType === "video_scene").length,
+    // scene rows + the scenes the video script columns (v3–v5) will become
+    scenes: parsed.assets.filter((a) => a.rowType === "video_scene").length + inlineScenes(parsed.assets).length,
     texts: parsed.assets.filter((a) => a.rowType === "headline" || a.rowType === "long_headline" || a.rowType === "description").length,
     experiments: new Set(parsed.assets.map((a) => a.data.experimentId).filter(Boolean)).size,
     meta: parsed.assets.filter((a) => a.rowType === "experiment_plan" || a.rowType === "historical_reference").length,
     sitelinks: parsed.assets.filter((a) => a.rowType === "sitelink").length,
     landing: parsed.assets.filter((a) => a.rowType === "landing_page").length,
   };
-  const base = { ...parsed, applied: false, created: 0, updated: 0, unchanged: 0, campaignsCreated: 0, projectSlugMismatch: mismatch, concepts };
+  const base = { ...parsed, applied: false, created: 0, updated: 0, unchanged: 0, campaignsCreated: 0, projectSlugMismatch: mismatch, concepts, derivedScenes: inlineScenes(parsed.assets).length };
   if (opts.dryRun || parsed.issues.some((i) => i.level === "error")) return base;
 
   const existing = new Map((await prisma.adwordsAsset.findMany({ where: { projectId } })).map((a) => [a.assetKey, a]));
@@ -105,8 +126,8 @@ export async function importAdwordsCsv(projectId: string, text: string, opts: { 
         const keepLp = Object.fromEntries(Object.entries((prev?.lp ?? {}) as Record<string, string>).filter(([k]) => k.startsWith("_")));
         const lpVal = a.data.lp || Object.keys(keepLp).length ? { ...(a.data.lp ?? {}), ...keepLp } : null;
         const data = { ...a.data, lp: lpVal ?? Prisma.JsonNull, rowType: a.rowType, extra: a.extra as Prisma.InputJsonValue, order: i };
+        const layoutId = a.data.lp?.layout_id ?? a.extra.layout_id;
         if (!prev) {
-          const layoutId = a.extra.layout_id;
           await tx.adwordsAsset.create({ data: { projectId, assetKey: a.assetKey, ...data, ...(layoutId && LAYOUT_IDS.includes(layoutId) ? { layout: layoutId } : {}), expertPhotoId: photo?.id ?? null } });
           created++;
           continue;
@@ -116,17 +137,22 @@ export async function importAdwordsCsv(projectId: string, text: string, opts: { 
           unchanged++;
           continue;
         }
-        await tx.adwordsAsset.update({ where: { id: prev.id }, data: { ...data, expertPhotoId: prev.expertPhotoId ?? photo?.id ?? null } });
+        // a new layout_id in the file wins over the editor's choice; otherwise the editor's layout stays
+        const prevLayoutId = ((prev.lp ?? {}) as Record<string, string>).layout_id;
+        const layout = layoutId && layoutId !== prevLayoutId && LAYOUT_IDS.includes(layoutId) ? { layout: layoutId } : {};
+        await tx.adwordsAsset.update({ where: { id: prev.id }, data: { ...data, ...layout, expertPhotoId: prev.expertPhotoId ?? photo?.id ?? null } });
         updated++;
       }
     },
     { timeout: 60_000 },
   );
+  // the column order of the file (the export keeps it)
+  await prisma.project.update({ where: { id: projectId }, data: { adwordsCsvColumns: canonicalHeaders(parsed) } });
   await seedClaims(projectId);
   return { ...base, applied: true, created, updated, unchanged, campaignsCreated, derivedScenes: rows.length - parsed.assets.length };
 }
 
-const LAYOUT_IDS = ["typographic", "expert_split", "process_steps", "clean_photo"];
+const LAYOUT_IDS = ["typographic", "expert_split", "process_steps", "clean_photo", "comparison"];
 
 /**
  * CSV v3–v5 keep the video script in the video row (video_hook_0_3, video_spoken_3_9, video_screen_3_9…).
@@ -139,34 +165,31 @@ export function inlineScenes(assets: ParsedAsset[]): ParsedAsset[] {
   for (const v of assets.filter((a) => a.rowType === "video" && a.data.conceptId)) {
     const c = v.data.conceptId!;
     if (withScenes.has(c) || done.has(c)) continue;
-    const segs = new Map<string, { s: number; e: number; spoken?: string; screen?: string; visual?: string }>();
-    for (const [k, val] of Object.entries(v.extra)) {
+    const segs = new Map<string, { s: number; e: number; hook?: string; spoken?: string; screen?: string; visual?: string }>();
+    for (const [k, val] of Object.entries({ ...v.extra, ...(v.data.lp ?? {}) })) {
       const m = /^video_(hook|spoken|screen|visual)_(\d+)_(\d+)$/.exec(k);
-      if (!m || !val.trim()) continue;
+      if (!m || !val?.trim()) continue;
       const id = `${m[2]}_${m[3]}`;
       const seg = segs.get(id) ?? { s: +m[2], e: +m[3] };
-      if (m[1] === "hook") {
-        seg.spoken = seg.spoken ?? val;
-        seg.screen = seg.screen ?? val;
-      } else if (m[1] === "spoken") seg.spoken = val;
-      else if (m[1] === "screen") seg.screen = val;
-      else seg.visual = val;
+      seg[m[1] as "hook" | "spoken" | "screen" | "visual"] = val.trim();
       segs.set(id, seg);
     }
     if (!segs.size) continue;
     done.add(c);
     [...segs.values()]
       .sort((a, b) => a.s - b.s)
-      .forEach((g, i) =>
+      .forEach((g, i) => {
+        const spoken = g.hook ?? g.spoken ?? null;
         out.push({
           row: v.row,
           assetKey: `${c}-SC${i + 1}`,
           rowType: "video_scene",
           projectSlug: v.projectSlug,
-          data: { ...v.data, aspectRatio: null, width: null, height: null, durationSec: null, sceneIndex: i + 1, startS: g.s, endS: g.e, spokenText: g.spoken ?? null, screenText: g.screen ?? g.spoken ?? null, visualBrief: g.visual ?? null, headline: null, subheadline: null, body: null, adText: null, recordScope: "ad_asset", lp: null },
+          data: { ...v.data, aspectRatio: null, width: null, height: null, durationSec: null, sceneIndex: i + 1, startS: g.s, endS: g.e, spokenText: spoken, screenText: g.screen ?? spoken, visualBrief: g.visual ?? v.data.visualBrief ?? null, headline: null, subheadline: null, body: null, cta: null, adText: null, recordScope: null, landingVariantId: null, testPriority: null, experimentId: null, variant: null, pairedAssetId: null, lp: null },
+          // derived from the script columns of this video row — exported back into them
           extra: { derived_from: v.assetKey },
-        }),
-      );
+        });
+      });
   }
   return out;
 }
@@ -217,7 +240,7 @@ export async function renderAdwordsImage(assetDbId: string, fmt: "png" | "jpg" =
     width: W,
     height: H,
     layout: layoutOf(a),
-    copy: { headline: a.headline ?? "", subheadline: a.subheadline, body: a.body, cta: a.cta },
+    copy: { headline: a.headline || comparisonOf((a.lp as Record<string, string> | null))?.title || "", subheadline: a.subheadline, body: a.body, cta: a.cta, comparison: comparisonOf((a.lp as Record<string, string> | null)) },
     theme,
     logo,
     photo: photoImg && photoRow ? { image: photoImg, focalX: photoRow.focalX, focalY: photoRow.focalY, zoom: edit.zoom, offsetX: edit.offsetX, offsetY: edit.offsetY } : null,
@@ -427,7 +450,7 @@ export async function adwordsZip(projectId: string, fmt: "png" | "jpg" = "png", 
     const tEv = new Map([...ev.texts, ...ev.sitelinks].map((t) => [t.id, t]));
     files["teksty_google_ads.csv"] = strToU8("\uFEFF" + Papa.unparse(texts.map((t) => ({ experiment_id: t.experimentId ?? "", variant: t.variant ?? "", asset_id: t.assetKey, typ: t.rowType, tekst: t.adText ?? "", znaki: [...(t.adText ?? "")].length, opis_1: ((t.lp ?? {}) as Record<string, string>).sitelink_description_1 ?? "", opis_2: ((t.lp ?? {}) as Record<string, string>).sitelink_description_2 ?? "", url: t.landingUrl ?? "", landing_variant: t.landingVariantId ?? "", status: tEv.get(t.id)?.gate.status ?? "" })), { delimiter: ";" }));
   }
-  if (whole && want("report") && !sel.onlyReady) files[`${slug}_google_adwords.csv`] = strToU8(exportAdwordsCsv(assets.map(toExportable), slug));
+  if (whole && want("report") && !sel.onlyReady) files[`${slug}_google_adwords.csv`] = strToU8(exportAdwordsCsv(assets.map(toExportable), slug, "1", (project.adwordsCsvColumns ?? null) as string[] | null));
   // video: what to record (script, teleprompter, subtitles, shot list) + the MP4s already rendered
   const vids = videoConcepts(list.filter((a) => (a.rowType === "video" || a.rowType === "video_scene") && want("videos") && picked(assets.find((x) => x.id === a.id)!)));
   for (const v of vids) {

@@ -22,7 +22,7 @@ export const LP_VARIANTS: Record<string, { label: string; note: string }> = {
 };
 export const variantLabel = (id: string | null | undefined) => (id ? (LP_VARIANTS[id]?.label ?? id) : "—");
 
-export const SECTIONS = ["hero", "trust_bar", "comparison", "plan_contents", "pricing", "case_study", "expert_video", "reviews", "form", "faq", "sticky_cta"] as const;
+export const SECTIONS = ["hero", "trust_bar", "social_proof", "comparison", "plan_contents", "pricing", "case_study", "expert_video", "reviews", "form", "faq", "sticky_cta"] as const;
 export const SECTION_LABEL: Record<string, string> = {
   hero: "Hero (pierwszy ekran)",
   trust_bar: "Pasek zaufania",
@@ -35,6 +35,7 @@ export const SECTION_LABEL: Record<string, string> = {
   form: "Formularz",
   faq: "FAQ",
   sticky_cta: "Sticky CTA (mobile)",
+  social_proof: "Social proof",
 };
 
 /** the offer, as the owner wants it vs as it is safe to say */
@@ -66,6 +67,8 @@ export interface LpBlock {
   section: string;
   order: number;
   eyebrow: string;
+  /** social proof line (rating, reviews) — a claim, checked against the registry */
+  socialProof: string;
   h1: string;
   h2: string;
   bullets: string[];
@@ -116,6 +119,7 @@ export function blockOf(a: BlockSource): LpBlock {
     section: lp.landing_section ?? "hero",
     order: Number(lp.landing_order ?? 0) || 0,
     eyebrow: lp.landing_eyebrow ?? "",
+    socialProof: lp.landing_social_proof ?? "",
     h1: lp.landing_h1 ?? "",
     h2: lp.landing_h2 ?? "",
     bullets: splitList(lp.landing_bullets),
@@ -151,7 +155,7 @@ export const variantsOf = (all: LpBlock[]) => {
   return [...Object.keys(LP_VARIANTS).filter((k) => ids.includes(k)), ...ids.filter((k) => !LP_VARIANTS[k]).sort()];
 };
 
-export const blockTexts = (b: LpBlock) => [b.eyebrow, b.h1, b.h2, ...b.bullets, b.body, b.primaryCta, b.secondaryCta, b.microcopy, b.comparisonLeft, b.comparisonRight].filter(Boolean);
+export const blockTexts = (b: LpBlock) => [b.eyebrow, b.socialProof, b.h1, b.h2, ...b.bullets, b.body, b.primaryCta, b.secondaryCta, b.microcopy, b.comparisonLeft, b.comparisonRight].filter(Boolean);
 export const blockText = (b: LpBlock) => blockTexts(b).join("\n");
 
 // ------------------------------------------------------------------------------------------ claims
@@ -561,7 +565,7 @@ export function productionBlocks(blocks: LpBlock[], ctx: LpContext): { blocks: L
   for (const b of blocks) {
     if (b.hidden) continue;
     const f = blockFindings(b, ctx);
-    const proofBlock = b.section === "reviews" || b.section === "case_study" || b.section === "trust_bar";
+    const proofBlock = b.section === "reviews" || b.section === "case_study" || b.section === "trust_bar" || b.section === "social_proof";
     if (proofBlock && f.statuses.includes("blocked_claim_validation")) {
       removed.push(`cały blok „${SECTION_LABEL[b.section] ?? b.section}” (dowód niepotwierdzony)`);
       continue;
@@ -570,6 +574,7 @@ export function productionBlocks(blocks: LpBlock[], ctx: LpContext): { blocks: L
     const nb: LpBlock = {
       ...b,
       eyebrow: clean(b.eyebrow, where),
+      socialProof: clean(b.socialProof, where),
       h1: clean(b.h1, where),
       h2: clean(b.h2, where),
       bullets: b.bullets.map((x) => clean(x, where)).filter(Boolean),
@@ -579,6 +584,8 @@ export function productionBlocks(blocks: LpBlock[], ctx: LpContext): { blocks: L
       comparisonRight: clean(b.comparisonRight, where),
     };
     if (b.section === "hero" && b.eyebrow && !nb.eyebrow) nb.eyebrow = "Opinie klientów w Google";
+    // an unproven rating becomes a neutral proof bar (no numbers) until it is confirmed
+    if (b.socialProof && !nb.socialProof) nb.socialProof = "Opinie klientów w Google";
     out.push(nb);
   }
   return { blocks: out, removed };
@@ -586,9 +593,9 @@ export function productionBlocks(blocks: LpBlock[], ctx: LpContext): { blocks: L
 
 // ------------------------------------------------------------------------------------------ exports
 
-const LP_CSV_COLS = ["landing_variant_id", "landing_order", "landing_section", "landing_eyebrow", "landing_h1", "landing_h2", "landing_bullets", "body", "landing_primary_cta", "landing_secondary_cta", "landing_microcopy", "landing_visual_direction", "landing_target_step", "landing_event", "proof_claim", "proof_status", "inherited_from_base"];
+const LP_CSV_COLS = ["landing_variant_id", "landing_order", "landing_section", "landing_eyebrow", "landing_social_proof", "landing_h1", "landing_h2", "landing_bullets", "body", "landing_primary_cta", "landing_secondary_cta", "landing_microcopy", "landing_visual_direction", "landing_target_step", "landing_event", "proof_claim", "proof_status", "inherited_from_base"];
 export function lpCsv(variantId: string, blocks: LpBlock[]): string {
-  const rows = blocks.map((b) => [variantId, String(b.order), b.section, b.eyebrow, b.h1, b.h2, b.bullets.join(" | "), b.body, b.primaryCta, b.secondaryCta, b.microcopy, b.visual, b.targetStep, b.event, b.proofClaim, b.proofStatus, b.inherited ? BASE_VARIANT : ""]);
+  const rows = blocks.map((b) => [variantId, String(b.order), b.section, b.eyebrow, b.socialProof, b.h1, b.h2, b.bullets.join(" | "), b.body, b.primaryCta, b.secondaryCta, b.microcopy, b.visual, b.targetStep, b.event, b.proofClaim, b.proofStatus, b.inherited ? BASE_VARIANT : ""]);
   return "﻿" + Papa.unparse({ fields: LP_CSV_COLS, data: rows }, { delimiter: ";", newline: "\r\n" });
 }
 
@@ -606,6 +613,7 @@ export function lpMarkdown(blocks: LpBlock[], m: LpExportMeta): string {
   for (const b of blocks) {
     L.push(`<!-- ${b.section}${b.event ? ` · event: ${b.event}` : ""} -->`);
     if (b.eyebrow) L.push(`_${b.eyebrow}_`);
+    if (b.socialProof) L.push(`> ${b.socialProof}`);
     if (b.h1) L.push(`# ${b.h1}`);
     else L.push(`## ${b.h2 || SECTION_LABEL[b.section] || b.section}`);
     if (b.h1 && b.h2) L.push("", b.h2);
@@ -632,7 +640,7 @@ export function lpJson(blocks: LpBlock[], m: LpExportMeta, theme: LpContext["the
     removed: m.removed ?? [],
     theme,
     events: LP_EVENTS.map((e) => e.name),
-    sections: blocks.map((b) => ({ section: b.section, order: b.order, eyebrow: b.eyebrow || null, h1: b.h1 || null, h2: b.h2 || null, body: b.body || null, bullets: b.bullets, comparison: b.comparisonLeft || b.comparisonRight ? { left: b.comparisonLeft, right: b.comparisonRight } : null, primaryCta: b.primaryCta || null, secondaryCta: b.secondaryCta || null, microcopy: b.microcopy || null, visual: b.visual || null, event: b.event || null, photoId: b.photoId, inherited: !!b.inherited })),
+    sections: blocks.map((b) => ({ section: b.section, order: b.order, eyebrow: b.eyebrow || null, socialProof: b.socialProof || null, h1: b.h1 || null, h2: b.h2 || null, body: b.body || null, bullets: b.bullets, comparison: b.comparisonLeft || b.comparisonRight ? { left: b.comparisonLeft, right: b.comparisonRight } : null, primaryCta: b.primaryCta || null, secondaryCta: b.secondaryCta || null, microcopy: b.microcopy || null, visual: b.visual || null, event: b.event || null, photoId: b.photoId, inherited: !!b.inherited })),
   };
 }
 
@@ -681,7 +689,7 @@ export function lpHtml(blocks: LpBlock[], m: LpExportMeta, o: LpHtmlOptions): st
       const photo = o.photoUrl?.(b.photoId) ?? null;
       switch (b.section) {
         case "hero":
-          return `<header class="hero" data-section="hero"><div class="w hero-grid"><div>${m.mode === "preview" && o.findings?.(b)?.statuses.length ? `<p class="warn">⚠ ${o.findings!(b)!.statuses.map((s) => STATUS_LABEL[s]).join(" · ")}</p>` : ""}${b.eyebrow ? `<p class="eyebrow">${esc(b.eyebrow)}</p>` : ""}<h1>${esc(b.h1)}</h1>${p(b.h2, "lead")}${b.primaryCta ? cta(b.primaryCta, b.event || "lp_hero_cta_click") : ""}${p(b.microcopy, "micro")}</div><div class="hero-img">${photo ? `<img src="${esc(photo)}" alt="">` : `<span>${esc(b.visual || "zdjęcie: realny mediator / mediacja")}</span>`}</div></div></header>`;
+          return `<header class="hero" data-section="hero"><div class="w hero-grid"><div>${m.mode === "preview" && o.findings?.(b)?.statuses.length ? `<p class="warn">⚠ ${o.findings!(b)!.statuses.map((s) => STATUS_LABEL[s]).join(" · ")}</p>` : ""}${b.eyebrow ? `<p class="eyebrow">${esc(b.eyebrow)}</p>` : ""}${b.socialProof ? `<p class="proof-bar">${esc(b.socialProof)}</p>` : ""}<h1>${esc(b.h1)}</h1>${p(b.h2, "lead")}${b.primaryCta ? cta(b.primaryCta, b.event || "lp_hero_cta_click") : ""}${p(b.microcopy, "micro")}</div><div class="hero-img">${photo ? `<img src="${esc(photo)}" alt="">` : `<span>${esc(b.visual || "zdjęcie: realny mediator / mediacja")}</span>`}</div></div></header>`;
         case "comparison":
           return sec(b, `${h2(b)}<div class="cmp"><div><h3>Tradycyjnie</h3>${p(b.comparisonLeft)}</div><div class="nowy"><h3>${esc(o.businessName ?? "Z nami")}</h3>${p(b.comparisonRight)}</div></div>${list(b.bullets)}`, alt);
         case "form":
@@ -712,7 +720,7 @@ ${fontCss}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:400 17px/1.6 "${bodyF}",system-ui,sans-serif}
 h1,h2,h3{font-family:"${head}",system-ui,sans-serif;line-height:1.15;margin:0 0 .5em}h1{font-weight:800;font-size:clamp(30px,4.2vw,54px)}h2{font-weight:800;font-size:clamp(24px,2.6vw,34px)}h3{font-size:19px}
 .w{max-width:1120px;margin:0 auto;padding:0 24px}.top{display:flex;align-items:center;justify-content:space-between;padding:16px 24px;max-width:1120px;margin:0 auto}.top img{height:34px}.top .tel{border:1px solid var(--cta);color:var(--cta);border-radius:999px;padding:6px 14px;text-decoration:none;font-size:14px}
-.hero{padding:40px 0 56px}.hero-grid{display:grid;grid-template-columns:1.15fr 1fr;gap:40px;align-items:center}.eyebrow{font-size:14px;letter-spacing:.02em;color:var(--accent);margin:0 0 12px}.lead{font-size:19px;opacity:.9;margin:0 0 24px}.micro{font-size:14px;opacity:.75;margin:12px 0 0}
+.hero{padding:40px 0 56px}.hero-grid{display:grid;grid-template-columns:1.15fr 1fr;gap:40px;align-items:center}.proof-bar{display:inline-block;font-size:13px;border:1px solid color-mix(in srgb,var(--text) 20%,transparent);border-radius:999px;padding:4px 12px;margin:0 0 14px}.eyebrow{font-size:14px;letter-spacing:.02em;color:var(--accent);margin:0 0 12px}.lead{font-size:19px;opacity:.9;margin:0 0 24px}.micro{font-size:14px;opacity:.75;margin:12px 0 0}
 .hero-img{aspect-ratio:4/3;border-radius:16px;overflow:hidden;background:linear-gradient(135deg,var(--sec),var(--accent));display:grid;place-items:center;color:#fff;font-size:14px;text-align:center;padding:0}.hero-img img{width:100%;height:100%;object-fit:cover}
 .cta{display:inline-flex;align-items:center;justify-content:center;text-align:center;line-height:1.25;min-height:52px;padding:0 28px;border-radius:12px;background:var(--cta);color:var(--cta-text);font:700 17px "${head}",system-ui,sans-serif;text-decoration:none;border:0;cursor:pointer}
 .s{padding:56px 0}.s.alt{background:color-mix(in srgb,var(--sec) 14%,var(--bg))}ul{padding-left:1.2em}li{margin:.3em 0}
@@ -739,7 +747,7 @@ ${sticky || blocks.length ? `<div class="sticky">${cta(sticky?.primaryCta || pri
 // ------------------------------------------------------------------------------------------ ad gates
 
 /** v5 rules for the ads (context of the project: offer + approved claims) */
-export function adClaimProblems(text: string, lp: Record<string, string> | null | undefined, opts: { offerValid: boolean; approvedClaims: string[]; assetApproved: boolean; landingUrl?: string | null }): Array<{ level: "blokada" | "do_poprawy"; message: string }> {
+export function adClaimProblems(text: string, lp: Record<string, string | undefined> | null | undefined, opts: { offerValid: boolean; approvedClaims: string[]; assetApproved: boolean; landingUrl?: string | null }): Array<{ level: "blokada" | "do_poprawy"; message: string }> {
   const out: Array<{ level: "blokada" | "do_poprawy"; message: string }> = [];
   for (const c of claimsIn(text)) {
     if (opts.approvedClaims.includes(c.key)) continue;

@@ -409,7 +409,8 @@ function LandingPreview({ blocks, variantId, data, ctx, device, mode }: { blocks
 // ------------------------------------------------------------------------------------------ block editor
 
 const FIELDS: Array<[string, string, "input" | "area"]> = [
-  ["landing_eyebrow", "Eyebrow / proof", "input"],
+  ["landing_eyebrow", "Eyebrow", "input"],
+  ["landing_social_proof", "Social proof (ocena, opinie)", "input"],
   ["landing_h1", "H1 (tylko hero)", "input"],
   ["landing_h2", "H2 / podtytuł", "area"],
   ["body", "Treść", "area"],
@@ -423,10 +424,10 @@ const FIELDS: Array<[string, string, "input" | "area"]> = [
   ["landing_event", "Zdarzenie analityki", "input"],
 ];
 const valueOf = (b: LpBlock, k: string) =>
-  ({ landing_eyebrow: b.eyebrow, landing_h1: b.h1, landing_h2: b.h2, body: b.body, landing_bullets: b.bullets.join(" | "), comparison_left: b.comparisonLeft, comparison_right: b.comparisonRight, landing_primary_cta: b.primaryCta, landing_secondary_cta: b.secondaryCta, landing_microcopy: b.microcopy, landing_visual_direction: b.visual, landing_event: b.event })[k] ?? "";
+  ({ landing_eyebrow: b.eyebrow, landing_social_proof: b.socialProof, landing_h1: b.h1, landing_h2: b.h2, body: b.body, landing_bullets: b.bullets.join(" | "), comparison_left: b.comparisonLeft, comparison_right: b.comparisonRight, landing_primary_cta: b.primaryCta, landing_secondary_cta: b.secondaryCta, landing_microcopy: b.microcopy, landing_visual_direction: b.visual, landing_event: b.event })[k] ?? "";
 const relevant = (section: string, k: string, b: LpBlock) =>
   !!valueOf(b, k) ||
-  ({ hero: ["landing_eyebrow", "landing_h1", "landing_h2", "landing_primary_cta", "landing_microcopy", "landing_visual_direction", "landing_event"], comparison: ["landing_h2", "comparison_left", "comparison_right"], form: ["landing_h2", "landing_bullets", "landing_primary_cta", "landing_microcopy", "landing_event"], faq: ["landing_h2", "landing_bullets"], sticky_cta: ["landing_primary_cta", "landing_event"] } as Record<string, string[]>)[section]?.includes(k) ||
+  ({ hero: ["landing_eyebrow", "landing_social_proof", "landing_h1", "landing_h2", "landing_primary_cta", "landing_microcopy", "landing_visual_direction", "landing_event"], comparison: ["landing_h2", "comparison_left", "comparison_right"], form: ["landing_h2", "landing_bullets", "landing_primary_cta", "landing_microcopy", "landing_event"], faq: ["landing_h2", "landing_bullets"], sticky_cta: ["landing_primary_cta", "landing_event"] } as Record<string, string[]>)[section]?.includes(k) ||
   (!["hero", "comparison", "form", "faq", "sticky_cta"].includes(section) && ["landing_h2", "body", "landing_bullets"].includes(k));
 
 function BlockEditor({ b, variantId, data, ctx, call }: { b: LpBlock; variantId: string; data: AwData; ctx: LpContext; call: (u: string, m: string, j?: unknown) => Promise<boolean> }) {

@@ -183,6 +183,8 @@ model Project {
   adwordsOffer       Json?
   /// Google Adwords: landing page variants (URL, name), URL strategy (Final URL expansion)
   adwordsLanding     Json?
+  /// Google Adwords: the column order of the last imported CSV (export keeps the agency's sheet layout)
+  adwordsCsvColumns  Json?
   adwordsClaims      AdwordsClaim[]
   adwordsShares      AdwordsShare[]
   adwordsHistory     AdwordsHistoryImport[]
@@ -1426,6 +1428,8 @@ model AdwordsAsset {
   recordScope      String?
   /// LP_A_PLAN | LP_B_COST | LP_C_PROOF_SPEED — the landing page variant an ad leads to / a block belongs to
   landingVariantId String?
+  /// CSV v5: priority of the test / component (1 = first)
+  testPriority     Int?
   /// CSV v5 landing / offer / proof fields by column name (landing_h1, cta_button_short, proof_status…) + editor state
   lp               Json?
   /// typographic | expert_split | process_steps (image concepts)

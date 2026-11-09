@@ -73,7 +73,7 @@ test("Google Adwords v5: 50 ad assets + 16 landing blocks, offer, claims registr
   await page.getByTestId("lp-mode-production").click();
   await expect(page.getByTestId("lp-removed")).toContainText("Case study");
   await expect(frame.locator("body")).not.toContainText("1000 opinii");
-  await expect(frame.locator(".eyebrow").first()).toHaveText("Opinie klientów w Google");
+  await expect(frame.locator(".proof-bar").first()).toHaveText("Opinie klientów w Google");
   await page.getByRole("button", { name: "390 px" }).click();
   await expect(page.getByTitle("Podgląd LP_A_PLAN 390px")).toBeVisible();
   if (process.env.LP_SHOTS) {

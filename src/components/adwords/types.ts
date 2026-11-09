@@ -48,7 +48,8 @@ export interface AwAsset {
   evidenceNote: string | null;
   recordScope: string | null;
   landingVariantId: string | null;
-  lp: Record<string, string> | null;
+  lp: Record<string, string | undefined> | null;
+  testPriority: number | null;
   effectiveLayout: LayoutKey | null;
   edit: { photoHidden?: boolean; zoom?: number; offsetX?: number; offsetY?: number; cleanPhoto?: boolean; renderAssetId?: string } | null;
 }

@@ -14,7 +14,9 @@ import type { AwAsset, AwData, Toast } from "./types";
 const ORDER = ["landscape", "square", "portrait"];
 
 export function ExperimentsTab({ data, reload, toast }: { data: AwData; reload: () => Promise<void>; toast: Toast }) {
-  const list = experiments(data.assets);
+  // CSV v5 test_priority: the first test first
+  const prio = (id: string) => Math.min(...data.assets.filter((a) => a.experimentId === id && a.testPriority != null).map((a) => a.testPriority!), 999);
+  const list = experiments(data.assets).sort((x, y) => prio(x.id) - prio(y.id) || x.id.localeCompare(y.id));
   const [open, setOpen] = useState(list[0]?.id ?? "");
   if (!list.length) return <Card className="p-6 text-sm text-muted">Brak eksperymentów — zaimportuj CSV v2 z kolumnami experiment_id / variant (np. T01–T05).</Card>;
   const e = list.find((x) => x.id === open) ?? list[0];
@@ -26,7 +28,7 @@ export function ExperimentsTab({ data, reload, toast }: { data: AwData; reload: 
           return (
             <button key={x.id} type="button" onClick={() => setOpen(x.id)} className={cn("rounded-xl border px-3 py-2 text-left text-sm", x.id === e.id ? "border-ink bg-white" : "border-line hover:bg-white")} data-testid="experiment-card">
               <span className="flex items-center gap-1.5 font-medium">
-                <FlaskConical className="h-4 w-4" /> {x.id} {bad ? <span className="text-red-600">⛔</span> : null}
+                <FlaskConical className="h-4 w-4" /> {x.id} {prio(x.id) < 999 ? <span className="rounded bg-black/[.06] px-1 text-[10px]">P{prio(x.id)}</span> : null} {bad ? <span className="text-red-600">⛔</span> : null}
               </span>
               <span className="block text-xs text-muted">{x.testAxis ?? x.axis}</span>
             </button>
