@@ -18,8 +18,8 @@ test("Google Adwords API: idempotent CSV import, real PNG renders, ZIP with mani
   // preview: counts, no errors, nothing written yet
   const dry = await (await request.post(`${base}/import`, { data: { text: CSV, dryRun: true } })).json();
   expect(dry.total).toBe(81);
-  expect(dry.counts).toEqual({ image: 18, image_clean: 2, video: 15, video_scene: 21, headline: 15, long_headline: 5, description: 5, experiment_plan: 0, historical_reference: 0 });
-  expect(dry.concepts).toEqual({ images: 6, cleanPhotos: 2, videos: 5, scenes: 21, texts: 25, experiments: 0, meta: 0 });
+  expect(dry.counts).toEqual({ image: 18, image_clean: 2, video: 15, video_scene: 21, headline: 15, long_headline: 5, description: 5, sitelink: 0, experiment_plan: 0, historical_reference: 0, landing_page: 0 });
+  expect(dry.concepts).toEqual({ images: 6, cleanPhotos: 2, videos: 5, scenes: 21, texts: 25, experiments: 0, meta: 0, sitelinks: 0, landing: 0 });
   expect(dry.issues.filter((i: { level: string }) => i.level === "error")).toEqual([]);
   expect(dry.projectSlugMismatch).toEqual([]);
   expect(dry.applied).toBe(false);

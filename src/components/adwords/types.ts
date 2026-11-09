@@ -3,6 +3,7 @@ import type { Gate, Score } from "@/lib/adwords/score";
 import type { PMAX_SPEC } from "@/lib/adwords/spec";
 import type { SCORING_B } from "@/lib/adwords/score";
 import type { LayoutKey } from "@/lib/adwords/draw";
+import type { ClaimRec, OfferInfo } from "@/lib/adwords/landing-content";
 
 export interface AwAsset {
   id: string;
@@ -45,6 +46,9 @@ export interface AwAsset {
   testStage: string | null;
   deployMode: string | null;
   evidenceNote: string | null;
+  recordScope: string | null;
+  landingVariantId: string | null;
+  lp: Record<string, string> | null;
   effectiveLayout: LayoutKey | null;
   edit: { photoHidden?: boolean; zoom?: number; offsetX?: number; offsetY?: number; cleanPhoto?: boolean; renderAssetId?: string } | null;
 }
@@ -82,10 +86,20 @@ export interface AwData {
     images: Array<{ id: string; assetKey: string; conceptId: string | null; scoreA: Score | null; scoreB: Score | null; gate: Gate }>;
     videos: Array<{ conceptId: string; scoreA: Score; scoreB: Score; gate: Gate }>;
     texts: Array<{ id: string; assetKey: string; scoreA: Score; scoreB: Score; gate: Gate }>;
+    sitelinks: Array<{ id: string; assetKey: string; gate: Gate }>;
   };
   spec: typeof PMAX_SPEC;
   scoringB: typeof SCORING_B;
   history: { imports: AwHistoryImport[]; rows: AwHistoryRow[] };
+  landing: {
+    offer: OfferInfo | null;
+    claims: Array<ClaimRec & { id: string }>;
+    variants: Record<string, { url?: string | null; name?: string | null } | undefined>;
+    settings: { variants: Record<string, { url?: string | null; name?: string | null }>; urlStrategy?: { finalUrlExpansion?: "on" | "off" | "unknown"; exclusions?: string; checkedBy?: string | null; checkedAt?: string | null } };
+  };
+  /** v5 projects: rules of the ad gates (offer confirmed, approved claims); null = older project */
+  gateLp: { offerValid: boolean; approvedClaims: string[] } | null;
+  me: { email: string };
 }
 export type Toast = (t: string, tone?: "ok" | "err") => void;
 

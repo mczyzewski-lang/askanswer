@@ -8,6 +8,7 @@ import { gateVideo, scoreVideoA, scoreVideoB } from "@/lib/adwords/score";
 import { formatKeyOf, PMAX_SPEC } from "@/lib/adwords/spec";
 import { scenesToSrt, shotlistCsv, shotlistMarkdown, teleprompterScript, videoConcepts, videoDuration } from "@/lib/adwords/video";
 import { SceneCanvas } from "./canvas";
+import { AdLandingInfo } from "./landing-content";
 import { GateBadge, GateList, ScorePair } from "./scores";
 import type { AwAsset, AwData, Toast } from "./types";
 
@@ -62,6 +63,7 @@ function VideoConceptView({ conceptId, data, reload, toast }: { conceptId: strin
   const [job, setJob] = useState<string | null>(null);
   const [voice, setVoice] = useState(true);
   const draftV = { ...v, scenes };
+  const variantRow = data.assets.find((a) => a.rowType === "video" && a.conceptId === v.conceptId) ?? null;
   const dur = videoDuration(draftV);
   const campaign = data.campaigns.find((c) => c.code === v.variants[0]?.campaignCode);
   const ctx = brandContext({ name: data.project.name, adwordsBrief: data.project.brief }, campaign?.landingUrl ?? null, !!data.logoUrl);
@@ -137,7 +139,8 @@ function VideoConceptView({ conceptId, data, reload, toast }: { conceptId: strin
           <span>{dur} s</span>
         </div>
       </div>
-      <GateList gate={gateVideo(draftV, ctx, gateOptionsOf(data.assets))} />
+      <GateList gate={gateVideo(draftV, ctx, gateOptionsOf(data.assets, data.gateLp))} />
+      {variantRow ? <AdLandingInfo data={data} asset={variantRow} /> : null}
       {/* scenes: edit the script and timings */}
       <div className="space-y-2">
         {scenes.map((s, i) => (

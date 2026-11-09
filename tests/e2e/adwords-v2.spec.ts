@@ -136,6 +136,8 @@ test("Google Adwords v2: creatives v1 + v2 (experiments), Historia PMax, per-arm
   expect(brief).toContain("ROAS niedostępny");
   // the landing page tab: the mock repeats the ad's headline / CTA, checks, a spec to download
   await page.goto(`/admin/adwords/${project.id}?tab=landing`);
+  // a project without landing content: the general rules + the mock built from the ads (folded)
+  await page.getByText("Ogólne zasady strony docelowej i wzór z reklam").click();
   await expect(page.getByTestId("landing-h1")).not.toBeEmpty();
   await expect(page.getByTestId("landing-checks")).toContainText("URL");
   await expect(page.getByTestId("landing-sections")).toContainText("H1 = hasło z reklamy");

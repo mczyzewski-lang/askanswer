@@ -35,6 +35,8 @@ export const PMAX_SPEC = {
     description: { label: "Opis", maxChars: 90, maxCount: 5, minCount: 2, recommendedCount: 4 },
     business_name: { label: "Nazwa firmy", maxChars: 25, maxCount: 1, minCount: 1, recommendedCount: 1 },
   },
+  /** sitelinks (link text + 2 optional description lines) — Google Ads API SitelinkAsset; the metrics of the report concern the whole ad */
+  sitelinks: { textMax: 25, descMax: 35, recommendedCount: 4, note: "Wyniki sitelinka w raporcie dotyczą całej reklamy, przy której był wyświetlany — nie samego kliknięcia w link." },
   videos: {
     formats: [
       { key: "landscape", ratio: "16:9", width: 1920, height: 1080 },

@@ -29,6 +29,6 @@ export function layoutOf(a: { rowType: string; layout: string | null; visualBrie
 }
 
 /** texts of the archive marked historical_do_not_publish (they block any component that reuses them) */
-export function gateOptionsOf(list: Array<Pick<AdAsset, "rowType" | "status" | "adText" | "headline">>): GateOptions {
-  return { doNotPublish: list.filter((a) => a.rowType === "historical_reference" && /do_not_publish/i.test(a.status ?? "")).map((a) => a.adText || a.headline || "").filter(Boolean) };
+export function gateOptionsOf(list: Array<Pick<AdAsset, "rowType" | "status" | "adText" | "headline">>, lp?: GateOptions["lp"]): GateOptions {
+  return { lp: lp ?? null, doNotPublish: list.filter((a) => a.rowType === "historical_reference" && /do_not_publish/i.test(a.status ?? "")).map((a) => a.adText || a.headline || "").filter(Boolean) };
 }

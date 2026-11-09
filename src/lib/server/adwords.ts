@@ -13,10 +13,11 @@ import { signedUrl, toLocalFile } from "./storage";
 import { registerFonts } from "../render/server-render";
 import { themeFromRow, DEFAULT_THEME } from "../themes";
 import { landingMarkdown, landingPlan } from "../adwords/landing";
-import { exportAdwordsCsv, parseAdwordsCsv, slugify, type AdwordsColumn, type ParseResult } from "../adwords/csv";
+import { exportAdwordsCsv, parseAdwordsCsv, slugify, type AdwordsColumn, type LpData, type ParseResult, type ParsedAsset } from "../adwords/csv";
+import { gateLpOf, isV5Project, landingContext, landingZipFiles, seedClaims } from "./adwords-landing";
 import { drawCreative, type LayoutKey } from "../adwords/draw";
 import { PMAX_SPEC, formatKeyOf } from "../adwords/spec";
-import { gateImage, gateText, gateVideo, scoreImageA, scoreImageB, scoreTextA, scoreTextB, scoreVideoA, scoreVideoB, type AdAsset, type BrandContext, type Measure } from "../adwords/score";
+import { gateImage, gateSitelink, gateText, gateVideo, scoreImageA, scoreImageB, scoreTextA, scoreTextB, scoreVideoA, scoreVideoB, type AdAsset, type BrandContext, type Measure } from "../adwords/score";
 import { scenesToSrt, shotlistCsv, shotlistMarkdown, teleprompterScript, videoConcepts } from "../adwords/video";
 import { experiments } from "../adwords/experiments";
 import { ANGLE_LABEL, MISSING_DATA, matchHistory } from "../adwords/history";
@@ -33,7 +34,9 @@ export async function adwordsProject(projectId: string) {
   return { project, theme, assets, photos: project.theme?.expertPhotos ?? [], campaigns: project.adwordsCampaigns };
 }
 
-export const toAdAsset = (a: Prisma.AdwordsAssetGetPayload<object>): AdAsset => ({ ...a, approvedAt: a.approvedAt, edit: (a.edit ?? null) as AdAsset["edit"] });
+export const toExportable = (a: Prisma.AdwordsAssetGetPayload<object>) => ({ ...a, extra: (a.extra ?? null) as Record<string, string> | null, lp: (a.lp ?? null) as LpData | null });
+
+export const toAdAsset = (a: Prisma.AdwordsAssetGetPayload<object>): AdAsset => ({ ...a, approvedAt: a.approvedAt, edit: (a.edit ?? null) as AdAsset["edit"], lp: (a.lp ?? null) as Record<string, string> | null });
 
 // ------------------------------------------------------------------------------------------- import
 
@@ -46,9 +49,12 @@ export interface ImportOutcome extends Omit<ParseResult, "preview"> {
   campaignsCreated: number;
   projectSlugMismatch: string[];
   concepts: { images: number; cleanPhotos: number; videos: number; scenes: number; texts: number };
+  derivedScenes?: number;
 }
 
-const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+/** canonical JSON (jsonb stores object keys in its own order) */
+const canon = (v: unknown): unknown => (Array.isArray(v) ? v.map(canon) : v && typeof v === "object" && !(v instanceof Date) ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, canon((v as Record<string, unknown>)[k])])) : v);
+const same = (a: unknown, b: unknown) => JSON.stringify(canon(a ?? null)) === JSON.stringify(canon(b ?? null));
 
 /**
  * Read the CSV and (unless `dryRun`) upsert by asset_id. Nothing is written when the file has errors.
@@ -67,12 +73,15 @@ export async function importAdwordsCsv(projectId: string, text: string, opts: { 
     texts: parsed.assets.filter((a) => a.rowType === "headline" || a.rowType === "long_headline" || a.rowType === "description").length,
     experiments: new Set(parsed.assets.map((a) => a.data.experimentId).filter(Boolean)).size,
     meta: parsed.assets.filter((a) => a.rowType === "experiment_plan" || a.rowType === "historical_reference").length,
+    sitelinks: parsed.assets.filter((a) => a.rowType === "sitelink").length,
+    landing: parsed.assets.filter((a) => a.rowType === "landing_page").length,
   };
   const base = { ...parsed, applied: false, created: 0, updated: 0, unchanged: 0, campaignsCreated: 0, projectSlugMismatch: mismatch, concepts };
   if (opts.dryRun || parsed.issues.some((i) => i.level === "error")) return base;
 
   const existing = new Map((await prisma.adwordsAsset.findMany({ where: { projectId } })).map((a) => [a.assetKey, a]));
   const photos = project.theme?.expertPhotos ?? [];
+  const rows = [...parsed.assets, ...inlineScenes(parsed.assets)];
   let created = 0;
   let updated = 0;
   let unchanged = 0;
@@ -89,16 +98,20 @@ export async function importAdwordsCsv(projectId: string, text: string, opts: { 
           campaignsCreated++;
         }
       }
-      for (const [i, a] of parsed.assets.entries()) {
+      for (const [i, a] of rows.entries()) {
         const photo = a.data.expertPhotoKey ? photos.find((p) => p.key === a.data.expertPhotoKey) : null;
-        const data = { ...a.data, rowType: a.rowType, extra: a.extra as Prisma.InputJsonValue, order: i };
         const prev = existing.get(a.assetKey);
+        // the editor's own landing fields (_hidden, _photo_id…) survive a re-import
+        const keepLp = Object.fromEntries(Object.entries((prev?.lp ?? {}) as Record<string, string>).filter(([k]) => k.startsWith("_")));
+        const lpVal = a.data.lp || Object.keys(keepLp).length ? { ...(a.data.lp ?? {}), ...keepLp } : null;
+        const data = { ...a.data, lp: lpVal ?? Prisma.JsonNull, rowType: a.rowType, extra: a.extra as Prisma.InputJsonValue, order: i };
         if (!prev) {
-          await tx.adwordsAsset.create({ data: { projectId, assetKey: a.assetKey, ...data, expertPhotoId: photo?.id ?? null } });
+          const layoutId = a.extra.layout_id;
+          await tx.adwordsAsset.create({ data: { projectId, assetKey: a.assetKey, ...data, ...(layoutId && LAYOUT_IDS.includes(layoutId) ? { layout: layoutId } : {}), expertPhotoId: photo?.id ?? null } });
           created++;
           continue;
         }
-        const changed = Object.entries(data).some(([k, v]) => !same((prev as Record<string, unknown>)[k], v));
+        const changed = Object.entries({ ...data, lp: lpVal }).some(([k, v]) => !same((prev as Record<string, unknown>)[k], v));
         if (!changed) {
           unchanged++;
           continue;
@@ -109,7 +122,53 @@ export async function importAdwordsCsv(projectId: string, text: string, opts: { 
     },
     { timeout: 60_000 },
   );
-  return { ...base, applied: true, created, updated, unchanged, campaignsCreated };
+  await seedClaims(projectId);
+  return { ...base, applied: true, created, updated, unchanged, campaignsCreated, derivedScenes: rows.length - parsed.assets.length };
+}
+
+const LAYOUT_IDS = ["typographic", "expert_split", "process_steps", "clean_photo"];
+
+/**
+ * CSV v3–v5 keep the video script in the video row (video_hook_0_3, video_spoken_3_9, video_screen_3_9…).
+ * When a concept has no video_scene rows, its scenes are derived from the first variant that has them.
+ */
+export function inlineScenes(assets: ParsedAsset[]): ParsedAsset[] {
+  const withScenes = new Set(assets.filter((a) => a.rowType === "video_scene").map((a) => a.data.conceptId));
+  const out: ParsedAsset[] = [];
+  const done = new Set<string>();
+  for (const v of assets.filter((a) => a.rowType === "video" && a.data.conceptId)) {
+    const c = v.data.conceptId!;
+    if (withScenes.has(c) || done.has(c)) continue;
+    const segs = new Map<string, { s: number; e: number; spoken?: string; screen?: string; visual?: string }>();
+    for (const [k, val] of Object.entries(v.extra)) {
+      const m = /^video_(hook|spoken|screen|visual)_(\d+)_(\d+)$/.exec(k);
+      if (!m || !val.trim()) continue;
+      const id = `${m[2]}_${m[3]}`;
+      const seg = segs.get(id) ?? { s: +m[2], e: +m[3] };
+      if (m[1] === "hook") {
+        seg.spoken = seg.spoken ?? val;
+        seg.screen = seg.screen ?? val;
+      } else if (m[1] === "spoken") seg.spoken = val;
+      else if (m[1] === "screen") seg.screen = val;
+      else seg.visual = val;
+      segs.set(id, seg);
+    }
+    if (!segs.size) continue;
+    done.add(c);
+    [...segs.values()]
+      .sort((a, b) => a.s - b.s)
+      .forEach((g, i) =>
+        out.push({
+          row: v.row,
+          assetKey: `${c}-SC${i + 1}`,
+          rowType: "video_scene",
+          projectSlug: v.projectSlug,
+          data: { ...v.data, aspectRatio: null, width: null, height: null, durationSec: null, sceneIndex: i + 1, startS: g.s, endS: g.e, spokenText: g.spoken ?? null, screenText: g.screen ?? g.spoken ?? null, visualBrief: g.visual ?? null, headline: null, subheadline: null, body: null, adText: null, recordScope: "ad_asset", lp: null },
+          extra: { derived_from: v.assetKey },
+        }),
+      );
+  }
+  return out;
 }
 
 // ------------------------------------------------------------------------------------------- render
@@ -182,7 +241,7 @@ export async function evaluateProject(projectId: string, measures: Map<string, M
   const landing = campaigns.find((c) => c.landingUrl)?.landingUrl ?? null;
   const ctxOf = (code: string | null) => brandContext(project, campaigns.find((c) => c.code === code)?.landingUrl ?? landing, !!theme.logoAssetId || !!project.theme?.logoAssetId);
   const list = assets.map(toAdAsset);
-  const opts = gateOptionsOf(list);
+  const opts = gateOptionsOf(list, gateLpOf(isV5Project(assets), await landingContext(projectId)));
   const photoOf = (a: AdAsset) => {
     const p = a.expertPhotoId ? photos.find((x) => x.id === a.expertPhotoId) : a.expertPhotoKey ? photos.find((x) => x.key === a.expertPhotoKey) : null;
     return p ? { id: p.id, consentConfirmed: p.consentConfirmed } : null;
@@ -204,7 +263,8 @@ export async function evaluateProject(projectId: string, measures: Map<string, M
     const ctx = ctxOf(t.campaignCode ?? null);
     return { id: t.id!, assetKey: t.assetKey, scoreA: scoreTextA(t, textsAll, ctx), scoreB: scoreTextB(t, textsAll, ctx), gate: gateText(t, opts) };
   });
-  return { images, videos, texts };
+  const sitelinks = list.filter((a) => a.rowType === "sitelink").map((t) => ({ id: t.id!, assetKey: t.assetKey, gate: gateSitelink(t, opts) }));
+  return { images, videos, texts, sitelinks };
 }
 
 // ------------------------------------------------------------------------------------------- brief
@@ -286,6 +346,8 @@ export interface ZipSelection {
   /** one arm of an experiment */
   experimentId?: string;
   variant?: string;
+  /** only these parts: images, videos, texts, report (CSV + brief), landing — empty = all */
+  parts?: string[];
 }
 
 /**
@@ -307,13 +369,14 @@ export async function adwordsZip(projectId: string, fmt: "png" | "jpg" = "png", 
     return a.rowType === "video_scene" && assets.some((v) => v.rowType === "video" && v.conceptId === a.conceptId && v.variant === sel.variant);
   };
   const picked = (a: (typeof assets)[number]) => whole || inArm(a) || (sel.assetIds ?? []).includes(a.id) || (!!a.conceptId && (sel.conceptIds ?? []).includes(a.conceptId));
+  const want = (k: string) => !sel.parts?.length || sel.parts.includes(k);
   const files: Record<string, Uint8Array> = {};
   const manifest: Array<Record<string, string | number>> = [];
   const measures = new Map<string, Measure>();
   const sizes = new Map<string, number>();
   const cache: { logo?: Image | null; photos: Map<string, Image | null> } = { photos: new Map() };
   const rendered: Array<{ a: (typeof assets)[number]; name: string; w: number; h: number; bytes: number }> = [];
-  for (const a of assets.filter((x) => (x.rowType === "image" || x.rowType === "image_clean") && picked(x))) {
+  for (const a of assets.filter((x) => (x.rowType === "image" || x.rowType === "image_clean") && picked(x) && want("images"))) {
     const r = await renderAdwordsImage(a.id, fmt, cache);
     files[`grafiki/${r.fileName}`] = new Uint8Array(r.buf);
     measures.set(a.id, r.measure);
@@ -345,14 +408,14 @@ export async function adwordsZip(projectId: string, fmt: "png" | "jpg" = "png", 
   files["manifest.csv"] = strToU8("\uFEFF" + Papa.unparse(manifest.length ? manifest : [{ asset_id: "", file: "" }], { delimiter: ";" }));
   files["manifest.json"] = strToU8(JSON.stringify({ project: project.name, selection: whole ? "całość" : sel, generatedAt: new Date().toISOString(), spec: PMAX_SPEC.verifiedAt, files: manifest }, null, 2));
   // texts ready for Google Ads (never experiment plans or the archive)
-  const texts = assets.filter((a) => (a.rowType === "headline" || a.rowType === "long_headline" || a.rowType === "description") && (whole || inArm(a) || (sel.assetIds ?? []).includes(a.id)));
-  if (texts.length) {
-    const tEv = new Map(ev.texts.map((t) => [t.id, t]));
-    files["teksty_google_ads.csv"] = strToU8("\uFEFF" + Papa.unparse(texts.map((t) => ({ experiment_id: t.experimentId ?? "", variant: t.variant ?? "", asset_id: t.assetKey, typ: t.rowType, tekst: t.adText ?? "", znaki: [...(t.adText ?? "")].length, status: tEv.get(t.id)?.gate.status ?? "" })), { delimiter: ";" }));
+  const texts = assets.filter((a) => (a.rowType === "headline" || a.rowType === "long_headline" || a.rowType === "description" || a.rowType === "sitelink") && (whole || inArm(a) || (sel.assetIds ?? []).includes(a.id)));
+  if (texts.length && want("texts")) {
+    const tEv = new Map([...ev.texts, ...ev.sitelinks].map((t) => [t.id, t]));
+    files["teksty_google_ads.csv"] = strToU8("\uFEFF" + Papa.unparse(texts.map((t) => ({ experiment_id: t.experimentId ?? "", variant: t.variant ?? "", asset_id: t.assetKey, typ: t.rowType, tekst: t.adText ?? "", znaki: [...(t.adText ?? "")].length, opis_1: ((t.lp ?? {}) as Record<string, string>).sitelink_description_1 ?? "", opis_2: ((t.lp ?? {}) as Record<string, string>).sitelink_description_2 ?? "", url: t.landingUrl ?? "", landing_variant: t.landingVariantId ?? "", status: tEv.get(t.id)?.gate.status ?? "" })), { delimiter: ";" }));
   }
-  if (whole) files[`${slug}_google_adwords.csv`] = strToU8(exportAdwordsCsv(assets.map((a) => ({ ...a, extra: (a.extra ?? null) as Record<string, string> | null })), slug));
+  if (whole && want("report")) files[`${slug}_google_adwords.csv`] = strToU8(exportAdwordsCsv(assets.map(toExportable), slug));
   // video: what to record (script, teleprompter, subtitles, shot list) + the MP4s already rendered
-  const vids = videoConcepts(list.filter((a) => (a.rowType === "video" || a.rowType === "video_scene") && picked(assets.find((x) => x.id === a.id)!)));
+  const vids = videoConcepts(list.filter((a) => (a.rowType === "video" || a.rowType === "video_scene") && want("videos") && picked(assets.find((x) => x.id === a.id)!)));
   for (const v of vids) {
     files[`wideo/${v.conceptId}/napisy.srt`] = strToU8(scenesToSrt(v.scenes));
     files[`wideo/${v.conceptId}/teleprompter.txt`] = strToU8(teleprompterScript(v));
@@ -372,14 +435,15 @@ export async function adwordsZip(projectId: string, fmt: "png" | "jpg" = "png", 
     files["wideo/shotlista.csv"] = strToU8(shotlistCsv(vids));
     files["wideo/shotlista.md"] = strToU8(shotlistMarkdown(vids));
   }
-  if (whole) {
+  if (whole && want("landing") && assets.some((a) => a.rowType === "landing_page")) for (const [k, v] of Object.entries(await landingZipFiles(projectId))) files[k] = strToU8(v);
+  else if (whole && want("landing")) {
     for (const c of campaigns.length ? campaigns : [null]) {
       const plan = landingPlan({ projectName: project.name, campaign: c, assets: list, photos: photos.map((p) => ({ id: p.id, key: p.key, name: p.name, role: p.role ?? null, consentConfirmed: !!p.consentConfirmed })) });
       files[`landing_page/${c?.code ?? "projekt"}.md`] = strToU8(landingMarkdown(plan, project.name, c?.name ?? null));
     }
   }
-  if (whole) files["brief.md"] = strToU8(project.adwordsBrief ?? defaultBrief(project, { campaigns, assets: list, evaluation: ev, history: (await prisma.adwordsHistoryRow.findMany({ where: { projectId } })) }));
-  const label = whole ? "" : sel.experimentId ? `_${sel.experimentId}${sel.variant ? `_${sel.variant}` : ""}` : sel.conceptIds?.length === 1 ? `_${sel.conceptIds[0]}` : "_wybor";
+  if (whole && want("report")) files["brief.md"] = strToU8(project.adwordsBrief ?? defaultBrief(project, { campaigns, assets: list, evaluation: ev, history: (await prisma.adwordsHistoryRow.findMany({ where: { projectId } })) }));
+  const label = whole ? (sel.parts?.length ? `_${sel.parts.join("-")}` : "") : sel.experimentId ? `_${sel.experimentId}${sel.variant ? `_${sel.variant}` : ""}` : sel.conceptIds?.length === 1 ? `_${sel.conceptIds[0]}` : "_wybor";
   return { zip: Buffer.from(zipSync(files, { level: 6 })), name: `${slug}_google_adwords${label}_${fmt}.zip`, count: rendered.length };
 }
 

@@ -5,6 +5,7 @@ import { Card, NativeSelect } from "@/components/ui";
 import { api, cn } from "@/lib/utils";
 import { armLimits, experimentChecks, experiments, MODE_NOTE, type Arm } from "@/lib/adwords/experiments";
 import { formatKeyOf } from "@/lib/adwords/spec";
+import { experimentLandingCheck } from "@/lib/adwords/landing-content";
 import { CreativeCanvas, SceneCanvas } from "./canvas";
 import { useCreativeInput } from "./images";
 import { HistoricalEvidence } from "./history";
@@ -38,7 +39,8 @@ export function ExperimentsTab({ data, reload, toast }: { data: AwData; reload: 
 }
 
 function ExperimentView({ e, data, reload, toast }: { e: ReturnType<typeof experiments>[number]; data: AwData; reload: () => Promise<void>; toast: Toast }) {
-  const checks = experimentChecks(e);
+  const lpCheck = experimentLandingCheck(data.assets.filter((a) => a.experimentId === e.id && a.rowType !== "experiment_plan") as never);
+  const checks = [...experimentChecks(e), ...(lpCheck ? [{ level: lpCheck.level === "ok" ? "ok" : "blokada", message: lpCheck.message }] : [])] as ReturnType<typeof experimentChecks>;
   const base = `/api/admin/adwords/${data.project.id}`;
   const setMode = async (m: string) => {
     try {

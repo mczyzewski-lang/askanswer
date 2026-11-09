@@ -10,6 +10,7 @@ import { gateImage, scoreImageA, scoreImageB, type Measure } from "@/lib/adwords
 import { CreativeCanvas } from "./canvas";
 import { GateBadge, GateList, ScorePair } from "./scores";
 import { HistoricalEvidence } from "./history";
+import { AdLandingInfo } from "./landing-content";
 import type { AwAsset, AwData, Toast } from "./types";
 
 const sizeOf = (a: AwAsset) => {
@@ -219,7 +220,7 @@ function ConceptEditor({ conceptId, data, reload, toast, onClose }: { conceptId:
         {rows.map((r) => {
           const d = view(r.id);
           const m = measures[r.id];
-          const g = gateImage(d, ctx, m ?? null, photoOf(d), null, gateOptionsOf(data.assets));
+          const g = gateImage(d, ctx, m ?? null, photoOf(d), null, gateOptionsOf(data.assets, data.gateLp));
           const { key, w, h } = sizeOf(r);
           return (
             <button key={r.id} type="button" onClick={() => setSel(r.id)} className={cn("space-y-1.5 rounded-xl border-2 p-2 text-left", sel === r.id ? "border-ink" : "border-transparent hover:border-line")} style={{ width: key === "landscape" ? 380 : key === "square" ? 240 : 200 }} data-testid={`format-${key}`}>
@@ -347,9 +348,10 @@ function ConceptEditor({ conceptId, data, reload, toast, onClose }: { conceptId:
           </p>
           {!clean ? <ScorePair a={scoreImageA(cur, ctx, measures[sel] ?? null, photoOf(cur))} b={scoreImageB(cur, ctx, measures[sel] ?? null, photoOf(cur))} seed={cur.scoreSeed} /> : <p className="text-xs text-muted">Czyste zdjęcie — bez oceny treści.</p>}
           <p className="text-sm font-medium">Walidacja (niezależna od oceny)</p>
-          <GateList gate={gateImage(cur, ctx, measures[sel] ?? null, photoOf(cur), null, gateOptionsOf(data.assets))} />
+          <GateList gate={gateImage(cur, ctx, measures[sel] ?? null, photoOf(cur), null, gateOptionsOf(data.assets, data.gateLp))} />
           {cur.visualBrief ? <p className="text-xs text-muted">Kierunek artystyczny: {cur.visualBrief}</p> : null}
           {cur.evidenceNote ? <p className="text-xs text-muted">Dowód / kontekst: {cur.evidenceNote}</p> : null}
+          {!clean ? <AdLandingInfo data={data} asset={cur} /> : null}
           {!clean ? <HistoricalEvidence data={data} conceptId={cur.conceptId} text={cur.headline ?? ""} /> : null}
         </div>
       </div>

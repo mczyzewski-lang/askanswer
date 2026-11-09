@@ -39,12 +39,45 @@ export const ADWORDS_COLUMNS = [
 ] as const;
 /** schema_version 2: experiments (optional — a v1 file has none of them) */
 export const ADWORDS_V2_COLUMNS = ["experiment_id", "variant", "paired_asset_id", "test_axis", "test_stage", "deploy_mode", "evidence_note"] as const;
-export const ALL_COLUMNS = [...ADWORDS_COLUMNS, ...ADWORDS_V2_COLUMNS] as const;
+/** schema_version 5: landing page content + the offer / proof fields of each ad (optional) */
+export const ADWORDS_V5_COLUMNS = ["record_scope", "landing_variant_id"] as const;
+/** v5 fields stored together (by column name) in `lp` */
+export const LP_FIELDS = [
+  "landing_section",
+  "landing_order",
+  "landing_eyebrow",
+  "landing_h1",
+  "landing_h2",
+  "landing_bullets",
+  "landing_primary_cta",
+  "landing_secondary_cta",
+  "landing_microcopy",
+  "landing_visual_direction",
+  "landing_target_step",
+  "landing_event",
+  "cta_extended_user_proposal",
+  "cta_extended_safe",
+  "cta_button_short",
+  "offer_core",
+  "message_match_angle",
+  "proof_claim",
+  "proof_source_required",
+  "proof_status",
+  "proof_scope",
+  "experiment_note",
+  "page_implementation_note",
+  "user_visible_copy",
+  "sitelink_description_1",
+  "sitelink_description_2",
+] as const;
+export type LpField = (typeof LP_FIELDS)[number];
+export type LpData = Partial<Record<LpField, string>>;
+export const ALL_COLUMNS = [...ADWORDS_COLUMNS, ...ADWORDS_V2_COLUMNS, ...ADWORDS_V5_COLUMNS, ...LP_FIELDS] as const;
 export type AdwordsColumn = (typeof ALL_COLUMNS)[number];
 
-export const ROW_TYPES = ["image", "image_clean", "video", "video_scene", "headline", "long_headline", "description", "experiment_plan", "historical_reference"] as const;
-/** metadata of tests and the archive — never rendered as images nor exported to Google Ads */
-export const META_ROW_TYPES = ["experiment_plan", "historical_reference"] as const;
+export const ROW_TYPES = ["image", "image_clean", "video", "video_scene", "headline", "long_headline", "description", "sitelink", "experiment_plan", "historical_reference", "landing_page"] as const;
+/** metadata of tests, the archive and the landing page content — never rendered as images nor exported to Google Ads */
+export const META_ROW_TYPES = ["experiment_plan", "historical_reference", "landing_page"] as const;
 export const isMetaRow = (t: string) => (META_ROW_TYPES as readonly string[]).includes(t);
 export type RowType = (typeof ROW_TYPES)[number];
 export const ROW_TYPE_LABEL: Record<RowType, string> = {
@@ -55,6 +88,8 @@ export const ROW_TYPE_LABEL: Record<RowType, string> = {
   headline: "krótki nagłówek",
   long_headline: "długi nagłówek",
   description: "opis",
+  sitelink: "link do podstrony (sitelink)",
+  landing_page: "treść landing page",
   experiment_plan: "plan eksperymentu",
   historical_reference: "archiwum (historyczne)",
 };
@@ -98,6 +133,13 @@ const SYNONYMS: Record<string, AdwordsColumn> = {
   zrodlo: "claim_source",
   zatwierdzenie: "approval_required",
   ocena: "score_seed",
+  scope: "record_scope",
+  lpvariant: "landing_variant_id",
+  landingvariant: "landing_variant_id",
+  sitelinkdescription1: "sitelink_description_1",
+  sitelinkdescription2: "sitelink_description_2",
+  sitelinkdesc1: "sitelink_description_1",
+  sitelinkdesc2: "sitelink_description_2",
 };
 
 const FOLD: Record<string, string> = { ą: "a", ć: "c", ę: "e", ł: "l", ń: "n", ó: "o", ś: "s", ź: "z", ż: "z" };
@@ -169,6 +211,10 @@ export interface ParsedAsset {
     testStage: string | null;
     deployMode: string | null;
     evidenceNote: string | null;
+    recordScope: string | null;
+    landingVariantId: string | null;
+    /** v5 landing / offer / proof fields (only the filled ones), null when none */
+    lp: LpData | null;
   };
   /** columns not mapped to the module (kept for the export), plus schema_version */
   extra: Record<string, string>;
@@ -183,6 +229,8 @@ export interface ParseResult {
   assets: ParsedAsset[];
   issues: CsvIssue[];
   counts: Record<RowType, number>;
+  /** v5: Google ad assets vs landing page content records */
+  scopes: { adAssets: number; landingContent: number };
 }
 
 const truthy = (v: string) => /^(true|1|tak|yes|y|t|x)$/i.test(v.trim());
@@ -275,7 +323,23 @@ export function parseAdwordsCsv(text: string, mapping?: Record<string, AdwordsCo
       testStage: str("test_stage"),
       deployMode: str("deploy_mode")?.toLowerCase() ?? null,
       evidenceNote: str("evidence_note"),
+      recordScope: str("record_scope")?.toLowerCase() ?? (type === "landing_page" ? "landing_content" : null),
+      landingVariantId: str("landing_variant_id")?.toUpperCase() ?? null,
+      lp: null,
     };
+    const lp: LpData = {};
+    for (const f of LP_FIELDS) if (get(f)) lp[f] = get(f);
+    data.lp = Object.keys(lp).length ? lp : null;
+    // v5 scope: landing content is never a Google asset (and vice versa)
+    if (data.recordScope && !/^(ad_asset|landing_content)$/.test(data.recordScope)) issues.push({ row, column: "record_scope", message: `record_scope „${data.recordScope}” — oczekiwane ad_asset albo landing_content.`, level: "error" });
+    if (type === "landing_page" && data.recordScope !== "landing_content") issues.push({ row, column: "record_scope", message: "Wiersz landing_page musi mieć record_scope=landing_content (to nie jest asset Google).", level: "error" });
+    if (type !== "landing_page" && data.recordScope === "landing_content") issues.push({ row, column: "record_scope", message: `record_scope=landing_content tylko dla row_type=landing_page (jest „${type}”).`, level: "error" });
+    if (type === "landing_page") {
+      if (!data.landingVariantId) issues.push({ row, column: "landing_variant_id", message: "Blok landing page bez landing_variant_id (np. LP_A_PLAN).", level: "error" });
+      if (!lp.landing_section) issues.push({ row, column: "landing_section", message: "Blok landing page bez landing_section (hero, faq…).", level: "error" });
+      if (lp.landing_order && !/^\d+$/.test(lp.landing_order)) issues.push({ row, column: "landing_order", message: `landing_order „${lp.landing_order}” — oczekiwana liczba całkowita.`, level: "error" });
+    }
+    if (type === "sitelink" && !data.adText) issues.push({ row, column: "ad_text", message: "Sitelink bez tekstu linku (ad_text).", level: "error" });
     // what each kind of row needs
     if ((type === "image" || type === "image_clean" || type === "video" || type === "video_scene") && !data.conceptId) issues.push({ row, column: "concept_id", message: "Brak concept_id — wiersz nie zostanie połączony z konceptem.", level: "error" });
     if ((type === "headline" || type === "long_headline" || type === "description") && !data.adText) issues.push({ row, column: "ad_text", message: "Brak treści w ad_text.", level: "error" });
@@ -295,11 +359,14 @@ export function parseAdwordsCsv(text: string, mapping?: Record<string, AdwordsCo
   // a pair must point to a record of the file (or one already imported)
   const keys = new Set(assets.map((a) => a.assetKey));
   for (const a of assets) if (a.data.pairedAssetId && !keys.has(a.data.pairedAssetId)) issues.push({ row: a.row, column: "paired_asset_id", message: `paired_asset_id „${a.data.pairedAssetId}” nie występuje w pliku.`, level: "warning" });
-  return { delimiter, headers, mapping: map, preview: res.data.slice(0, 10), assets, issues, counts };
+  const landingContent = assets.filter((a) => a.data.recordScope === "landing_content").length;
+  const adAssets = assets.filter((a) => a.data.recordScope === "ad_asset" || (!a.data.recordScope && !isMetaRow(a.rowType) && a.rowType !== "video_scene")).length;
+  return { delimiter, headers, mapping: map, preview: res.data.slice(0, 10), assets, issues, counts, scopes: { adAssets, landingContent } };
 }
 
 /** the stored record, as written back to the CSV */
-export interface ExportableAsset extends Partial<Omit<ParsedAsset["data"], "approvalRequired">> {
+export interface ExportableAsset extends Partial<Omit<ParsedAsset["data"], "approvalRequired" | "lp">> {
+  lp?: LpData | null;
   assetKey: string;
   rowType: string;
   approvalRequired?: boolean | null;
@@ -344,19 +411,25 @@ const COL_OF: Record<AdwordsColumn, keyof ExportableAsset | null> = {
   test_stage: "testStage",
   deploy_mode: "deployMode",
   evidence_note: "evidenceNote",
+  record_scope: "recordScope",
+  landing_variant_id: "landingVariantId",
+  ...(Object.fromEntries(LP_FIELDS.map((f) => [f, null])) as Record<LpField, null>),
 };
 
 /** The module's records as a CSV (`;`, UTF-8 with BOM for Excel) — the same columns as the import, extra columns appended. */
 export function exportAdwordsCsv(assets: ExportableAsset[], projectSlug: string, schemaVersion = "1"): string {
   // v2 columns only when the records use them (a v1 set exports exactly as v1)
   const v2 = assets.some((a) => ADWORDS_V2_COLUMNS.some((c) => a[COL_OF[c] as keyof ExportableAsset] != null && a[COL_OF[c] as keyof ExportableAsset] !== ""));
-  const cols: AdwordsColumn[] = v2 ? [...ALL_COLUMNS] : [...ADWORDS_COLUMNS];
+  const v5 = assets.some((a) => a.recordScope || a.landingVariantId || (a.lp && Object.keys(a.lp).length));
+  const usedLp = LP_FIELDS.filter((f) => assets.some((a) => a.lp?.[f]));
+  const cols: AdwordsColumn[] = [...ADWORDS_COLUMNS, ...(v2 ? ADWORDS_V2_COLUMNS : []), ...(v5 ? [...ADWORDS_V5_COLUMNS, ...usedLp] : [])];
   const extraCols = [...new Set(assets.flatMap((a) => Object.keys(a.extra ?? {}).filter((k) => k !== "schema_version")))];
   const rows = assets.map((a) => {
     const r: Record<string, string> = {};
     for (const c of cols) {
       const k = COL_OF[c];
-      if (c === "schema_version") r[c] = a.extra?.schema_version ?? (v2 ? "2" : schemaVersion);
+      if (c === "schema_version") r[c] = a.extra?.schema_version ?? (v5 ? "5" : v2 ? "2" : schemaVersion);
+      else if ((LP_FIELDS as readonly string[]).includes(c)) r[c] = a.lp?.[c as LpField] ?? "";
       else if (c === "project_slug") r[c] = projectSlug;
       else if (c === "approval_required") r[c] = a.approvalRequired ? "true" : "false";
       else {

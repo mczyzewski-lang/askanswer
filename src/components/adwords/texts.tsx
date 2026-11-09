@@ -5,7 +5,8 @@ import { Button, Card, Input } from "@/components/ui";
 import { api, cn } from "@/lib/utils";
 import { PMAX_SPEC, type TextKind } from "@/lib/adwords/spec";
 import { brandContext, gateOptionsOf } from "@/lib/adwords/context";
-import { gateText, scoreTextA, scoreTextB, textSetChecks } from "@/lib/adwords/score";
+import { AdLandingInfo } from "./landing-content";
+import { gateSitelink, gateText, scoreTextA, scoreTextB, textSetChecks } from "@/lib/adwords/score";
 import { GateBadge, ScorePair } from "./scores";
 import type { AwAsset, AwData, Toast } from "./types";
 
@@ -109,7 +110,7 @@ export function TextsTab({ data, reload, toast }: { data: AwData; reload: () => 
             <ul className="space-y-1.5">
               {list.map((t) => {
                 const len = [...(t.adText ?? "")].length;
-                const g = gateText(t, gateOptionsOf(data.assets));
+                const g = gateText(t, gateOptionsOf(data.assets, data.gateLp));
                 return (
                   <li key={t.id} className="flex flex-wrap items-center gap-2" data-testid="text-row">
                     <span className="w-12 shrink-0 font-mono text-[11px] text-muted">{t.assetKey}</span>
@@ -118,6 +119,7 @@ export function TextsTab({ data, reload, toast }: { data: AwData; reload: () => 
                       {len}/{s.maxChars}
                     </span>
                     <GateBadge gate={g} />
+                    <AdLandingInfo data={data} asset={t} compact />
                     <ScorePair a={scoreTextA(t, live, ctx)} b={scoreTextB(t, live, ctx)} compact />
                     <Button size="iconSm" variant="ghost" aria-label="Kopiuj" onClick={() => void copy(t.adText ?? "")}>
                       <Copy />
@@ -141,6 +143,42 @@ export function TextsTab({ data, reload, toast }: { data: AwData; reload: () => 
           </Card>
         );
       })}
+      <SitelinksCard data={data} />
     </div>
+  );
+}
+
+/** sitelinks: link text ≤ 25, two descriptions ≤ 35, a real URL; their report metrics concern the whole ad */
+function SitelinksCard({ data }: { data: AwData }) {
+  const list = data.assets.filter((a) => a.rowType === "sitelink");
+  if (!list.length) return null;
+  const s = PMAX_SPEC.sitelinks;
+  return (
+    <Card className="space-y-2 p-4" data-testid="texts-sitelinks">
+      <p className="font-medium">
+        Linki do podstron (sitelinki) <span className="text-sm font-normal text-muted">({list.length}, tekst ≤ {s.textMax}, opisy ≤ {s.descMax})</span>
+      </p>
+      <p className="text-xs text-muted">{s.note}</p>
+      <ul className="space-y-1.5 text-sm">
+        {list.map((t) => {
+          const g = gateSitelink(t, gateOptionsOf(data.assets, data.gateLp));
+          const lp = t.lp ?? {};
+          return (
+            <li key={t.id} className="flex flex-wrap items-start gap-2 border-t border-line/60 pt-1.5" data-testid="sitelink-row">
+              <span className="w-10 shrink-0 font-mono text-[11px] text-muted">{t.assetKey}</span>
+              <span className="min-w-0 flex-1">
+                <b>{t.adText}</b> <span className="text-xs text-muted">({[...(t.adText ?? "")].length}/{s.textMax})</span>
+                <span className="block text-xs text-muted">
+                  {lp.sitelink_description_1 ?? ""} · {lp.sitelink_description_2 ?? ""} — {t.landingUrl ?? "brak URL"}
+                </span>
+                {g.problems.length ? <span className="block text-xs text-red-700">{g.problems.map((p) => p.message).join(" · ")}</span> : null}
+                {(t as unknown as { extra?: Record<string, string> }).extra?.historical_note ? <span className="block text-xs text-amber-800">{(t as unknown as { extra: Record<string, string> }).extra.historical_note}</span> : null}
+              </span>
+              <GateBadge gate={g} />
+            </li>
+          );
+        })}
+      </ul>
+    </Card>
   );
 }

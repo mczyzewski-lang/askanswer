@@ -179,6 +179,11 @@ model Project {
   adwordsCampaigns   AdwordsCampaign[]
   adwordsAssets      AdwordsAsset[]
   adwordsBrief       String?
+  /// Google Adwords: what the free plan really is (who, when, form, contents, call, free part) + confirmation
+  adwordsOffer       Json?
+  /// Google Adwords: landing page variants (URL, name), URL strategy (Final URL expansion)
+  adwordsLanding     Json?
+  adwordsClaims      AdwordsClaim[]
   adwordsHistory     AdwordsHistoryImport[]
   adFootage          AdFootage[]
   adReels            AdReel[]
@@ -1416,6 +1421,12 @@ model AdwordsAsset {
   /// exploration | controlled
   deployMode       String?
   evidenceNote     String?
+  /// CSV v5: ad_asset | landing_content (landing_content rows are never Google assets)
+  recordScope      String?
+  /// LP_A_PLAN | LP_B_COST | LP_C_PROOF_SPEED — the landing page variant an ad leads to / a block belongs to
+  landingVariantId String?
+  /// CSV v5 landing / offer / proof fields by column name (landing_h1, cta_button_short, proof_status…) + editor state
+  lp               Json?
   /// typographic | expert_split | process_steps (image concepts)
   layout           String?
   /// editor state: photo focal point / zoom / offset / hidden, clean photo flag…
@@ -1503,4 +1514,25 @@ model AdwordsHistoryRow {
 
   @@index([projectId, typeKey])
   @@index([importId])
+}
+
+/// Google Adwords: claims registry — a claim without proof is blocked / removed from the production render
+model AdwordsClaim {
+  id             String    @id @default(cuid())
+  projectId      String
+  project        Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// normalized key (detected pattern or the CSV proof_claim)
+  key            String
+  claimText      String
+  proofSource    String?
+  dateChecked    DateTime?
+  approvedBy     String?
+  /// pending | approved | rejected
+  approvalStatus String    @default("pending")
+  claimScope     String?
+  note           String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@unique([projectId, key])
 }

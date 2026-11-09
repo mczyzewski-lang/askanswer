@@ -18,7 +18,7 @@ describe("Google Adwords CSV", () => {
     expect(r.delimiter).toBe(";");
     expect(r.issues.filter((i) => i.level === "error")).toEqual([]);
     expect(r.assets).toHaveLength(81);
-    expect(r.counts).toEqual({ image: 18, image_clean: 2, video: 15, video_scene: 21, headline: 15, long_headline: 5, description: 5, experiment_plan: 0, historical_reference: 0 });
+    expect(r.counts).toEqual({ image: 18, image_clean: 2, video: 15, video_scene: 21, headline: 15, long_headline: 5, description: 5, sitelink: 0, experiment_plan: 0, historical_reference: 0, landing_page: 0 });
     // quoted ";" and line breaks survive, Polish letters too
     expect(r.assets.find((a) => a.assetKey === "G03-L")!.data.body).toBe("Pakiet konsultacji; zakres opisany przed startem");
     expect(r.assets.find((a) => a.assetKey === "V05-S1")!.data.spokenText).toContain("\nBez sprzedaży");

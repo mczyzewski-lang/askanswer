@@ -7,6 +7,7 @@
  * calculated. The gate does not depend on any score — a high score never lifts a block.
  */
 import { PMAX_SPEC, formatKeyOf, type TextKind } from "./spec";
+import { adClaimProblems, urlStatus } from "./landing-content";
 
 export interface AdAsset {
   id?: string;
@@ -49,6 +50,9 @@ export interface AdAsset {
   testStage?: string | null;
   deployMode?: string | null;
   evidenceNote?: string | null;
+  recordScope?: string | null;
+  landingVariantId?: string | null;
+  lp?: Record<string, string> | null;
 }
 
 export interface ScoreItem {
@@ -325,6 +329,8 @@ export const hasPrice = (text: string) => PRICE.test(fold(text));
 /** editorial context of the project: texts from the archive that must not be published again */
 export interface GateOptions {
   doNotPublish?: string[];
+  /** v5 projects: the offer (free plan) confirmation + the claims approved in the registry */
+  lp?: { offerValid: boolean; approvedClaims: string[] } | null;
 }
 const sameText = (a: string, b: string) => fold(a).replace(/[^a-z0-9]/g, "") === fold(b).replace(/[^a-z0-9]/g, "");
 
@@ -332,6 +338,7 @@ function claimProblems(v: AdAsset, text: string, opts: GateOptions = {}): Gate["
   const out: Gate["problems"] = [];
   const t = fold(text);
   for (const h of opts.doNotPublish ?? []) if (h.trim() && (sameText(text, h) || t.includes(fold(h).trim()))) out.push({ level: "blokada", message: `Tekst archiwalny „${h}” (historical_do_not_publish) — nie publikuj bez osobnej weryfikacji.` });
+  if (opts.lp) out.push(...adClaimProblems(text, v.lp, { ...opts.lp, assetApproved: !!v.approvedAt, landingUrl: v.landingUrl }));
   for (const r of NEEDS_LEGAL) if (r.re.test(t)) out.push({ level: "do_poprawy", message: `Weryfikacja prawna: ${r.why}.` });
   if (PRICE.test(t) && !v.claimSource && !v.approvedAt) out.push({ level: "do_poprawy", message: "Komunikat o cenie / koszcie — potwierdź zakres wycenionej usługi (claim_source albo zatwierdzenie); nie obiecuj całkowitego kosztu sprawy." });
   if ((v.approvalRequired || v.status === "blocked_until_verified") && !v.approvedAt) out.push({ level: "blokada", message: `Wymaga zatwierdzenia źródła / twierdzenia${v.claimSource ? ` (${v.claimSource})` : ""} przez osobę.` });
@@ -385,6 +392,23 @@ export function gateText(t: AdAsset, opts: GateOptions = {}): Gate {
   if (!text) p.push({ level: "blokada", message: "Pusty tekst." });
   if ([...text].length > lim) p.push({ level: "blokada", message: `${[...text].length} znaków — limit ${lim}.` });
   p.push(...claimProblems(t, text, opts));
+  return gate(p);
+}
+
+/** A sitelink: link text ≤ 25, two description lines ≤ 35 (both or none), a real URL, the claims rules. */
+export function gateSitelink(t: AdAsset, opts: GateOptions = {}): Gate {
+  const p: Gate["problems"] = [];
+  const s = PMAX_SPEC.sitelinks;
+  const text = (t.adText ?? "").trim();
+  const d1 = (t.lp?.sitelink_description_1 ?? "").trim();
+  const d2 = (t.lp?.sitelink_description_2 ?? "").trim();
+  if (!text) p.push({ level: "blokada", message: "Pusty tekst linku." });
+  if ([...text].length > s.textMax) p.push({ level: "blokada", message: `Tekst linku: ${[...text].length} znaków — limit ${s.textMax}.` });
+  for (const [i, d] of [d1, d2].entries()) if ([...d].length > s.descMax) p.push({ level: "blokada", message: `Opis ${i + 1}: ${[...d].length} znaków — limit ${s.descMax}.` });
+  if (!!d1 !== !!d2) p.push({ level: "do_poprawy", message: "Opisy sitelinka: podaj oba wiersze albo żaden." });
+  const us = urlStatus(t.landingUrl);
+  if (us !== "ok") p.push({ level: "blokada", message: us === "missing" ? "Sitelink bez adresu — wymaga prawdziwej podstrony (blocked_missing_url)." : `Adres sitelinka: ${us === "placeholder" ? "zastępczy" : "nieprawidłowy"} (blocked_missing_url).` });
+  p.push(...claimProblems(t, [text, d1, d2].join(" "), opts));
   return gate(p);
 }
 

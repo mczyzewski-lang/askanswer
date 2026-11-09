@@ -16,7 +16,8 @@ interface DryRun {
   preview: Array<Record<string, string>>;
   issues: CsvIssue[];
   counts: Record<RowType, number>;
-  concepts: { images: number; cleanPhotos: number; videos: number; scenes: number; texts: number; experiments?: number; meta?: number };
+  concepts: { images: number; cleanPhotos: number; videos: number; scenes: number; texts: number; experiments?: number; meta?: number; sitelinks?: number; landing?: number };
+  scopes?: { adAssets: number; landingContent: number };
   projectSlugMismatch: string[];
   applied: boolean;
   created: number;
@@ -131,6 +132,12 @@ export function ImportTab({ data, reload, toast, onDone }: { data: AwData; reloa
             <p className="text-sm text-muted" data-testid="import-counts">
               {dry.concepts.images} koncepty graficzne, {dry.concepts.cleanPhotos} czyste zdjęcia, {dry.concepts.videos} koncepty wideo, {dry.concepts.scenes} scen, {dry.concepts.texts} tekstów
               {dry.concepts.experiments ? `, ${dry.concepts.experiments} eksperymentów, ${dry.concepts.meta} wierszy planu / archiwum` : ""}
+              {dry.concepts.sitelinks ? `, ${dry.concepts.sitelinks} sitelinków` : ""}
+              {dry.scopes?.landingContent ? (
+                <span className="block" data-testid="import-scopes">
+                  CSV v5: {dry.scopes.adAssets} assetów reklam + {dry.scopes.landingContent} bloków Treści Landing Page (nie są assetami Google)
+                </span>
+              ) : null}
             </p>
           </div>
           <div className="flex flex-wrap gap-1.5 text-xs">
