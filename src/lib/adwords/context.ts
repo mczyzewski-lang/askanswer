@@ -1,5 +1,5 @@
 /** Pure helpers shared by the server and the browser (scoring context, the layout of an image row). */
-import type { BrandContext } from "./score";
+import type { AdAsset, BrandContext, GateOptions } from "./score";
 import type { LayoutKey } from "./draw";
 
 /** words of the offer: project name + description + brief, for relevance checks */
@@ -26,4 +26,9 @@ export function layoutOf(a: { rowType: string; layout: string | null; visualBrie
   const m = /^(typographic|expert_split|process_steps)\b/.exec((a.visualBrief ?? "").trim());
   if (m) return m[1] as LayoutKey;
   return a.expertPhotoKey || a.expertPhotoId ? "expert_split" : "typographic";
+}
+
+/** texts of the archive marked historical_do_not_publish (they block any component that reuses them) */
+export function gateOptionsOf(list: Array<Pick<AdAsset, "rowType" | "status" | "adText" | "headline">>): GateOptions {
+  return { doNotPublish: list.filter((a) => a.rowType === "historical_reference" && /do_not_publish/i.test(a.status ?? "")).map((a) => a.adText || a.headline || "").filter(Boolean) };
 }

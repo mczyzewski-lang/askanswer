@@ -39,8 +39,16 @@ export interface AdAsset {
   approvedAt?: string | Date | null;
   status?: string | null;
   scoreSeed?: number | null;
+  scoreNote?: string | null;
   layout?: string | null;
   edit?: { photoHidden?: boolean } | null;
+  experimentId?: string | null;
+  variant?: string | null;
+  pairedAssetId?: string | null;
+  testAxis?: string | null;
+  testStage?: string | null;
+  deployMode?: string | null;
+  evidenceNote?: string | null;
 }
 
 export interface ScoreItem {
@@ -304,8 +312,26 @@ export interface Gate {
 }
 const gate = (problems: Gate["problems"]): Gate => ({ status: problems.some((p) => p.level === "blokada") ? "blokada" : problems.length ? "do_poprawy" : "gotowe", problems });
 
-function claimProblems(v: AdAsset, text: string): Gate["problems"] {
+/** archival claims that need a separate legal check before any reuse */
+const NEEDS_LEGAL = [
+  { re: /zamiast pozwu/, why: "„zamiast pozwu” — nie sugeruj, że dokument zastępuje pozew" },
+  { re: /pierwszej rozpraw/, why: "„na pierwszej rozprawie” — nie obiecuj wyniku w każdej sprawie" },
+  { re: /\b\d+\s*dni\b|w terminie/, why: "obietnica czasowa — wymaga danych o typowych terminach" },
+];
+const PRICE = /(cena|koszt|zl\b|zlotych|tani|oplat)/;
+
+/** editorial context of the project: texts from the archive that must not be published again */
+export interface GateOptions {
+  doNotPublish?: string[];
+}
+const sameText = (a: string, b: string) => fold(a).replace(/[^a-z0-9]/g, "") === fold(b).replace(/[^a-z0-9]/g, "");
+
+function claimProblems(v: AdAsset, text: string, opts: GateOptions = {}): Gate["problems"] {
   const out: Gate["problems"] = [];
+  const t = fold(text);
+  for (const h of opts.doNotPublish ?? []) if (h.trim() && (sameText(text, h) || t.includes(fold(h).trim()))) out.push({ level: "blokada", message: `Tekst archiwalny „${h}” (historical_do_not_publish) — nie publikuj bez osobnej weryfikacji.` });
+  for (const r of NEEDS_LEGAL) if (r.re.test(t)) out.push({ level: "do_poprawy", message: `Weryfikacja prawna: ${r.why}.` });
+  if (PRICE.test(t) && !v.claimSource && !v.approvedAt) out.push({ level: "do_poprawy", message: "Komunikat o cenie / koszcie — potwierdź zakres wycenionej usługi (claim_source albo zatwierdzenie); nie obiecuj całkowitego kosztu sprawy." });
   if ((v.approvalRequired || v.status === "blocked_until_verified") && !v.approvedAt) out.push({ level: "blokada", message: `Wymaga zatwierdzenia źródła / twierdzenia${v.claimSource ? ` (${v.claimSource})` : ""} przez osobę.` });
   if (needsProof(text) && !v.claimSource) out.push({ level: "do_poprawy", message: "Liczba / fakt bez źródła (claim_source) — nie wymyślamy dowodów." });
   for (const r of riskyClaims(text)) out.push({ level: "do_poprawy", message: `Polityka (rozwody): ${r}.` });
@@ -313,7 +339,7 @@ function claimProblems(v: AdAsset, text: string): Gate["problems"] {
 }
 
 /** An image variant: size, file size (after export), safe area, photo rights, claims, landing. */
-export function gateImage(v: AdAsset, ctx: BrandContext, m: Measure | null, photo: ExpertPhotoInfo | null, fileBytes?: number | null): Gate {
+export function gateImage(v: AdAsset, ctx: BrandContext, m: Measure | null, photo: ExpertPhotoInfo | null, fileBytes?: number | null, opts: GateOptions = {}): Gate {
   const p: Gate["problems"] = [];
   const key = formatKeyOf(v.aspectRatio, v.width, v.height);
   const spec = PMAX_SPEC.images.formats.find((f) => f.key === key);
@@ -328,13 +354,13 @@ export function gateImage(v: AdAsset, ctx: BrandContext, m: Measure | null, phot
   if (usesPhoto && photo && !photo.consentConfirmed) p.push({ level: "blokada", message: "Brak potwierdzonej zgody na reklamowe użycie zdjęcia eksperta." });
   if (v.rowType !== "image_clean") {
     if (!(v.headline ?? "").trim()) p.push({ level: "do_poprawy", message: "Brak hasła." });
-    p.push(...claimProblems(v, [v.headline, v.subheadline, v.body, v.cta].join(" ")));
-  } else p.push(...claimProblems(v, ""));
+    p.push(...claimProblems(v, [v.headline, v.subheadline, v.body, v.cta].join(" "), opts));
+  } else p.push(...claimProblems(v, "", opts));
   if (!(v.landingUrl || ctx.landingUrl)) p.push({ level: "do_poprawy", message: "Brak adresu strony docelowej (uzupełnij w kampanii)." });
   return gate(p);
 }
 
-export function gateVideo(v: VideoConcept, ctx: BrandContext): Gate {
+export function gateVideo(v: VideoConcept, ctx: BrandContext, opts: GateOptions = {}): Gate {
   const p: Gate["problems"] = [];
   const sc = [...v.scenes].sort((a, b2) => (a.sceneIndex ?? 0) - (b2.sceneIndex ?? 0));
   const dur = Math.max(v.variants[0]?.durationSec ?? 0, ...sc.map((s) => s.endS ?? 0));
@@ -343,20 +369,20 @@ export function gateVideo(v: VideoConcept, ctx: BrandContext): Gate {
   for (let i = 1; i < sc.length; i++) if ((sc[i].startS ?? 0) < (sc[i - 1].endS ?? 0) - 0.01) p.push({ level: "do_poprawy", message: `Scena ${sc[i].sceneIndex} nachodzi na poprzednią.` });
   const ctas = sc.filter((s) => CTA_VERBS.test(fold(sceneText(s)))).length;
   if (ctas > 1) p.push({ level: "do_poprawy", message: `${ctas} wezwania do działania — zostaw jedno.` });
-  for (const s of sc) p.push(...claimProblems(s, sceneText(s)).map((x) => ({ ...x, message: `Scena ${s.sceneIndex}: ${x.message}` })));
+  for (const s of sc) p.push(...claimProblems(s, sceneText(s), opts).map((x) => ({ ...x, message: `Scena ${s.sceneIndex}: ${x.message}` })));
   for (const x of v.variants) if ((x.approvalRequired || x.status === "blocked_until_verified") && !x.approvedAt) p.push({ level: "blokada", message: `Wariant ${x.assetKey} wymaga zatwierdzenia.` });
   if (!v.variants.some((x) => x.landingUrl) && !ctx.landingUrl) p.push({ level: "do_poprawy", message: "Brak adresu strony docelowej (uzupełnij w kampanii)." });
   return gate(p);
 }
 
-export function gateText(t: AdAsset): Gate {
+export function gateText(t: AdAsset, opts: GateOptions = {}): Gate {
   const p: Gate["problems"] = [];
   const kind = textKindOf(t.rowType)!;
   const text = (t.adText ?? "").trim();
   const lim = PMAX_SPEC.texts[kind].maxChars;
   if (!text) p.push({ level: "blokada", message: "Pusty tekst." });
   if ([...text].length > lim) p.push({ level: "blokada", message: `${[...text].length} znaków — limit ${lim}.` });
-  p.push(...claimProblems(t, text));
+  p.push(...claimProblems(t, text, opts));
   return gate(p);
 }
 

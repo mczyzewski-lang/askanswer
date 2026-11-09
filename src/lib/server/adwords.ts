@@ -17,10 +17,12 @@ import { drawCreative, type LayoutKey } from "../adwords/draw";
 import { PMAX_SPEC, formatKeyOf } from "../adwords/spec";
 import { gateImage, gateText, gateVideo, scoreImageA, scoreImageB, scoreTextA, scoreTextB, scoreVideoA, scoreVideoB, type AdAsset, type BrandContext, type Measure } from "../adwords/score";
 import { scenesToSrt, shotlistCsv, shotlistMarkdown, teleprompterScript, videoConcepts } from "../adwords/video";
+import { experiments } from "../adwords/experiments";
+import { ANGLE_LABEL, MISSING_DATA, matchHistory } from "../adwords/history";
 import type { ThemeTokens } from "../editor/types";
 
 export type { AssetEdit } from "../adwords/context";
-import { brandContext, layoutOf, type AssetEdit } from "../adwords/context";
+import { brandContext, gateOptionsOf, layoutOf, type AssetEdit } from "../adwords/context";
 export { brandContext, layoutOf };
 
 export async function adwordsProject(projectId: string) {
@@ -62,6 +64,8 @@ export async function importAdwordsCsv(projectId: string, text: string, opts: { 
     videos: new Set(parsed.assets.filter((a) => a.rowType === "video").map((a) => a.data.conceptId)).size,
     scenes: parsed.assets.filter((a) => a.rowType === "video_scene").length,
     texts: parsed.assets.filter((a) => a.rowType === "headline" || a.rowType === "long_headline" || a.rowType === "description").length,
+    experiments: new Set(parsed.assets.map((a) => a.data.experimentId).filter(Boolean)).size,
+    meta: parsed.assets.filter((a) => a.rowType === "experiment_plan" || a.rowType === "historical_reference").length,
   };
   const base = { ...parsed, applied: false, created: 0, updated: 0, unchanged: 0, campaignsCreated: 0, projectSlugMismatch: mismatch, concepts };
   if (opts.dryRun || parsed.issues.some((i) => i.level === "error")) return base;
@@ -177,6 +181,7 @@ export async function evaluateProject(projectId: string, measures: Map<string, M
   const landing = campaigns.find((c) => c.landingUrl)?.landingUrl ?? null;
   const ctxOf = (code: string | null) => brandContext(project, campaigns.find((c) => c.code === code)?.landingUrl ?? landing, !!theme.logoAssetId || !!project.theme?.logoAssetId);
   const list = assets.map(toAdAsset);
+  const opts = gateOptionsOf(list);
   const photoOf = (a: AdAsset) => {
     const p = a.expertPhotoId ? photos.find((x) => x.id === a.expertPhotoId) : a.expertPhotoKey ? photos.find((x) => x.key === a.expertPhotoKey) : null;
     return p ? { id: p.id, consentConfirmed: p.consentConfirmed } : null;
@@ -187,26 +192,39 @@ export async function evaluateProject(projectId: string, measures: Map<string, M
       const m = measures.get(a.id!) ?? null;
       const ctx = ctxOf(a.campaignCode ?? null);
       const photo = photoOf(a);
-      return { id: a.id!, assetKey: a.assetKey, conceptId: a.conceptId, scoreA: a.rowType === "image" ? scoreImageA(a, ctx, m, photo) : null, scoreB: a.rowType === "image" ? scoreImageB(a, ctx, m, photo) : null, gate: gateImage(a, ctx, m, photo, sizes.get(a.id!) ?? null) };
+      return { id: a.id!, assetKey: a.assetKey, conceptId: a.conceptId, scoreA: a.rowType === "image" ? scoreImageA(a, ctx, m, photo) : null, scoreB: a.rowType === "image" ? scoreImageB(a, ctx, m, photo) : null, gate: gateImage(a, ctx, m, photo, sizes.get(a.id!) ?? null, opts) };
     });
   const videos = videoConcepts(list).map((v) => {
     const ctx = ctxOf(v.variants[0]?.campaignCode ?? null);
-    return { conceptId: v.conceptId, scoreA: scoreVideoA(v, ctx), scoreB: scoreVideoB(v, ctx), gate: gateVideo(v, ctx) };
+    return { conceptId: v.conceptId, scoreA: scoreVideoA(v, ctx), scoreB: scoreVideoB(v, ctx), gate: gateVideo(v, ctx, opts) };
   });
   const textsAll = list.filter((a) => a.rowType === "headline" || a.rowType === "long_headline" || a.rowType === "description");
   const texts = textsAll.map((t) => {
     const ctx = ctxOf(t.campaignCode ?? null);
-    return { id: t.id!, assetKey: t.assetKey, scoreA: scoreTextA(t, textsAll, ctx), scoreB: scoreTextB(t, textsAll, ctx), gate: gateText(t) };
+    return { id: t.id!, assetKey: t.assetKey, scoreA: scoreTextA(t, textsAll, ctx), scoreB: scoreTextB(t, textsAll, ctx), gate: gateText(t, opts) };
   });
   return { images, videos, texts };
 }
 
 // ------------------------------------------------------------------------------------------- brief
 
-export function defaultBrief(p: { name: string }, data: { campaigns: Array<{ code: string; name: string; goal: string; landingUrl: string | null }>; assets: AdAsset[]; evaluation: Awaited<ReturnType<typeof evaluateProject>> }): string {
+type HistRow = { component: string; typeKey: string; impressions: number | null; clicks: number | null; conversions: number | null; conceptId: string | null; angle: string | null };
+const fmtN = (n: number | null | undefined) => (n == null ? "—" : n.toLocaleString("pl-PL", { maximumFractionDigits: 2 }));
+
+/** "Hipoteza oparta na: …" for a concept: a linked historical component, else one with the same message */
+export function hypothesisLine(conceptId: string, headline: string, history: HistRow[], period: string) {
+  const linked = history.filter((h) => h.conceptId === conceptId);
+  const h = linked[0] ?? matchHistory(headline, history)[0];
+  if (!h) return null;
+  return `Hipoteza oparta na: „${h.component.split("\n")[0]}”, ${fmtN(h.clicks)} kliknięć / ${fmtN(h.impressions)} wyświetleń, ${period}; nie jest wynikiem testu kontrolowanego.`;
+}
+
+export function defaultBrief(p: { name: string }, data: { campaigns: Array<{ code: string; name: string; goal: string; landingUrl: string | null }>; assets: AdAsset[]; evaluation: Awaited<ReturnType<typeof evaluateProject>>; history?: HistRow[]; period?: string }): string {
   const list = data.assets;
-  const texts = (t: string) => list.filter((a) => a.rowType === t).map((a) => a.adText ?? "");
-  const imageConcepts = [...new Set(list.filter((a) => a.rowType === "image").map((a) => a.conceptId))];
+  const history = data.history ?? [];
+  const period = data.period ?? "okres raportu";
+  const texts = (t: string) => list.filter((a) => a.rowType === t && !a.experimentId).map((a) => a.adText ?? "");
+  const imageConcepts = [...new Set(list.filter((a) => a.rowType === "image" && !a.experimentId).map((a) => a.conceptId))];
   const best = imageConcepts
     .map((c) => {
       const ev = data.evaluation.images.filter((e) => e.conceptId === c && e.scoreA);
@@ -220,17 +238,33 @@ export function defaultBrief(p: { name: string }, data: { campaigns: Array<{ cod
   const vids = data.evaluation.videos;
   const goals = data.campaigns.map((c) => `${c.name} (${c.goal === "poradnik" ? "poradnik" : "sprzedaż"})${c.landingUrl ? ` → ${c.landingUrl}` : " — URL do uzupełnienia"}`);
   const blocked = [...data.evaluation.images, ...data.evaluation.texts].filter((e) => e.gate.status === "blokada").map((e) => `${e.assetKey}: ${e.gate.problems.find((p) => p.level === "blokada")?.message ?? ""}`);
+  const ex = experiments(list);
+  const exLine = (e: (typeof ex)[number]) => {
+    const a = e.arms.A.texts.find((t) => t.rowType === "headline")?.adText ?? e.arms.A.images[0]?.headline ?? "A";
+    const bb = e.arms.B.texts.find((t) => t.rowType === "headline")?.adText ?? e.arms.B.images[0]?.headline ?? "B";
+    const hist = matchHistory(a, history)[0];
+    return `- ${e.id} (${e.testAxis ?? e.axis}): A „${a}” vs B „${bb}”${hist ? ` — A w historii: ${fmtN(hist.clicks)} klik., ${fmtN(hist.impressions)} wyśw. (${period}, ekspozycja, nie wynik testu)` : ""}`;
+  };
+  const angles = (["bez_wojny", "plan_pozew", "koszt", "szybkosc"] as const).map((k) => {
+    const top = history.filter((h) => h.angle === k && ["headline", "long_headline", "description"].includes(h.typeKey)).sort((x, y) => (y.clicks ?? 0) - (x.clicks ?? 0))[0];
+    return `- ${ANGLE_LABEL[k]}${k === "szybkosc" ? " (kontrolny — bez obietnic czasowych)" : ""}${top ? `: w historii „${top.component.split("\n")[0]}” (${fmtN(top.clicks)} klik.)` : ""}`;
+  });
   return [
     `${p.name.toUpperCase()} — PMAX | ${data.campaigns.map((c) => (c.goal === "poradnik" ? "PORADNIK" : "SPRZEDAŻ")).filter((v, i, a) => a.indexOf(v) === i).join(" / ") || "CEL DO USTALENIA"}`,
     `Kampanie: ${goals.join("; ") || "—"}`,
-    `Strategia: ${best.slice(0, 3).map((x) => `„${x.h}”`).join("; ") || "—"}`,
-    `Top koncepty: ${best.slice(0, 3).map((x) => `${x.c} [A ${x.a} / B ${x.b}, ${x.st}]`).join(", ") || "—"}`,
-    `Materiały: ${imageConcepts.length} konceptów × ${Math.round(list.filter((a) => a.rowType === "image").length / Math.max(1, imageConcepts.length))} grafiki + ${list.filter((a) => a.rowType === "image_clean").length} czyste zdjęcia; ${vids.length} wideo × 3 formaty.`,
+    "Angle'e:",
+    ...angles,
+    `Top koncepty: ${best.slice(0, 3).map((x) => `${x.c} „${x.h}” [A ${x.a} / B ${x.b}, ${x.st}]`).join(", ") || "—"}`,
+    ...best.slice(0, 6).map((x) => (x.c ? hypothesisLine(x.c, x.h, history, period) : null) && `  ${x.c}: ${hypothesisLine(x.c!, x.h, history, period)}`).filter((l): l is string => !!l),
+    `Materiały: ${imageConcepts.length} konceptów × ${Math.round(list.filter((a) => a.rowType === "image" && !a.experimentId).length / Math.max(1, imageConcepts.length))} grafiki + ${list.filter((a) => a.rowType === "image_clean").length} czyste zdjęcia; ${vids.length} wideo × 3 formaty.`,
     `Teksty: ${texts("headline").length} nagłówków / ${texts("long_headline").length} długich / ${texts("description").length} opisów (lista niżej).`,
-    "Test 1: branding + komunikat o planie vs obecne kreacje (CAC).",
-    "Test 2: ekspert vs typografia. Test 3: konsultacja vs poradnik — osobna kampania i osobny cel.",
-    "Mierniki: lead kwalifikowany, koszt klienta, przychód, sprzedaż po 30/60/90 dniach — nie sam CPL.",
+    ...(ex.some((e) => e.mode === "controlled") ? ["Testy A/B (kontrolowane, eksperyment komponentów PMax, 4–6 tyg., jedna zmienna):", ...ex.filter((e) => e.mode === "controlled").map(exLine)] : []),
+    ...(ex.some((e) => e.mode === "exploration") ? ["Eksploracja (B dodane do puli — bez izolowanego testu, bez wskazywania zwycięzcy):", ...ex.filter((e) => e.mode === "exploration").map(exLine)] : []),
+    ...(ex.length ? [] : ["Test 1: branding + komunikat o planie vs obecne kreacje (CAC). Test 2: ekspert vs typografia. Test 3: konsultacja vs poradnik — osobna kampania i osobny cel."]),
+    "Mierniki: lead kwalifikowany, koszt klienta, przychód, sprzedaż po 30/60/90 dniach — nie sam CPL. Metryki komponentów z Google są przypisane i nieaddytywne; ROAS niedostępny (wartość konwersji = 0).",
     `Uwagi: ${blocked.length ? blocked.slice(0, 6).join("; ") : "brak blokad"}. Ograniczenia Google (trudności w związkach): bez remarketingu i list klientów.`,
+    "Brakujące dane (priorytet):",
+    ...MISSING_DATA.map((m, i) => `${i + 1}. ${m}`),
     "",
     "NAGŁÓWKI:",
     ...texts("headline").map((t) => `- ${t}`),
@@ -243,16 +277,42 @@ export function defaultBrief(p: { name: string }, data: { campaigns: Array<{ cod
 
 // ------------------------------------------------------------------------------------------- ZIP
 
-export async function adwordsZip(projectId: string, fmt: "png" | "jpg" = "png") {
+export interface ZipSelection {
+  /** image rows (database ids) */
+  assetIds?: string[];
+  /** whole concepts (images and / or videos) */
+  conceptIds?: string[];
+  /** one arm of an experiment */
+  experimentId?: string;
+  variant?: string;
+}
+
+/**
+ * The package for the agency: everything, or a selection (one concept, chosen images, one experiment
+ * arm). Images are rendered now; texts for Google Ads never include the experiment plans or the archive.
+ */
+export async function adwordsZip(projectId: string, fmt: "png" | "jpg" = "png", sel: ZipSelection = {}) {
   const { project, assets, campaigns } = await adwordsProject(projectId);
   const slug = slugify(project.name);
+  const list = assets.map(toAdAsset);
+  const whole = !sel.assetIds?.length && !sel.conceptIds?.length && !sel.experimentId;
+  // what is in the selection
+  const inArm = (a: (typeof assets)[number]) => {
+    if (!sel.experimentId) return false;
+    if (a.experimentId !== sel.experimentId) return false;
+    if (!sel.variant) return true;
+    if (a.variant) return a.variant === sel.variant;
+    // a scene follows its video concept's arm
+    return a.rowType === "video_scene" && assets.some((v) => v.rowType === "video" && v.conceptId === a.conceptId && v.variant === sel.variant);
+  };
+  const picked = (a: (typeof assets)[number]) => whole || inArm(a) || (sel.assetIds ?? []).includes(a.id) || (!!a.conceptId && (sel.conceptIds ?? []).includes(a.conceptId));
   const files: Record<string, Uint8Array> = {};
   const manifest: Array<Record<string, string | number>> = [];
   const measures = new Map<string, Measure>();
   const sizes = new Map<string, number>();
   const cache: { logo?: Image | null; photos: Map<string, Image | null> } = { photos: new Map() };
   const rendered: Array<{ a: (typeof assets)[number]; name: string; w: number; h: number; bytes: number }> = [];
-  for (const a of assets.filter((x) => x.rowType === "image" || x.rowType === "image_clean")) {
+  for (const a of assets.filter((x) => (x.rowType === "image" || x.rowType === "image_clean") && picked(x))) {
     const r = await renderAdwordsImage(a.id, fmt, cache);
     files[`grafiki/${r.fileName}`] = new Uint8Array(r.buf);
     measures.set(a.id, r.measure);
@@ -262,21 +322,58 @@ export async function adwordsZip(projectId: string, fmt: "png" | "jpg" = "png") 
   const ev = await evaluateProject(projectId, measures, sizes);
   for (const r of rendered) {
     const e = ev.images.find((x) => x.id === r.a.id)!;
-    manifest.push({ asset_id: r.a.assetKey, name: r.a.headline ?? r.a.visualBrief ?? r.a.assetKey, concept_id: r.a.conceptId ?? "", width: r.w, height: r.h, bytes: r.bytes, score_a: e.scoreA?.total ?? "", score_b: e.scoreB?.total ?? "", score_seed: r.a.scoreSeed ?? "", status: e.gate.status, warnings: e.gate.problems.map((p) => p.message).join(" | "), file: `grafiki/${r.name}` });
+    manifest.push({
+      experiment_id: r.a.experimentId ?? "",
+      variant: r.a.variant ?? "",
+      asset_id: r.a.assetKey,
+      name: r.a.headline ?? r.a.visualBrief ?? r.a.assetKey,
+      concept_id: r.a.conceptId ?? "",
+      width: r.w,
+      height: r.h,
+      bytes: r.bytes,
+      cta: r.a.cta ?? "",
+      score_a: e.scoreA?.total ?? "",
+      score_b: e.scoreB?.total ?? "",
+      score_seed: r.a.scoreSeed ?? "",
+      status: e.gate.status,
+      warnings: e.gate.problems.map((p) => p.message).join(" | "),
+      file: `grafiki/${r.name}`,
+    });
   }
   const Papa = (await import("papaparse")).default;
-  files["manifest.csv"] = strToU8("﻿" + Papa.unparse(manifest, { delimiter: ";" }));
-  files["manifest.json"] = strToU8(JSON.stringify({ project: project.name, generatedAt: new Date().toISOString(), spec: PMAX_SPEC.verifiedAt, files: manifest }, null, 2));
-  files[`${slug}_google_adwords.csv`] = strToU8(exportAdwordsCsv(assets.map((a) => ({ ...a, extra: (a.extra ?? null) as Record<string, string> | null })), slug));
-  const list = assets.map(toAdAsset);
-  for (const v of videoConcepts(list)) {
+  files["manifest.csv"] = strToU8("\uFEFF" + Papa.unparse(manifest.length ? manifest : [{ asset_id: "", file: "" }], { delimiter: ";" }));
+  files["manifest.json"] = strToU8(JSON.stringify({ project: project.name, selection: whole ? "całość" : sel, generatedAt: new Date().toISOString(), spec: PMAX_SPEC.verifiedAt, files: manifest }, null, 2));
+  // texts ready for Google Ads (never experiment plans or the archive)
+  const texts = assets.filter((a) => (a.rowType === "headline" || a.rowType === "long_headline" || a.rowType === "description") && (whole || inArm(a) || (sel.assetIds ?? []).includes(a.id)));
+  if (texts.length) {
+    const tEv = new Map(ev.texts.map((t) => [t.id, t]));
+    files["teksty_google_ads.csv"] = strToU8("\uFEFF" + Papa.unparse(texts.map((t) => ({ experiment_id: t.experimentId ?? "", variant: t.variant ?? "", asset_id: t.assetKey, typ: t.rowType, tekst: t.adText ?? "", znaki: [...(t.adText ?? "")].length, status: tEv.get(t.id)?.gate.status ?? "" })), { delimiter: ";" }));
+  }
+  if (whole) files[`${slug}_google_adwords.csv`] = strToU8(exportAdwordsCsv(assets.map((a) => ({ ...a, extra: (a.extra ?? null) as Record<string, string> | null })), slug));
+  // video: what to record (script, teleprompter, subtitles, shot list) + the MP4s already rendered
+  const vids = videoConcepts(list.filter((a) => (a.rowType === "video" || a.rowType === "video_scene") && picked(assets.find((x) => x.id === a.id)!)));
+  for (const v of vids) {
     files[`wideo/${v.conceptId}/napisy.srt`] = strToU8(scenesToSrt(v.scenes));
     files[`wideo/${v.conceptId}/teleprompter.txt`] = strToU8(teleprompterScript(v));
+    for (const variant of v.variants) {
+      const rid = ((variant.edit ?? {}) as { renderAssetId?: string }).renderAssetId;
+      const m = rid ? await prisma.mediaAsset.findUnique({ where: { id: rid } }) : null;
+      if (!m) continue;
+      const f = await toLocalFile(m.storageKey);
+      try {
+        files[`wideo/${v.conceptId}/${m.originalName ?? `${variant.assetKey}.mp4`}`] = new Uint8Array(await fsp.readFile(f.path));
+      } finally {
+        await f.cleanup();
+      }
+    }
   }
-  files["wideo/shotlista.csv"] = strToU8(shotlistCsv(videoConcepts(list)));
-  files["wideo/shotlista.md"] = strToU8(shotlistMarkdown(videoConcepts(list)));
-  files["brief.md"] = strToU8(project.adwordsBrief ?? defaultBrief(project, { campaigns, assets: list, evaluation: ev }));
-  return { zip: Buffer.from(zipSync(files, { level: 6 })), name: `${slug}_google_adwords_${fmt}.zip`, count: rendered.length };
+  if (vids.length) {
+    files["wideo/shotlista.csv"] = strToU8(shotlistCsv(vids));
+    files["wideo/shotlista.md"] = strToU8(shotlistMarkdown(vids));
+  }
+  if (whole) files["brief.md"] = strToU8(project.adwordsBrief ?? defaultBrief(project, { campaigns, assets: list, evaluation: ev, history: (await prisma.adwordsHistoryRow.findMany({ where: { projectId } })) }));
+  const label = whole ? "" : sel.experimentId ? `_${sel.experimentId}${sel.variant ? `_${sel.variant}` : ""}` : sel.conceptIds?.length === 1 ? `_${sel.conceptIds[0]}` : "_wybor";
+  return { zip: Buffer.from(zipSync(files, { level: 6 })), name: `${slug}_google_adwords${label}_${fmt}.zip`, count: rendered.length };
 }
 
 export async function photoUrl(assetId: string) {

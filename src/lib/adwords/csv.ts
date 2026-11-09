@@ -37,9 +37,15 @@ export const ADWORDS_COLUMNS = [
   "score_seed",
   "score_note",
 ] as const;
-export type AdwordsColumn = (typeof ADWORDS_COLUMNS)[number];
+/** schema_version 2: experiments (optional — a v1 file has none of them) */
+export const ADWORDS_V2_COLUMNS = ["experiment_id", "variant", "paired_asset_id", "test_axis", "test_stage", "deploy_mode", "evidence_note"] as const;
+export const ALL_COLUMNS = [...ADWORDS_COLUMNS, ...ADWORDS_V2_COLUMNS] as const;
+export type AdwordsColumn = (typeof ALL_COLUMNS)[number];
 
-export const ROW_TYPES = ["image", "image_clean", "video", "video_scene", "headline", "long_headline", "description"] as const;
+export const ROW_TYPES = ["image", "image_clean", "video", "video_scene", "headline", "long_headline", "description", "experiment_plan", "historical_reference"] as const;
+/** metadata of tests and the archive — never rendered as images nor exported to Google Ads */
+export const META_ROW_TYPES = ["experiment_plan", "historical_reference"] as const;
+export const isMetaRow = (t: string) => (META_ROW_TYPES as readonly string[]).includes(t);
 export type RowType = (typeof ROW_TYPES)[number];
 export const ROW_TYPE_LABEL: Record<RowType, string> = {
   image: "grafika",
@@ -49,6 +55,8 @@ export const ROW_TYPE_LABEL: Record<RowType, string> = {
   headline: "krótki nagłówek",
   long_headline: "długi nagłówek",
   description: "opis",
+  experiment_plan: "plan eksperymentu",
+  historical_reference: "archiwum (historyczne)",
 };
 
 /** a header as typed by a person → the column name ("Asset ID" → asset_id, "Typ" → row_type) */
@@ -106,7 +114,7 @@ export function autoMapping(headers: string[]): Record<string, AdwordsColumn | n
   const taken = new Set<string>();
   for (const h of headers) {
     const n = norm(h);
-    const direct = ADWORDS_COLUMNS.find((c) => norm(c) === n);
+    const direct = ALL_COLUMNS.find((c) => norm(c) === n);
     const col = direct ?? SYNONYMS[n] ?? null;
     out[h] = col && !taken.has(col) ? col : null;
     if (col) taken.add(col);
@@ -154,6 +162,13 @@ export interface ParsedAsset {
     status: string | null;
     scoreSeed: number | null;
     scoreNote: string | null;
+    experimentId: string | null;
+    variant: string | null;
+    pairedAssetId: string | null;
+    testAxis: string | null;
+    testStage: string | null;
+    deployMode: string | null;
+    evidenceNote: string | null;
   };
   /** columns not mapped to the module (kept for the export), plus schema_version */
   extra: Record<string, string>;
@@ -253,12 +268,21 @@ export function parseAdwordsCsv(text: string, mapping?: Record<string, AdwordsCo
       status: str("status"),
       scoreSeed: num("score_seed", { min: 0, max: 100 }),
       scoreNote: str("score_note"),
+      experimentId: str("experiment_id"),
+      variant: str("variant")?.toUpperCase() ?? null,
+      pairedAssetId: str("paired_asset_id"),
+      testAxis: str("test_axis"),
+      testStage: str("test_stage"),
+      deployMode: str("deploy_mode")?.toLowerCase() ?? null,
+      evidenceNote: str("evidence_note"),
     };
     // what each kind of row needs
     if ((type === "image" || type === "image_clean" || type === "video" || type === "video_scene") && !data.conceptId) issues.push({ row, column: "concept_id", message: "Brak concept_id — wiersz nie zostanie połączony z konceptem.", level: "error" });
     if ((type === "headline" || type === "long_headline" || type === "description") && !data.adText) issues.push({ row, column: "ad_text", message: "Brak treści w ad_text.", level: "error" });
     if (type === "video_scene" && data.sceneIndex == null) issues.push({ row, column: "scene_index", message: "Scena bez scene_index.", level: "error" });
     if (type === "video_scene" && data.startS != null && data.endS != null && data.endS <= data.startS) issues.push({ row, column: "end_s", message: "end_s musi być większe od start_s.", level: "error" });
+    if (data.experimentId && data.variant && !/^[AB]$/.test(data.variant) && type !== "experiment_plan" && type !== "historical_reference") issues.push({ row, column: "variant", message: `variant „${data.variant}” — oczekiwane A lub B.`, level: "error" });
+    if (data.deployMode && !/^(exploration|controlled)$/.test(data.deployMode)) issues.push({ row, column: "deploy_mode", message: `deploy_mode „${data.deployMode}” — oczekiwane exploration albo controlled.`, level: "warning" });
     if ((type === "image" || type === "video") && !data.aspectRatio && !(data.width && data.height)) issues.push({ row, column: "aspect_ratio", message: "Brak proporcji (aspect_ratio albo width/height).", level: "warning" });
     if (data.landingUrl && !/^https?:\/\//i.test(data.landingUrl)) issues.push({ row, column: "landing_url", message: "landing_url powinien zaczynać się od https://", level: "warning" });
     const extra: Record<string, string> = {};
@@ -268,6 +292,9 @@ export function parseAdwordsCsv(text: string, mapping?: Record<string, AdwordsCo
     counts[type]++;
     assets.push({ row, assetKey: key, rowType: type, projectSlug: str("project_slug"), data, extra });
   });
+  // a pair must point to a record of the file (or one already imported)
+  const keys = new Set(assets.map((a) => a.assetKey));
+  for (const a of assets) if (a.data.pairedAssetId && !keys.has(a.data.pairedAssetId)) issues.push({ row: a.row, column: "paired_asset_id", message: `paired_asset_id „${a.data.pairedAssetId}” nie występuje w pliku.`, level: "warning" });
   return { delimiter, headers, mapping: map, preview: res.data.slice(0, 10), assets, issues, counts };
 }
 
@@ -310,16 +337,26 @@ const COL_OF: Record<AdwordsColumn, keyof ExportableAsset | null> = {
   status: "status",
   score_seed: "scoreSeed",
   score_note: "scoreNote",
+  experiment_id: "experimentId",
+  variant: "variant",
+  paired_asset_id: "pairedAssetId",
+  test_axis: "testAxis",
+  test_stage: "testStage",
+  deploy_mode: "deployMode",
+  evidence_note: "evidenceNote",
 };
 
 /** The module's records as a CSV (`;`, UTF-8 with BOM for Excel) — the same columns as the import, extra columns appended. */
 export function exportAdwordsCsv(assets: ExportableAsset[], projectSlug: string, schemaVersion = "1"): string {
+  // v2 columns only when the records use them (a v1 set exports exactly as v1)
+  const v2 = assets.some((a) => ADWORDS_V2_COLUMNS.some((c) => a[COL_OF[c] as keyof ExportableAsset] != null && a[COL_OF[c] as keyof ExportableAsset] !== ""));
+  const cols: AdwordsColumn[] = v2 ? [...ALL_COLUMNS] : [...ADWORDS_COLUMNS];
   const extraCols = [...new Set(assets.flatMap((a) => Object.keys(a.extra ?? {}).filter((k) => k !== "schema_version")))];
   const rows = assets.map((a) => {
     const r: Record<string, string> = {};
-    for (const c of ADWORDS_COLUMNS) {
+    for (const c of cols) {
       const k = COL_OF[c];
-      if (c === "schema_version") r[c] = a.extra?.schema_version ?? schemaVersion;
+      if (c === "schema_version") r[c] = a.extra?.schema_version ?? (v2 ? "2" : schemaVersion);
       else if (c === "project_slug") r[c] = projectSlug;
       else if (c === "approval_required") r[c] = a.approvalRequired ? "true" : "false";
       else {
@@ -330,7 +367,7 @@ export function exportAdwordsCsv(assets: ExportableAsset[], projectSlug: string,
     for (const c of extraCols) r[c] = a.extra?.[c] ?? "";
     return r;
   });
-  return "﻿" + Papa.unparse({ fields: [...ADWORDS_COLUMNS, ...extraCols], data: rows.map((r) => [...ADWORDS_COLUMNS, ...extraCols].map((c) => r[c])) }, { delimiter: ";", newline: "\r\n", quotes: false });
+  return "﻿" + Papa.unparse({ fields: [...cols, ...extraCols], data: rows.map((r) => [...cols, ...extraCols].map((c) => r[c])) }, { delimiter: ";", newline: "\r\n", quotes: false });
 }
 
 /** A template: the header and one example of each row type. */

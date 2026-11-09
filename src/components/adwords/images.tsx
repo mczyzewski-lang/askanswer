@@ -5,10 +5,11 @@ import { Button, Card, Input, Label, NativeSelect, Switch, Textarea } from "@/co
 import { api, cn } from "@/lib/utils";
 import { LAYOUTS, type LayoutKey } from "@/lib/adwords/draw";
 import { FORMAT_LABEL, formatKeyOf, imageFormat, PMAX_SPEC } from "@/lib/adwords/spec";
-import { brandContext, layoutOf } from "@/lib/adwords/context";
+import { brandContext, gateOptionsOf, layoutOf } from "@/lib/adwords/context";
 import { gateImage, scoreImageA, scoreImageB, type Measure } from "@/lib/adwords/score";
 import { CreativeCanvas } from "./canvas";
 import { GateBadge, GateList, ScorePair } from "./scores";
+import { HistoricalEvidence } from "./history";
 import type { AwAsset, AwData, Toast } from "./types";
 
 const sizeOf = (a: AwAsset) => {
@@ -44,12 +45,16 @@ export function ImagesTab({ data, reload, toast }: { data: AwData; reload: () =>
   const [funnel, setFunnel] = useState("all");
   const [minScore, setMinScore] = useState(0);
   const [open, setOpen] = useState<string | null>(null);
+  const [picked, setPicked] = useState<string[]>([]);
   const toInput = useCreativeInput(data);
+  const zip = (ids: string[], fmt = "png") => `/api/admin/adwords/${data.project.id}/zip?fmt=${fmt}&concepts=${encodeURIComponent(ids.join(","))}`;
   const evalOf = (id: string) => data.evaluation.images.find((e) => e.id === id);
   const shown = concepts.filter((c) => {
     const rows = images.filter((a) => (a.conceptId ?? a.assetKey) === c);
     if (type === "text" && rows.every((r) => r.rowType === "image_clean")) return false;
     if (type === "clean" && rows.some((r) => r.rowType === "image")) return false;
+    if (type === "exp" && !rows[0].experimentId) return false;
+    if (type === "noexp" && rows[0].experimentId) return false;
     if (funnel !== "all" && !rows.some((r) => r.funnel === funnel)) return false;
     const avg = rows.reduce((n, r) => n + (evalOf(r.id)?.scoreA?.total ?? 0), 0) / rows.length;
     return !minScore || avg >= minScore;
@@ -62,6 +67,8 @@ export function ImagesTab({ data, reload, toast }: { data: AwData; reload: () =>
           <option value="all">Wszystkie typy</option>
           <option value="text">Z tekstem</option>
           <option value="clean">Czyste zdjęcia</option>
+          <option value="exp">Z eksperymentów A/B</option>
+          <option value="noexp">Bez eksperymentów</option>
         </NativeSelect>
         <NativeSelect className="h-9 w-40" value={funnel} onChange={(e) => setFunnel(e.target.value)} aria-label="Lejek">
           <option value="all">Każdy lejek</option>
@@ -79,6 +86,19 @@ export function ImagesTab({ data, reload, toast }: { data: AwData; reload: () =>
         <span className="text-sm text-muted">
           {shown.length} z {concepts.length} konceptów
         </span>
+        {picked.length ? (
+          <span className="ml-auto flex items-center gap-2 text-sm">
+            <a href={zip(picked)} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-ink px-3 font-medium text-white" data-testid="download-picked">
+              <Download className="h-4 w-4" /> Pobierz zaznaczone ({picked.length}) PNG
+            </a>
+            <a href={zip(picked, "jpg")} className="underline">
+              JPG
+            </a>
+            <button type="button" className="text-muted underline" onClick={() => setPicked([])}>
+              wyczyść
+            </button>
+          </span>
+        ) : null}
       </div>
       <div className="grid gap-4 lg:grid-cols-2">
         {shown.map((c) => {
@@ -94,7 +114,13 @@ export function ImagesTab({ data, reload, toast }: { data: AwData; reload: () =>
                   </p>
                   <p className="truncate text-sm text-muted">{rows[0].headline ?? rows[0].visualBrief}</p>
                 </div>
-                <GateBadge gate={{ status: worst, problems: ev.flatMap((e) => e!.gate.problems) }} />
+                <div className="flex shrink-0 items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                  <GateBadge gate={{ status: worst, problems: ev.flatMap((e) => e!.gate.problems) }} />
+                  <a href={zip([c])} className="text-xs text-brand underline" title="Wszystkie formaty tego konceptu (ZIP z manifestem)" data-testid="download-concept">
+                    zestaw
+                  </a>
+                  <input type="checkbox" className="h-4 w-4" aria-label={`Zaznacz ${c}`} checked={picked.includes(c)} onChange={(e) => setPicked((p) => (e.target.checked ? [...p, c] : p.filter((x) => x !== c)))} data-testid="pick-concept" />
+                </div>
               </div>
               <div className="flex items-end gap-2">
                 {rows.map((r) => (
@@ -193,7 +219,7 @@ function ConceptEditor({ conceptId, data, reload, toast, onClose }: { conceptId:
         {rows.map((r) => {
           const d = view(r.id);
           const m = measures[r.id];
-          const g = gateImage(d, ctx, m ?? null, photoOf(d));
+          const g = gateImage(d, ctx, m ?? null, photoOf(d), null, gateOptionsOf(data.assets));
           const { key, w, h } = sizeOf(r);
           return (
             <button key={r.id} type="button" onClick={() => setSel(r.id)} className={cn("space-y-1.5 rounded-xl border-2 p-2 text-left", sel === r.id ? "border-ink" : "border-transparent hover:border-line")} style={{ width: key === "landscape" ? 380 : key === "square" ? 240 : 200 }} data-testid={`format-${key}`}>
@@ -321,8 +347,10 @@ function ConceptEditor({ conceptId, data, reload, toast, onClose }: { conceptId:
           </p>
           {!clean ? <ScorePair a={scoreImageA(cur, ctx, measures[sel] ?? null, photoOf(cur))} b={scoreImageB(cur, ctx, measures[sel] ?? null, photoOf(cur))} seed={cur.scoreSeed} /> : <p className="text-xs text-muted">Czyste zdjęcie — bez oceny treści.</p>}
           <p className="text-sm font-medium">Walidacja (niezależna od oceny)</p>
-          <GateList gate={gateImage(cur, ctx, measures[sel] ?? null, photoOf(cur))} />
+          <GateList gate={gateImage(cur, ctx, measures[sel] ?? null, photoOf(cur), null, gateOptionsOf(data.assets))} />
           {cur.visualBrief ? <p className="text-xs text-muted">Kierunek artystyczny: {cur.visualBrief}</p> : null}
+          {cur.evidenceNote ? <p className="text-xs text-muted">Dowód / kontekst: {cur.evidenceNote}</p> : null}
+          {!clean ? <HistoricalEvidence data={data} conceptId={cur.conceptId} text={cur.headline ?? ""} /> : null}
         </div>
       </div>
     </Card>

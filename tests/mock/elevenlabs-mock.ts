@@ -162,6 +162,14 @@ const server = http.createServer(async (req, res) => {
         const user = String(body.messages?.find((m: { role: string }) => m.role === "user")?.content ?? "");
         oaiLog.push({ model: body.model, size: "", prompt: String(body.messages?.[0]?.content ?? "").slice(0, 400) + "\n---\n" + user, n: 1 });
         // EduStudio: the first sentence is a remark for the editor
+        if (String(body.messages?.[0]?.content ?? "").startsWith("ADWORDS_ASSISTANT")) {
+          const video = /Rodzaj: wideo/.test(user);
+          const code = /Proponowany kod konceptu: (\S+)/.exec(user)?.[1] ?? "G99";
+          const out = video
+            ? { kind: "video", concept_id: code, rationale: "Hook pytaniem i jeden mechanizm.", video: { duration_sec: 25, scenes: [{ start_s: 0, end_s: 3, spoken_text: "Czy rozwód musi być wojną?", screen_text: "Rozwód bez wojny?", visual_brief: "Ekspert do kamery" }, { start_s: 3, end_s: 10, spoken_text: "Najczęściej konflikt nakręca brak planu.", screen_text: "Brak planu", visual_brief: "Plan średni" }, { start_s: 10, end_s: 20, spoken_text: "Najpierw plan, potem pozew.", screen_text: "Plan → pozew", visual_brief: "Plansze kroków" }, { start_s: 20, end_s: 25, spoken_text: "Umów konsultację.", screen_text: "Umów konsultację", visual_brief: "Logo" }] }, headline_for_ads: "Rozwód bez wojny?" }
+            : { kind: "image", concept_id: code, rationale: "Jedno hasło o planie i CTA.", image: { layout: "typographic", headline: "Plan przed pozwem", subheadline: "Ustalcie wszystko spokojnie", body: "", cta: "Umów konsultację", visual_brief: "Typografia na tle motywu", use_expert_photo: false }, headline_for_ads: "Plan przed pozwem" };
+          return json(200, { id: "chatcmpl-mock", object: "chat.completion", model: body.model, choices: [{ index: 0, message: { role: "assistant", content: JSON.stringify(out) }, finish_reason: "stop" }] });
+        }
         if (String(body.messages?.[0]?.content ?? "").startsWith("BROLL_DRAFT")) {
           draftLog.push(user);
           const out = /kind: video/.test(user)

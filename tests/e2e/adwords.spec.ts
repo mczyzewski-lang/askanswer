@@ -18,8 +18,8 @@ test("Google Adwords API: idempotent CSV import, real PNG renders, ZIP with mani
   // preview: counts, no errors, nothing written yet
   const dry = await (await request.post(`${base}/import`, { data: { text: CSV, dryRun: true } })).json();
   expect(dry.total).toBe(81);
-  expect(dry.counts).toEqual({ image: 18, image_clean: 2, video: 15, video_scene: 21, headline: 15, long_headline: 5, description: 5 });
-  expect(dry.concepts).toEqual({ images: 6, cleanPhotos: 2, videos: 5, scenes: 21, texts: 25 });
+  expect(dry.counts).toEqual({ image: 18, image_clean: 2, video: 15, video_scene: 21, headline: 15, long_headline: 5, description: 5, experiment_plan: 0, historical_reference: 0 });
+  expect(dry.concepts).toEqual({ images: 6, cleanPhotos: 2, videos: 5, scenes: 21, texts: 25, experiments: 0, meta: 0 });
   expect(dry.issues.filter((i: { level: string }) => i.level === "error")).toEqual([]);
   expect(dry.projectSlugMismatch).toEqual([]);
   expect(dry.applied).toBe(false);
@@ -200,7 +200,7 @@ test("Google Adwords UI: import, gallery, editor (preview = export), expert phot
   await page.getByTestId("adwords-tabs").getByRole("button", { name: "Raport dla agencji" }).click();
   const brief = page.getByLabel("Brief");
   await expect(brief).toHaveValue(/NOWY ETAP UI — PMAX/);
-  await expect(brief).toHaveValue(/Top koncepty: G\d\d \[A \d+ \/ B \d+/);
+  await expect(brief).toHaveValue(/Top koncepty: G\d\d „[^”]*” \[A \d+ \/ B \d+/);
   await brief.fill(`${await brief.inputValue()}\nUwaga ręczna: test`);
   await page.getByTestId("brief-save").click();
   await expect(page.getByText("Zapisano brief")).toBeVisible();

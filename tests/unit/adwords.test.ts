@@ -18,7 +18,7 @@ describe("Google Adwords CSV", () => {
     expect(r.delimiter).toBe(";");
     expect(r.issues.filter((i) => i.level === "error")).toEqual([]);
     expect(r.assets).toHaveLength(81);
-    expect(r.counts).toEqual({ image: 18, image_clean: 2, video: 15, video_scene: 21, headline: 15, long_headline: 5, description: 5 });
+    expect(r.counts).toEqual({ image: 18, image_clean: 2, video: 15, video_scene: 21, headline: 15, long_headline: 5, description: 5, experiment_plan: 0, historical_reference: 0 });
     // quoted ";" and line breaks survive, Polish letters too
     expect(r.assets.find((a) => a.assetKey === "G03-L")!.data.body).toBe("Pakiet konsultacji; zakres opisany przed startem");
     expect(r.assets.find((a) => a.assetKey === "V05-S1")!.data.spokenText).toContain("\nBez sprzedaży");
@@ -81,7 +81,10 @@ describe("scoring and the gate", () => {
     expect(vids.map((v) => [v.conceptId, v.variants.length])).toEqual([["V01", 3], ["V02", 3], ["V03", 3], ["V04", 3], ["V05", 3]]);
     expect(vids.reduce((n, v) => n + v.scenes.length, 0)).toBe(21);
     const v1 = vids[0];
-    expect(gateVideo(v1, { ...ctx, landingUrl: "https://nowyetap.pl" }).status).toBe("gotowe");
+    // the price line in scene 4 needs the service scope confirmed; with a source it is ready
+    const g1 = gateVideo(v1, { ...ctx, landingUrl: "https://nowyetap.pl" });
+    expect(g1.problems.map((p) => p.message)).toEqual([expect.stringContaining("zakres wycenionej usługi")]);
+    expect(gateVideo({ ...v1, scenes: v1.scenes.map((s) => ({ ...s, claimSource: "cennik 2026" })) }, { ...ctx, landingUrl: "https://nowyetap.pl" }).status).toBe("gotowe");
     expect(scoreVideoA(v1, ctx).total).toBeGreaterThan(60);
     expect(scoreVideoB(v1, ctx).items.map((i) => i.max).reduce((x, y) => x + y)).toBe(100);
     const srt = scenesToSrt(v1.scenes);

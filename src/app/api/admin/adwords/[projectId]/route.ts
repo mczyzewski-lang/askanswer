@@ -1,6 +1,7 @@
 import { requireAdmin, canEdit } from "@/lib/server/auth";
 import { json, route } from "@/lib/server/http";
 import { adwordsProject, defaultBrief, evaluateProject, layoutOf, photoUrl, toAdAsset } from "@/lib/server/adwords";
+import { historyOf } from "@/lib/server/adwords-history";
 import { PMAX_SPEC } from "@/lib/adwords/spec";
 import { SCORING_B } from "@/lib/adwords/score";
 import { slugify } from "@/lib/adwords/csv";
@@ -17,8 +18,12 @@ export const GET = route(async (_req: Request, ctx: { params: Promise<{ projectI
   const logo = project.theme?.logoAssetId ? await prisma.mediaAsset.findUnique({ where: { id: project.theme.logoAssetId } }) : null;
   const evaluation = await evaluateProject(projectId);
   const list = assets.map(toAdAsset);
+  const history = await historyOf(projectId);
+  const latest = history.imports[0];
+  const period = latest?.periodFrom && latest.periodTo ? `${latest.periodFrom.toISOString().slice(0, 10)} – ${latest.periodTo.toISOString().slice(0, 10)}` : "okres raportu";
   return json({
-    project: { id: project.id, name: project.name, slug: slugify(project.name), themeId: project.themeId, brief: project.adwordsBrief, defaultBrief: defaultBrief(project, { campaigns, assets: list, evaluation }) },
+    project: { id: project.id, name: project.name, slug: slugify(project.name), themeId: project.themeId, brief: project.adwordsBrief, defaultBrief: defaultBrief(project, { campaigns, assets: list, evaluation, history: history.rows, period }) },
+    history,
     canEdit: canEdit(me.role),
     theme,
     logoUrl: logo ? await signedUrl(logo.storageKey, { ttlSec: 6 * 3600 }) : null,

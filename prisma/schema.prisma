@@ -179,6 +179,7 @@ model Project {
   adwordsCampaigns   AdwordsCampaign[]
   adwordsAssets      AdwordsAsset[]
   adwordsBrief       String?
+  adwordsHistory     AdwordsHistoryImport[]
   adFootage          AdFootage[]
   adReels            AdReel[]
   name               String
@@ -1405,6 +1406,16 @@ model AdwordsAsset {
   /// a person's priority score from the CSV (0–100) — never a campaign result
   scoreSeed        Float?
   scoreNote        String?
+  /// CSV v2 — experiments: the same hook as a headline, an image and the first 3 s of a video
+  experimentId     String?
+  /// A | B
+  variant          String?
+  pairedAssetId    String?
+  testAxis         String?
+  testStage        String?
+  /// exploration | controlled
+  deployMode       String?
+  evidenceNote     String?
   /// typographic | expert_split | process_steps (image concepts)
   layout           String?
   /// editor state: photo focal point / zoom / offset / hidden, clean photo flag…
@@ -1438,4 +1449,58 @@ model AdwordsExpertPhoto {
   createdAt        DateTime  @default(now())
 
   @@unique([themeId, key])
+}
+
+/// Google Adwords — one imported Google Ads "asset details" report (historical, attributed metrics)
+model AdwordsHistoryImport {
+  id         String              @id @default(cuid())
+  projectId  String
+  project    Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  fileName   String
+  /// sha256 of the file — the same report imported again is recognised
+  fileHash   String
+  title      String?
+  periodFrom DateTime?
+  periodTo   DateTime?
+  periodRaw  String?
+  rowCount   Int                 @default(0)
+  importedAt DateTime            @default(now())
+  rows       AdwordsHistoryRow[]
+
+  @@unique([projectId, fileHash])
+}
+
+/// One component row of the report: the 13 source fields as they were (raw) and normalised. Metrics are
+/// attributed to the component by Google — not additive, not causal.
+model AdwordsHistoryRow {
+  id          String               @id @default(cuid())
+  importId    String
+  import      AdwordsHistoryImport @relation(fields: [importId], references: [id], onDelete: Cascade)
+  projectId   String
+  /// position in the file (record number)
+  rowNumber   Int
+  /// the 13 fields as in the file
+  raw         Json
+  assetState  String?
+  component   String
+  level       String?
+  status      String?
+  assetType   String?
+  /// headline | long_headline | description | image_square | image_landscape | image_portrait | video | logo | sitelink | business_name | other
+  typeKey     String
+  lastUpdated DateTime?
+  conversions Float?
+  convValue   Float?
+  impressions Int?
+  clicks      Int?
+  currency    String?
+  cost        Float?
+  addedBy     String?
+  /// the communication angle detected from the text (bez_wojny, plan_pozew, koszt, szybkosc, inne)
+  angle       String?
+  /// a person's link to a new concept (the source of a hypothesis, not a cause)
+  conceptId   String?
+
+  @@index([projectId, typeKey])
+  @@index([importId])
 }

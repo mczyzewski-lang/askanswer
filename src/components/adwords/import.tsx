@@ -5,7 +5,7 @@ import { Button, Card, NativeSelect } from "@/components/ui";
 import { DropZone } from "@/components/drop-zone";
 import { api, cn } from "@/lib/utils";
 import { decodeCsv } from "@/lib/csv-import";
-import { ADWORDS_COLUMNS, ROW_TYPE_LABEL, type AdwordsColumn, type CsvIssue, type RowType } from "@/lib/adwords/csv";
+import { ALL_COLUMNS as ADWORDS_COLUMNS, ROW_TYPE_LABEL, type AdwordsColumn, type CsvIssue, type RowType } from "@/lib/adwords/csv";
 import type { AwData, Toast } from "./types";
 
 interface DryRun {
@@ -16,7 +16,7 @@ interface DryRun {
   preview: Array<Record<string, string>>;
   issues: CsvIssue[];
   counts: Record<RowType, number>;
-  concepts: { images: number; cleanPhotos: number; videos: number; scenes: number; texts: number };
+  concepts: { images: number; cleanPhotos: number; videos: number; scenes: number; texts: number; experiments?: number; meta?: number };
   projectSlugMismatch: string[];
   applied: boolean;
   created: number;
@@ -25,7 +25,17 @@ interface DryRun {
   campaignsCreated: number;
 }
 
-export function ImportTab({ data, reload, toast, onDone }: { data: AwData; reload: () => Promise<void>; toast: Toast; onDone: () => void }) {
+interface HistoryDry {
+  kind: "history";
+  total: number;
+  title: string | null;
+  periodRaw: string | null;
+  issues: Array<{ row: number; message: string }>;
+  preview: Array<{ component: string; type: string | null; status: string | null; impressions: number | null; clicks: number | null; conversions: number | null }>;
+}
+
+export function ImportTab({ data, reload, toast, onDone }: { data: AwData; reload: () => Promise<void>; toast: Toast; onDone: (kind: "creatives" | "history") => void }) {
+  const [hist, setHist] = useState<HistoryDry | null>(null);
   const [text, setText] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [dry, setDry] = useState<DryRun | null>(null);
@@ -33,12 +43,19 @@ export function ImportTab({ data, reload, toast, onDone }: { data: AwData; reloa
   const [busy, setBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const base = `/api/admin/adwords/${data.project.id}`;
-  const check = async (t: string, m?: Record<string, AdwordsColumn | null>) => {
+  const check = async (t: string, m?: Record<string, AdwordsColumn | null>, fileName = name) => {
     setBusy(true);
     try {
-      const r = await api<DryRun>(`${base}/import`, { method: "POST", json: { text: t, dryRun: true, mapping: m } });
-      setDry(r);
-      setMapping(r.mapping);
+      const r = await api<DryRun | HistoryDry>(`${base}/import`, { method: "POST", json: { text: t, dryRun: true, mapping: m, fileName } });
+      // a Google Ads asset report: a different format (Historia PMax), not creatives
+      if ((r as HistoryDry).kind === "history") {
+        setHist(r as HistoryDry);
+        setDry(null);
+        return;
+      }
+      setHist(null);
+      setDry(r as DryRun);
+      setMapping((r as DryRun).mapping);
     } catch (e) {
       toast((e as Error).message, "err");
     } finally {
@@ -49,7 +66,7 @@ export function ImportTab({ data, reload, toast, onDone }: { data: AwData; reloa
     const t = decodeCsv(await f.arrayBuffer());
     setText(t);
     setName(f.name);
-    await check(t);
+    await check(t, undefined, f.name);
   };
   const errors = dry?.issues.filter((i) => i.level === "error") ?? [];
   const warnings = dry?.issues.filter((i) => i.level === "warning") ?? [];
@@ -75,6 +92,36 @@ export function ImportTab({ data, reload, toast, onDone }: { data: AwData; reloa
         </Card>
       </DropZone>
 
+      {hist && text ? (
+        <Card className="space-y-3 p-5" data-testid="import-history-detected">
+          <p className="font-medium">To raport komponentów Google Ads — trafi do „Historia PMax”, nie do kreacji.</p>
+          <p className="text-sm text-muted">
+            {hist.title} · {hist.periodRaw} · {hist.total} komponentów
+          </p>
+          {hist.issues.length ? <p className="text-sm text-red-700">{hist.issues.map((i) => `Wiersz ${i.row}: ${i.message}`).join("; ")}</p> : null}
+          <Button
+            disabled={busy || hist.issues.length > 0 || !data.canEdit}
+            onClick={async () => {
+              setBusy(true);
+              try {
+                const r = await api<{ total: number; replaced: boolean }>(`${base}/history`, { method: "POST", json: { text, fileName: name, dryRun: false } });
+                toast(`Historia: ${r.total} komponentów${r.replaced ? " (zastąpiono ten sam raport)" : ""}`);
+                setHist(null);
+                setText(null);
+                await reload();
+                onDone("history");
+              } catch (e) {
+                toast((e as Error).message, "err");
+              } finally {
+                setBusy(false);
+              }
+            }}
+            data-testid="import-history-confirm"
+          >
+            Importuj historię ({hist.total})
+          </Button>
+        </Card>
+      ) : null}
       {dry && text ? (
         <Card className="space-y-4 p-5" data-testid="import-preview">
           <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -83,6 +130,7 @@ export function ImportTab({ data, reload, toast, onDone }: { data: AwData; reloa
             </p>
             <p className="text-sm text-muted" data-testid="import-counts">
               {dry.concepts.images} koncepty graficzne, {dry.concepts.cleanPhotos} czyste zdjęcia, {dry.concepts.videos} koncepty wideo, {dry.concepts.scenes} scen, {dry.concepts.texts} tekstów
+              {dry.concepts.experiments ? `, ${dry.concepts.experiments} eksperymentów, ${dry.concepts.meta} wierszy planu / archiwum` : ""}
             </p>
           </div>
           <div className="flex flex-wrap gap-1.5 text-xs">
@@ -186,7 +234,7 @@ export function ImportTab({ data, reload, toast, onDone }: { data: AwData; reloa
                   setDry(null);
                   setText(null);
                   await reload();
-                  onDone();
+                  onDone("creatives");
                 } catch (e) {
                   toast((e as Error).message, "err");
                 } finally {

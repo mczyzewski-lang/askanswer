@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { Download, Film, Loader2 } from "lucide-react";
 import { Button, Card, Input, NativeSelect, Textarea } from "@/components/ui";
 import { api, cn } from "@/lib/utils";
-import { brandContext } from "@/lib/adwords/context";
+import { brandContext, gateOptionsOf } from "@/lib/adwords/context";
 import { gateVideo, scoreVideoA, scoreVideoB } from "@/lib/adwords/score";
 import { formatKeyOf, PMAX_SPEC } from "@/lib/adwords/spec";
 import { scenesToSrt, shotlistCsv, shotlistMarkdown, teleprompterScript, videoConcepts, videoDuration } from "@/lib/adwords/video";
@@ -137,7 +137,7 @@ function VideoConceptView({ conceptId, data, reload, toast }: { conceptId: strin
           <span>{dur} s</span>
         </div>
       </div>
-      <GateList gate={gateVideo(draftV, ctx)} />
+      <GateList gate={gateVideo(draftV, ctx, gateOptionsOf(data.assets))} />
       {/* scenes: edit the script and timings */}
       <div className="space-y-2">
         {scenes.map((s, i) => (

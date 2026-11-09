@@ -4,7 +4,7 @@ import { Copy, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { Button, Card, Input } from "@/components/ui";
 import { api, cn } from "@/lib/utils";
 import { PMAX_SPEC, type TextKind } from "@/lib/adwords/spec";
-import { brandContext } from "@/lib/adwords/context";
+import { brandContext, gateOptionsOf } from "@/lib/adwords/context";
 import { gateText, scoreTextA, scoreTextB, textSetChecks } from "@/lib/adwords/score";
 import { GateBadge, ScorePair } from "./scores";
 import type { AwAsset, AwData, Toast } from "./types";
@@ -109,7 +109,7 @@ export function TextsTab({ data, reload, toast }: { data: AwData; reload: () => 
             <ul className="space-y-1.5">
               {list.map((t) => {
                 const len = [...(t.adText ?? "")].length;
-                const g = gateText(t);
+                const g = gateText(t, gateOptionsOf(data.assets));
                 return (
                   <li key={t.id} className="flex flex-wrap items-center gap-2" data-testid="text-row">
                     <span className="w-12 shrink-0 font-mono text-[11px] text-muted">{t.assetKey}</span>

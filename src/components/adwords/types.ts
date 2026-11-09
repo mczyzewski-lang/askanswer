@@ -38,6 +38,13 @@ export interface AwAsset {
   scoreSeed: number | null;
   scoreNote: string | null;
   layout: string | null;
+  experimentId: string | null;
+  variant: string | null;
+  pairedAssetId: string | null;
+  testAxis: string | null;
+  testStage: string | null;
+  deployMode: string | null;
+  evidenceNote: string | null;
   effectiveLayout: LayoutKey | null;
   edit: { photoHidden?: boolean; zoom?: number; offsetX?: number; offsetY?: number; cleanPhoto?: boolean; renderAssetId?: string } | null;
 }
@@ -78,5 +85,39 @@ export interface AwData {
   };
   spec: typeof PMAX_SPEC;
   scoringB: typeof SCORING_B;
+  history: { imports: AwHistoryImport[]; rows: AwHistoryRow[] };
 }
 export type Toast = (t: string, tone?: "ok" | "err") => void;
+
+export interface AwHistoryRow {
+  id: string;
+  importId: string;
+  rowNumber: number;
+  raw: Record<string, string>;
+  assetState: string | null;
+  component: string;
+  level: string | null;
+  status: string | null;
+  assetType: string | null;
+  typeKey: string;
+  lastUpdated: string | null;
+  conversions: number | null;
+  convValue: number | null;
+  impressions: number | null;
+  clicks: number | null;
+  currency: string | null;
+  cost: number | null;
+  addedBy: string | null;
+  angle: string | null;
+  conceptId: string | null;
+}
+export interface AwHistoryImport {
+  id: string;
+  fileName: string;
+  title: string | null;
+  periodFrom: string | null;
+  periodTo: string | null;
+  periodRaw: string | null;
+  rowCount: number;
+  importedAt: string;
+}

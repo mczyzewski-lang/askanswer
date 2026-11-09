@@ -12,6 +12,9 @@ import { ImagesTab } from "./images";
 import { VideoTab, download } from "./video";
 import { TextsTab } from "./texts";
 import { ImportTab } from "./import";
+import { HistoryTab } from "./history";
+import { ExperimentsTab } from "./experiments";
+import { AssistantTab } from "./assistant";
 import type { AwData, Toast } from "./types";
 
 const TABS = [
@@ -19,6 +22,9 @@ const TABS = [
   ["grafiki", "Kreacje graficzne"],
   ["wideo", "Wideo"],
   ["teksty", "Teksty reklam"],
+  ["eksperymenty", "Eksperymenty A/B"],
+  ["historia", "Historia PMax"],
+  ["asystent", "Asystent kreacji"],
   ["import", "Import CSV"],
   ["raport", "Raport dla agencji"],
   ["eksperci", "Zdjęcia ekspertów"],
@@ -69,7 +75,7 @@ export function AdwordsProject({ projectId }: { projectId: string }) {
           </button>
         ))}
       </nav>
-      {data.assets.length === 0 && tab !== "import" && tab !== "wytyczne" && tab !== "eksperci" ? (
+      {data.assets.length === 0 && !["import", "wytyczne", "eksperci", "historia", "asystent"].includes(tab) ? (
         <EmptyState title="Brak komponentów">
           <button type="button" className="underline" onClick={() => setTab("import")}>
             Zaimportuj plik CSV
@@ -81,7 +87,10 @@ export function AdwordsProject({ projectId }: { projectId: string }) {
       {tab === "grafiki" && data.assets.length ? <ImagesTab data={data} reload={load} toast={toast} /> : null}
       {tab === "wideo" && data.assets.length ? <VideoTab data={data} reload={load} toast={toast} /> : null}
       {tab === "teksty" && data.assets.length ? <TextsTab data={data} reload={load} toast={toast} /> : null}
-      {tab === "import" ? <ImportTab data={data} reload={load} toast={toast} onDone={() => setTab("kampanie")} /> : null}
+      {tab === "import" ? <ImportTab data={data} reload={load} toast={toast} onDone={(kind) => setTab(kind === "history" ? "historia" : "kampanie")} /> : null}
+      {tab === "eksperymenty" && data.assets.length ? <ExperimentsTab data={data} reload={load} toast={toast} /> : null}
+      {tab === "historia" ? <HistoryTab data={data} reload={load} toast={toast} /> : null}
+      {tab === "asystent" ? <AssistantTab data={data} reload={load} toast={toast} onAdded={(k) => setTab(k === "image" ? "grafiki" : "wideo")} /> : null}
       {tab === "raport" && data.assets.length ? <ReportTab data={data} reload={load} toast={toast} /> : null}
       {tab === "eksperci" ? <PhotosTab data={data} reload={load} toast={toast} /> : null}
       {tab === "wytyczne" ? <SpecTab data={data} /> : null}
