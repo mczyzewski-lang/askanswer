@@ -51,7 +51,9 @@ export interface AwAsset {
   lp: Record<string, string | undefined> | null;
   testPriority: number | null;
   effectiveLayout: LayoutKey | null;
-  edit: { photoHidden?: boolean; zoom?: number; offsetX?: number; offsetY?: number; cleanPhoto?: boolean; renderAssetId?: string } | null;
+  /** the AI infographic picture of this format (layout "infographic") */
+  infographicUrl?: string | null;
+  edit: { variantOf?: string; infographicAssetId?: string; photoHidden?: boolean; zoom?: number; offsetX?: number; offsetY?: number; cleanPhoto?: boolean; renderAssetId?: string } | null;
 }
 export interface AwPhoto {
   id: string;
@@ -76,7 +78,7 @@ export interface AwCampaign {
   status: string;
 }
 export interface AwData {
-  project: { id: string; name: string; slug: string; themeId: string | null; brief: string | null; defaultBrief: string; description?: string | null };
+  project: { id: string; name: string; slug: string; themeId: string | null; brief: string | null; defaultBrief: string; description?: string | null; topic: string | null; topicSet: string | null };
   canEdit: boolean;
   theme: ThemeTokens;
   logoUrl: string | null;

@@ -30,6 +30,10 @@ async function handle(job: { id: string; type: string; payload: unknown }) {
       return { map: await enhanceComposition(p.compositionId, p.mode as "podcast" | "isolator", (p.strength as "natural" | "podcast" | "radio") ?? "podcast") };
     case "generate-broll":
       return generateBroll(job.id, job.payload as Parameters<typeof generateBroll>[1]);
+    case "adwords-infographic": {
+      const { runAdInfographic } = await import("../lib/server/adwords-variants");
+      return runAdInfographic(p.projectId, p.conceptId);
+    }
     case "adwords-video": {
       const { renderAdwordsVideo } = await import("../lib/server/adwords-video");
       return renderAdwordsVideo(p.projectId, p.conceptId, (job.payload as { voice?: boolean }).voice !== false);

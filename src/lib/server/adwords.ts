@@ -24,7 +24,7 @@ import { ANGLE_LABEL, MISSING_DATA, matchHistory } from "../adwords/history";
 import type { ThemeTokens } from "../editor/types";
 
 export type { AssetEdit } from "../adwords/context";
-import { brandContext, gateOptionsOf, layoutOf, type AssetEdit } from "../adwords/context";
+import { brandContext, gateOptionsOf, layoutOf, type AssetEdit , topicOf } from "../adwords/context";
 export { brandContext, layoutOf };
 
 export async function adwordsProject(projectId: string) {
@@ -33,6 +33,10 @@ export async function adwordsProject(projectId: string) {
   const assets = await prisma.adwordsAsset.findMany({ where: { projectId }, orderBy: [{ order: "asc" }, { createdAt: "asc" }] });
   return { project, theme, assets, photos: project.theme?.expertPhotos ?? [], campaigns: project.adwordsCampaigns };
 }
+
+/** what the ads are about: set in the module, else read from the texts */
+export const projectTopic = (project: { adwordsTopic?: string | null }, assets: Array<{ headline: string | null; adText: string | null; subheadline: string | null; body: string | null }>) =>
+  topicOf(project.adwordsTopic, assets.flatMap((a) => [a.headline ?? "", a.adText ?? "", a.subheadline ?? "", a.body ?? ""]));
 
 export const toExportable = (a: Prisma.AdwordsAssetGetPayload<object>) => ({ ...a, extra: (a.extra ?? null) as Record<string, string> | null, lp: (a.lp ?? null) as LpData | null });
 /**
@@ -234,6 +238,8 @@ export async function renderAdwordsImage(assetDbId: string, fmt: "png" | "jpg" =
       cache?.photos?.set(photoRow.id, photoImg);
     }
   }
+  // an AI infographic version: its picture is the "photo" of the layout
+  const infoImg = layoutOf(a) === "infographic" ? await loadAssetImage((edit as { infographicAssetId?: string }).infographicAssetId) : null;
   const canvas = createCanvas(W, H);
   const ctx = canvas.getContext("2d");
   const measure: Measure = drawCreative(ctx as never, {
@@ -243,7 +249,7 @@ export async function renderAdwordsImage(assetDbId: string, fmt: "png" | "jpg" =
     copy: { headline: a.headline || comparisonOf((a.lp as Record<string, string> | null))?.title || "", subheadline: a.subheadline, body: a.body, cta: a.cta, comparison: comparisonOf((a.lp as Record<string, string> | null)) },
     theme,
     logo,
-    photo: photoImg && photoRow ? { image: photoImg, focalX: photoRow.focalX, focalY: photoRow.focalY, zoom: edit.zoom, offsetX: edit.offsetX, offsetY: edit.offsetY } : null,
+    photo: infoImg ? { image: infoImg, focalX: 0.5, focalY: 0.5 } : photoImg && photoRow ? { image: photoImg, focalX: photoRow.focalX, focalY: photoRow.focalY, zoom: edit.zoom, offsetX: edit.offsetX, offsetY: edit.offsetY } : null,
     safeMargin: PMAX_SPEC.images.safeMargin,
   });
   let buf: Buffer;
@@ -264,7 +270,7 @@ export async function evaluateProject(projectId: string, measures: Map<string, M
   const landing = campaigns.find((c) => c.landingUrl)?.landingUrl ?? null;
   const ctxOf = (code: string | null) => brandContext(project, campaigns.find((c) => c.code === code)?.landingUrl ?? landing, !!theme.logoAssetId || !!project.theme?.logoAssetId);
   const list = assets.map(toAdAsset);
-  const opts = gateOptionsOf(list, gateLpOf(isV5Project(assets), await landingContext(projectId)));
+  const opts = gateOptionsOf(list, gateLpOf(isV5Project(assets), await landingContext(projectId)), projectTopic(project, assets));
   const photoOf = (a: AdAsset) => {
     const p = a.expertPhotoId ? photos.find((x) => x.id === a.expertPhotoId) : a.expertPhotoKey ? photos.find((x) => x.key === a.expertPhotoKey) : null;
     return p ? { id: p.id, consentConfirmed: p.consentConfirmed } : null;

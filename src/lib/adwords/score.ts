@@ -324,12 +324,27 @@ const NEEDS_LEGAL = [
   { re: /\b\d+\s*dni\b|w terminie/, why: "obietnica czasowa — wymaga danych o typowych terminach" },
 ];
 const PRICE = /(cena|koszt|zl\b|zlotych|tani|oplat)/;
+/** the stem of each topic ("rozwód" → "rozw"); a text mentions the topic when it has one of them */
+export const topicStems = (topic: string | null | undefined) =>
+  (topic ?? "")
+    .split(/[,;]/)
+    .map((t) => fold(t.trim()))
+    .filter(Boolean)
+    .map((t) => (t.includes(" ") ? t : t.slice(0, Math.max(4, t.length - 2))));
+export const mentionsTopic = (text: string, topic: string | null | undefined) => {
+  const st = topicStems(topic);
+  return !st.length || st.some((x) => fold(text).includes(x));
+};
+const topicProblem = (text: string, opts: GateOptions, what: string): Gate["problems"] =>
+  text.trim() && opts.topic && !mentionsTopic(text, opts.topic) ? [{ level: "do_poprawy", message: `${what} nie mówi, czego dotyczy — dodaj „${opts.topic.split(/[,;]/)[0].trim()}” (Treści → Popraw nagłówki).` }] : [];
 /** the text talks about a price / cost */
 export const hasPrice = (text: string) => PRICE.test(fold(text));
 
 /** editorial context of the project: texts from the archive that must not be published again */
 export interface GateOptions {
   doNotPublish?: string[];
+  /** what the ads are about ("rozwód") — a headline that does not say it is flagged */
+  topic?: string | null;
   /** v5 projects: the offer (free plan) confirmation + the claims approved in the registry */
   lp?: { offerValid: boolean; approvedClaims: string[] } | null;
 }
@@ -364,6 +379,7 @@ export function gateImage(v: AdAsset, ctx: BrandContext, m: Measure | null, phot
   if (usesPhoto && photo && !photo.consentConfirmed) p.push({ level: "blokada", message: "Brak potwierdzonej zgody na reklamowe użycie zdjęcia eksperta." });
   if (v.rowType !== "image_clean") {
     if (!(v.headline ?? "").trim()) p.push({ level: "do_poprawy", message: "Brak hasła." });
+    if (v.layout !== "infographic") p.push(...topicProblem(v.headline ?? "", opts, "Hasło grafiki"));
     p.push(...claimProblems(v, [v.headline, v.subheadline, v.body, v.cta].join(" "), opts));
   } else p.push(...claimProblems(v, "", opts));
   if (!(v.landingUrl || ctx.landingUrl)) p.push({ level: "do_poprawy", message: "Brak adresu strony docelowej (uzupełnij w kampanii)." });
@@ -392,6 +408,7 @@ export function gateText(t: AdAsset, opts: GateOptions = {}): Gate {
   const lim = PMAX_SPEC.texts[kind].maxChars;
   if (!text) p.push({ level: "blokada", message: "Pusty tekst." });
   if ([...text].length > lim) p.push({ level: "blokada", message: `${[...text].length} znaków — limit ${lim}.` });
+  if (kind === "headline" || kind === "long_headline") p.push(...topicProblem(text, opts, kind === "headline" ? "Nagłówek" : "Długi nagłówek"));
   p.push(...claimProblems(t, text, opts));
   return gate(p);
 }

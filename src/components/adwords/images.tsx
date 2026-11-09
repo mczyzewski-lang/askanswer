@@ -12,6 +12,7 @@ import { GateBadge, GateList, ScorePair } from "./scores";
 import { HistoricalEvidence } from "./history";
 import { AdLandingInfo } from "./landing-content";
 import { CsvV5Fields } from "./v5-fields";
+import { MoreCreatives } from "./more-creatives";
 import type { AwAsset, AwData, Toast } from "./types";
 
 const sizeOf = (a: AwAsset) => {
@@ -33,7 +34,7 @@ export function useCreativeInput(data: AwData) {
       copy: { headline: a.headline || comparisonOf(a.lp)?.title || "", subheadline: a.subheadline, body: a.body, cta: a.cta, comparison: comparisonOf(a.lp) },
       theme: data.theme,
       logoUrl: data.logoUrl,
-      photo: photo && !e.photoHidden ? { url: photo.url, focalX: photo.focalX, focalY: photo.focalY, zoom: e.zoom, offsetX: e.offsetX, offsetY: e.offsetY } : null,
+      photo: a.effectiveLayout === "infographic" ? (a.infographicUrl ? { url: a.infographicUrl, focalX: 0.5, focalY: 0.5 } : null) : photo && !e.photoHidden ? { url: photo.url, focalX: photo.focalX, focalY: photo.focalY, zoom: e.zoom, offsetX: e.offsetX, offsetY: e.offsetY } : null,
       showSafeArea,
       safeMargin: PMAX_SPEC.images.safeMargin,
     };
@@ -64,6 +65,7 @@ export function ImagesTab({ data, reload, toast }: { data: AwData; reload: () =>
   if (!images.length) return <Card className="p-6 text-sm text-muted">Brak grafik — zaimportuj CSV (zakładka „Import CSV”).</Card>;
   return (
     <div className="space-y-4">
+      <MoreCreatives data={data} reload={reload} toast={toast} picked={picked} />
       <div className="flex flex-wrap items-center gap-2" data-testid="image-filters">
         <NativeSelect className="h-9 w-44" value={type} onChange={(e) => setType(e.target.value)} aria-label="Typ">
           <option value="all">Wszystkie typy</option>
@@ -222,7 +224,7 @@ function ConceptEditor({ conceptId, data, reload, toast, onClose }: { conceptId:
         {rows.map((r) => {
           const d = view(r.id);
           const m = measures[r.id];
-          const g = gateImage(d, ctx, m ?? null, photoOf(d), null, gateOptionsOf(data.assets, data.gateLp));
+          const g = gateImage(d, ctx, m ?? null, photoOf(d), null, gateOptionsOf(data.assets, data.gateLp, data.project.topic));
           const { key, w, h } = sizeOf(r);
           return (
             <button key={r.id} type="button" onClick={() => setSel(r.id)} className={cn("space-y-1.5 rounded-xl border-2 p-2 text-left", sel === r.id ? "border-ink" : "border-transparent hover:border-line")} style={{ width: key === "landscape" ? 380 : key === "square" ? 240 : 200 }} data-testid={`format-${key}`}>
@@ -368,7 +370,7 @@ function ConceptEditor({ conceptId, data, reload, toast, onClose }: { conceptId:
           </p>
           {!clean ? <ScorePair a={scoreImageA(cur, ctx, measures[sel] ?? null, photoOf(cur))} b={scoreImageB(cur, ctx, measures[sel] ?? null, photoOf(cur))} seed={cur.scoreSeed} /> : <p className="text-xs text-muted">Czyste zdjęcie — bez oceny treści.</p>}
           <p className="text-sm font-medium">Walidacja (niezależna od oceny)</p>
-          <GateList gate={gateImage(cur, ctx, measures[sel] ?? null, photoOf(cur), null, gateOptionsOf(data.assets, data.gateLp))} />
+          <GateList gate={gateImage(cur, ctx, measures[sel] ?? null, photoOf(cur), null, gateOptionsOf(data.assets, data.gateLp, data.project.topic))} />
           {cur.visualBrief ? <p className="text-xs text-muted">Kierunek artystyczny: {cur.visualBrief}</p> : null}
           {cur.evidenceNote ? <p className="text-xs text-muted">Dowód / kontekst: {cur.evidenceNote}</p> : null}
           {!clean ? <AdLandingInfo data={data} asset={cur} /> : null}

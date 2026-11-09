@@ -110,7 +110,7 @@ export function TextsTab({ data, reload, toast }: { data: AwData; reload: () => 
             <ul className="space-y-1.5">
               {list.map((t) => {
                 const len = [...(t.adText ?? "")].length;
-                const g = gateText(t, gateOptionsOf(data.assets, data.gateLp));
+                const g = gateText(t, gateOptionsOf(data.assets, data.gateLp, data.project.topic));
                 return (
                   <li key={t.id} className="flex flex-wrap items-center gap-2" data-testid="text-row">
                     <span className="w-12 shrink-0 font-mono text-[11px] text-muted">{t.assetKey}</span>
@@ -161,7 +161,7 @@ function SitelinksCard({ data }: { data: AwData }) {
       <p className="text-xs text-muted">{s.note}</p>
       <ul className="space-y-1.5 text-sm">
         {list.map((t) => {
-          const g = gateSitelink(t, gateOptionsOf(data.assets, data.gateLp));
+          const g = gateSitelink(t, gateOptionsOf(data.assets, data.gateLp, data.project.topic));
           const lp = t.lp ?? {};
           return (
             <li key={t.id} className="flex flex-wrap items-start gap-2 border-t border-line/60 pt-1.5" data-testid="sitelink-row">

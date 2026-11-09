@@ -19,7 +19,7 @@ const Body = z.object({
   visualBrief: text(1000),
   landingUrl: z.string().url().max(500).nullable().optional().or(z.literal("").transform(() => null)),
   claimSource: text(500),
-  layout: z.enum(["typographic", "expert_split", "process_steps", "comparison"]).nullable().optional(),
+  layout: z.enum(["typographic", "expert_split", "process_steps", "comparison", "infographic"]).nullable().optional(),
   /** CSV v5 fields of a group (comparison_*, historical_*, test_*, video_*…) — merged; "" removes */
   lp: z.record(z.string().regex(/^[a-z0-9_]{1,60}$/), z.string().max(4000)).optional(),
   testPriority: z.number().int().min(0).max(999).nullable().optional(),

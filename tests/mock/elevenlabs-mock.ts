@@ -170,6 +170,15 @@ const server = http.createServer(async (req, res) => {
             : { kind: "image", concept_id: code, rationale: "Jedno hasło o planie i CTA.", image: { layout: "typographic", headline: "Plan przed pozwem", subheadline: "Ustalcie wszystko spokojnie", body: "", cta: "Umów konsultację", visual_brief: "Typografia na tle motywu", use_expert_photo: false }, headline_for_ads: "Plan przed pozwem" };
           return json(200, { id: "chatcmpl-mock", object: "chat.completion", model: body.model, choices: [{ index: 0, message: { role: "assistant", content: JSON.stringify(out) }, finish_reason: "stop" }] });
         }
+        if (String(body.messages?.[0]?.content ?? "").startsWith("ADWORDS_COPYFIX")) {
+          // every headline gets the topic: "… pozew" → "… pozew o rozwód", else "Rozwód: …"
+          const items = [...user.matchAll(/^(\S+) \| (\d+) \| (.+)$/gm)].map((m) => {
+            const t = m[3].trim();
+            const fixed = /\bpozew\b/i.test(t) ? t.replace(/\bpozew\b/i, "pozew o rozwód") : `Rozwód: ${t.charAt(0).toLowerCase()}${t.slice(1)}`;
+            return { key: m[1], text: [...fixed].length <= Number(m[2]) ? fixed : `Rozwód — ${t}`.slice(0, Number(m[2])) };
+          });
+          return json(200, { id: "chatcmpl-mock", object: "chat.completion", model: body.model, choices: [{ index: 0, message: { role: "assistant", content: JSON.stringify({ items }) }, finish_reason: "stop" }] });
+        }
         if (String(body.messages?.[0]?.content ?? "").startsWith("BROLL_DRAFT")) {
           draftLog.push(user);
           const out = /kind: video/.test(user)

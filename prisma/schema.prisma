@@ -185,6 +185,8 @@ model Project {
   adwordsLanding     Json?
   /// Google Adwords: the column order of the last imported CSV (export keeps the agency's sheet layout)
   adwordsCsvColumns  Json?
+  /// Google Adwords: what the ads are about (e.g. "rozwód") — every headline should say it
+  adwordsTopic       String?
   adwordsClaims      AdwordsClaim[]
   adwordsShares      AdwordsShare[]
   adwordsHistory     AdwordsHistoryImport[]

@@ -139,7 +139,7 @@ function VideoConceptView({ conceptId, data, reload, toast }: { conceptId: strin
           <span>{dur} s</span>
         </div>
       </div>
-      <GateList gate={gateVideo(draftV, ctx, gateOptionsOf(data.assets, data.gateLp))} />
+      <GateList gate={gateVideo(draftV, ctx, gateOptionsOf(data.assets, data.gateLp, data.project.topic))} />
       {variantRow ? <AdLandingInfo data={data} asset={variantRow} /> : null}
       {/* scenes: edit the script and timings */}
       <div className="space-y-2">

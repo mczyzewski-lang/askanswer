@@ -8,12 +8,13 @@
 import type { ThemeTokens } from "../editor/types";
 import type { Measure } from "./score";
 
-export type LayoutKey = "typographic" | "expert_split" | "process_steps" | "comparison" | "clean_photo";
+export type LayoutKey = "typographic" | "expert_split" | "process_steps" | "comparison" | "infographic" | "clean_photo";
 export const LAYOUTS: Record<Exclude<LayoutKey, "clean_photo">, string> = {
   typographic: "Typograficzny",
   expert_split: "Ekspert + tekst",
   process_steps: "Kroki procesu",
   comparison: "Porównanie (A vs B)",
+  infographic: "Infografika AI",
 };
 
 /** the two sides of a comparison creative (CSV v5 comparison_*) */
@@ -86,6 +87,8 @@ export interface CreativeInput {
   photo?: PhotoInput | null;
   /** preview only: the safe-area frame */
   showSafeArea?: boolean;
+  /** draw the sub-line and the proof chip too (off: a feed banner carries the headline + CTA only) */
+  showDetails?: boolean;
   safeMargin?: number;
 }
 
@@ -244,6 +247,47 @@ export function drawCreative(ctx: Ctx2D, input: CreativeInput): Measure {
     return { overflow: false, outsideSafe, minFontPx: 0, contrast: 21, height: H };
   }
 
+  // an AI infographic (its text is in the picture): the image full-bleed, the CTA on a calm strip, the frame
+  if (layout === "infographic" && photo) {
+    drawPhoto(ctx, { ...photo, focalX: 0.5, focalY: 0.5 }, 0, 0, W, H);
+    const ctaText = (input.copy.cta ?? "").trim();
+    let minFont = 0;
+    let c = 21;
+    let over = false;
+    if (ctaText) {
+      const lab = `${ctaText} →`;
+      const px = unit * (kind === "landscape" ? 0.062 : 0.056);
+      const lf = (n: number) => `700 ${n}px "${theme.labelFont}"`;
+      const f = fit(ctx, lab, lf, px, px * 0.6, S.w - px * 2.2, 1, 1);
+      const h = f.px * 2.5;
+      const g = ctx.createLinearGradient(0, H - h * 2.6, 0, H);
+      g.addColorStop(0, rgba(bg, 0));
+      g.addColorStop(1, rgba(bg, 0.92));
+      ctx.fillStyle = g;
+      ctx.fillRect(0, H - h * 2.6, W, h * 2.6);
+      ctx.font = lf(f.px);
+      const bw = kind === "portrait" ? S.w : Math.min(S.w, ctx.measureText(f.lines[0] ?? lab).width + f.px * 2.4);
+      const bx = kind === "portrait" ? S.x : (W - bw) / 2;
+      const by = S.y + S.h - h;
+      ctx.fillStyle = theme.accent;
+      roundRect(ctx, bx, by, bw, h, h * 0.22);
+      ctx.fill();
+      const ink = inkOn(theme.accent, theme.background);
+      c = contrast(ink, theme.accent);
+      ctx.fillStyle = ink;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(f.lines[0] ?? lab, bx + bw / 2, by + h / 2 + f.px * 0.04);
+      ctx.textAlign = "left";
+      ctx.textBaseline = "top";
+      minFont = f.px;
+      over = f.overflow;
+    }
+    goldFrame(ctx, W, H, theme.accent);
+    if (input.showSafeArea) safeFrame(ctx, S);
+    return { overflow: over, outsideSafe: false, minFontPx: minFont, contrast: c, height: H };
+  }
+
   // text area (and the photo region) per layout and format
   let T = { ...S };
   let panelBg = bg;
@@ -270,16 +314,13 @@ export function drawCreative(ctx: Ctx2D, input: CreativeInput): Measure {
     else ctx.fillRect(region.x - 1, 0, region.w * 0.28, H);
     panelBg = bg;
   } else {
-    // one simple visual element: a soft accent circle at the edge
-    ctx.fillStyle = rgba(theme.accent, 0.16);
-    ctx.beginPath();
-    ctx.arc(W * (kind === "portrait" ? 0.95 : 0.98), H * 0.08, unit * 0.42, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = rgba(theme.primary, 0.08);
-    ctx.beginPath();
-    ctx.arc(W * 0.02, H * 1.02, unit * 0.3, 0, Math.PI * 2);
-    ctx.fill();
-    if (kind === "landscape" && layout === "typographic") T = { ...S, w: S.w * 0.72 };
+    // clean brand background: the theme colour with a soft light from the top (no shapes competing with the text)
+    const g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, rgba(theme.primary, 0.55));
+    g.addColorStop(1, rgba(theme.primary, 0));
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, H);
+    if (kind === "landscape" && layout === "typographic") T = { ...S, w: S.w * 0.8 };
   }
   const ink = inkOn(panelBg, theme.text);
   contrasts.push(contrast(ink, panelBg));
@@ -299,10 +340,18 @@ export function drawCreative(ctx: Ctx2D, input: CreativeInput): Measure {
   const ctaText = (input.copy.cta ?? "").trim();
   let ctaH = 0;
   let ctaFit: Fitted | null = null;
-  const ctaPx = unit * (kind === "landscape" ? 0.058 : 0.045);
+  // the CTA is the action: big, bold, the brand's gold, an arrow
+  const ctaLabel = ctaText ? `${ctaText} →` : "";
+  const ctaPx = unit * (kind === "landscape" ? 0.068 : kind === "portrait" ? 0.06 : 0.062);
+  // a narrow text column (next to the photo): a CTA that does not fit there spans the banner's safe width
+  let ctaWide = false;
   if (ctaText) {
-    ctaFit = fit(ctx, ctaText, label, ctaPx, ctaPx * 0.55, T.w - ctaPx * 1.4, 1, 1);
-    ctaH = ctaFit.px * 2.1;
+    ctaFit = fit(ctx, ctaLabel, label, ctaPx, ctaPx * 0.6, T.w - ctaPx * 2.2, 1, 1);
+    if (ctaFit.overflow && T.w < S.w - 1) {
+      ctaFit = fit(ctx, ctaLabel, label, ctaPx, ctaPx * 0.6, S.w - ctaPx * 2.2, 1, 1);
+      ctaWide = true;
+    }
+    ctaH = ctaFit.px * 2.5;
   }
   const bottom = T.y + T.h - (ctaText ? ctaH + unit * 0.04 : 0);
 
@@ -310,19 +359,24 @@ export function drawCreative(ctx: Ctx2D, input: CreativeInput): Measure {
   const subline = (input.copy.subheadline ?? "").trim();
   const steps = layout === "process_steps" ? stepsOf(input.copy.body) : [];
   const cmp = layout === "comparison" ? (input.copy.comparison ?? null) : null;
-  const proof = layout !== "process_steps" && !cmp ? (input.copy.body ?? "").trim() : "";
+  const proof = layout !== "process_steps" && !cmp && input.showDetails ? (input.copy.body ?? "").trim() : "";
   const room = bottom - y;
   // a narrow text column (next to the photo) starts smaller
-  const headStart = unit * (kind === "landscape" ? 0.105 : kind === "portrait" ? 0.1 : 0.095) * Math.min(1, T.w / unit / 0.55);
-  const hf = fit(ctx, headline, head, headStart, headStart * 0.45, T.w, kind === "landscape" ? 3 : 4, 1.08);
+  const headStart = unit * (kind === "landscape" ? 0.12 : kind === "portrait" ? 0.115 : 0.11) * Math.min(1, T.w / unit / 0.55);
+  let hf = fit(ctx, headline, head, headStart, headStart * 0.45, T.w, kind === "landscape" ? 3 : 4, 1.08);
+  // the headline also has to fit the HEIGHT of its room (with the underline), not only the line count
+  if (layout !== "process_steps" && !cmp) {
+    for (let hs = headStart * 0.92; hf.lines.length * hf.lineH + unit * 0.06 > room && hs > headStart * 0.45; hs *= 0.92) hf = fit(ctx, headline, head, hs, Math.min(hs, headStart * 0.45), T.w, kind === "landscape" ? 3 : 4, 1.08);
+  }
   overflow ||= hf.overflow;
   fonts.push(hf.px);
-  const sf = subline ? fit(ctx, subline, sub, hf.px * 0.46, Math.max(14, hf.px * 0.3), T.w, 2, 1.25) : null;
+  // small print is not read in a feed: the sub-line / proof only when asked for
+  const sf = subline && input.showDetails ? fit(ctx, subline, sub, hf.px * 0.46, Math.max(14, hf.px * 0.3), T.w, 2, 1.25) : null;
   if (sf) {
     overflow ||= sf.overflow;
     fonts.push(sf.px);
   }
-  const used = hf.lines.length * hf.lineH + (sf ? unit * 0.025 + sf.lines.length * sf.lineH : 0);
+  const used = hf.lines.length * hf.lineH + unit * 0.03 + (sf ? unit * 0.03 + sf.lines.length * sf.lineH : 0);
 
   if (cmp) {
     // headline on top, then two cards: the usual way (muted) vs ours (accent) — side by side when wide, stacked when tall
@@ -354,7 +408,13 @@ export function drawCreative(ctx: Ctx2D, input: CreativeInput): Measure {
       const lf = fit(ctx, c.label.toUpperCase(), label, unit * 0.03, unit * 0.022, cw - pad * 2, 1, 1.2);
       const labInk = c.ours ? inkOn(bg, theme.accent) : rgba(ink, 0.7);
       if (c.ours) contrasts.push(contrast(inkOn(bg, theme.accent), bg));
-      const tf = fit(ctx, c.text, head, unit * (side ? 0.06 : 0.055), unit * 0.03, cw - pad * 2, side ? 4 : 2, 1.12);
+      // the text of a card fits its width AND its height
+      let ts = unit * (side ? 0.06 : 0.055);
+      let tf = fit(ctx, c.text, head, ts, unit * 0.03, cw - pad * 2, side ? 4 : 2, 1.12);
+      while (lf.lines.length * lf.lineH + unit * 0.015 + tf.lines.length * tf.lineH > ch - pad * 2 && ts > unit * 0.026) {
+        ts *= 0.92;
+        tf = fit(ctx, c.text, head, ts, Math.min(ts, unit * 0.026), cw - pad * 2, side ? 4 : 3, 1.12);
+      }
       const blockH = lf.lines.length * lf.lineH + unit * 0.015 + tf.lines.length * tf.lineH;
       overflow ||= tf.overflow || blockH > ch - pad * 2 + 1;
       fonts.push(lf.px, tf.px);
@@ -374,7 +434,7 @@ export function drawCreative(ctx: Ctx2D, input: CreativeInput): Measure {
     const cellW = horizontal ? (T.w - gap * (steps.length - 1)) / steps.length : T.w;
     const avail = bottom - y;
     const cellH = horizontal ? avail : (avail - gap * (steps.length - 1)) / steps.length;
-    const r = Math.min(unit * 0.05, cellH * 0.32);
+    const r = Math.min(unit * (horizontal ? 0.06 : 0.05), cellH * 0.32);
     steps.forEach((st, i) => {
       const cx = horizontal ? T.x + i * (cellW + gap) : T.x;
       const cy = horizontal ? y : y + i * (cellH + gap);
@@ -393,10 +453,10 @@ export function drawCreative(ctx: Ctx2D, input: CreativeInput): Measure {
       const ty = horizontal ? cy + r * 2 + unit * 0.02 : cy;
       const tw = horizontal ? cellW : T.w - (tx - T.x);
       const lines = horizontal ? 3 : 2;
-      const sfit = fit(ctx, st, sub, unit * 0.042, unit * 0.026, tw, lines, 1.2);
+      const sfit = fit(ctx, st, label, unit * (horizontal ? 0.06 : 0.045), unit * (horizontal ? 0.04 : 0.03), tw, lines, 1.2);
       overflow ||= sfit.overflow || (horizontal ? r * 2 + unit * 0.02 + sfit.lines.length * sfit.lineH > cellH + 1 : sfit.lines.length * sfit.lineH > cellH + 1);
       fonts.push(sfit.px);
-      drawLines(ctx, sfit, sub, tx, horizontal ? ty : cy + Math.max(0, (r * 2 - sfit.lines.length * sfit.lineH) / 2), ink);
+      drawLines(ctx, sfit, label, tx, horizontal ? ty : cy + Math.max(0, (r * 2 - sfit.lines.length * sfit.lineH) / 2), ink);
       boxes.push({ x: cx, y: cy, w: horizontal ? cellW : T.w, h: horizontal ? cellH : r * 2 });
     });
   } else {
@@ -408,14 +468,14 @@ export function drawCreative(ctx: Ctx2D, input: CreativeInput): Measure {
     const block = used + proofH;
     if (block > room + 1) overflow = true;
     let by = y + Math.max(0, (room - block) / 2);
-    // accent bar next to the headline (brand)
-    ctx.fillStyle = theme.accent;
-    ctx.fillRect(T.x, by - unit * 0.022, unit * 0.07, Math.max(4, unit * 0.008));
     const hh = drawLines(ctx, hf, head, T.x, by, ink);
     boxes.push({ x: T.x, y: by, w: T.w, h: hh });
     by += hh;
+    // the brand's gold underline under the headline
+    ctx.fillStyle = theme.accent;
+    ctx.fillRect(T.x, by + unit * 0.018, unit * 0.14, Math.max(4, unit * 0.01));
     if (sf) {
-      by += unit * 0.025;
+      by += unit * 0.045;
       const sh = drawLines(ctx, sf, sub, T.x, by, ink);
       boxes.push({ x: T.x, y: by, w: T.w, h: sh });
       by += sh;
@@ -436,30 +496,47 @@ export function drawCreative(ctx: Ctx2D, input: CreativeInput): Measure {
     }
   }
 
-  // CTA button
+  // CTA button: gold, dark bold label; full width on the tall format
   if (ctaFit) {
     ctx.font = label(ctaFit.px);
-    const tw = ctx.measureText(ctaFit.lines[0] ?? ctaText).width;
-    const bw = Math.min(T.w, tw + ctaFit.px * 1.8);
-    const bx = kind === "portrait" && layout !== "expert_split" ? T.x : T.x;
+    const tw = ctx.measureText(ctaFit.lines[0] ?? ctaLabel).width;
+    const cw = ctaWide ? S.w : T.w;
+    const bw = kind === "portrait" ? cw : Math.min(cw, tw + ctaFit.px * 2.4);
+    const bx = ctaWide ? S.x : T.x;
     const by = T.y + T.h - ctaH;
     ctx.fillStyle = theme.accent;
-    roundRect(ctx, bx, by, bw, ctaH, ctaH / 2);
+    roundRect(ctx, bx, by, bw, ctaH, ctaH * 0.22);
     ctx.fill();
-    const cInk = inkOn(theme.accent, "#FFFFFF");
+    const cInk = inkOn(theme.accent, theme.background);
     contrasts.push(contrast(cInk, theme.accent));
     ctx.fillStyle = cInk;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText(ctaFit.lines[0] ?? ctaText, bx + bw / 2, by + ctaH / 2 + ctaFit.px * 0.04);
+    ctx.fillText(ctaFit.lines[0] ?? ctaLabel, bx + bw / 2, by + ctaH / 2 + ctaFit.px * 0.04);
+    ctx.textAlign = "left";
+    ctx.textBaseline = "top";
     overflow ||= ctaFit.overflow;
     fonts.push(ctaFit.px);
     boxes.push({ x: bx, y: by, w: bw, h: ctaH });
   }
+  // the gold frame in the margin, around the whole banner (3–5 px)
+  goldFrame(ctx, W, H, theme.accent);
 
   for (const b of boxes) if (b.x < S.x - 1 || b.y < S.y - 1 || b.x + b.w > S.x + S.w + 1 || b.y + b.h > S.y + S.h + 1) outsideSafe = true;
   if (input.showSafeArea) safeFrame(ctx, S);
   return { overflow, outsideSafe, minFontPx: fonts.length ? Math.min(...fonts) : 0, contrast: contrasts.length ? Math.min(...contrasts) : 21, height: H };
+}
+
+/** a thin gold frame inside the margin of the banner */
+export function goldFrame(ctx: Ctx2D, W: number, H: number, color: string) {
+  const unit = Math.min(W, H);
+  const lw = Math.max(3, Math.min(5, Math.round(unit * 0.005)));
+  const inset = Math.round(unit * 0.035);
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = lw;
+  ctx.strokeRect(inset + lw / 2, inset + lw / 2, W - 2 * inset - lw, H - 2 * inset - lw);
+  ctx.restore();
 }
 
 function safeFrame(ctx: Ctx2D, S: { x: number; y: number; w: number; h: number }) {
