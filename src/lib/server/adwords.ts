@@ -348,6 +348,8 @@ export interface ZipSelection {
   variant?: string;
   /** only these parts: images, videos, texts, report (CSV + brief), landing — empty = all */
   parts?: string[];
+  /** an agency link: components with a "blokada" gate are left out (and the internal full CSV) */
+  onlyReady?: boolean;
 }
 
 /**
@@ -368,7 +370,14 @@ export async function adwordsZip(projectId: string, fmt: "png" | "jpg" = "png", 
     // a scene follows its video concept's arm
     return a.rowType === "video_scene" && assets.some((v) => v.rowType === "video" && v.conceptId === a.conceptId && v.variant === sel.variant);
   };
-  const picked = (a: (typeof assets)[number]) => whole || inArm(a) || (sel.assetIds ?? []).includes(a.id) || (!!a.conceptId && (sel.conceptIds ?? []).includes(a.conceptId));
+  // an agency gets what passed the gates only
+  const blocked = new Set<string>();
+  if (sel.onlyReady) {
+    const pre = await evaluateProject(projectId);
+    for (const x of [...pre.images, ...pre.texts, ...pre.sitelinks]) if (x.gate.status === "blokada") blocked.add(x.id);
+    for (const v of pre.videos) if (v.gate.status === "blokada") for (const a of assets) if ((a.rowType === "video" || a.rowType === "video_scene") && a.conceptId === v.conceptId) blocked.add(a.id);
+  }
+  const picked = (a: (typeof assets)[number]) => !blocked.has(a.id) && (whole || inArm(a) || (sel.assetIds ?? []).includes(a.id) || (!!a.conceptId && (sel.conceptIds ?? []).includes(a.conceptId)));
   const want = (k: string) => !sel.parts?.length || sel.parts.includes(k);
   const files: Record<string, Uint8Array> = {};
   const manifest: Array<Record<string, string | number>> = [];
@@ -386,6 +395,11 @@ export async function adwordsZip(projectId: string, fmt: "png" | "jpg" = "png", 
   const ev = await evaluateProject(projectId, measures, sizes);
   for (const r of rendered) {
     const e = ev.images.find((x) => x.id === r.a.id)!;
+    // measured only now (text overflow…): a component blocked after rendering is not handed to an agency
+    if (sel.onlyReady && e.gate.status === "blokada") {
+      delete files[`grafiki/${r.name}`];
+      continue;
+    }
     manifest.push({
       experiment_id: r.a.experimentId ?? "",
       variant: r.a.variant ?? "",
@@ -408,12 +422,12 @@ export async function adwordsZip(projectId: string, fmt: "png" | "jpg" = "png", 
   files["manifest.csv"] = strToU8("\uFEFF" + Papa.unparse(manifest.length ? manifest : [{ asset_id: "", file: "" }], { delimiter: ";" }));
   files["manifest.json"] = strToU8(JSON.stringify({ project: project.name, selection: whole ? "całość" : sel, generatedAt: new Date().toISOString(), spec: PMAX_SPEC.verifiedAt, files: manifest }, null, 2));
   // texts ready for Google Ads (never experiment plans or the archive)
-  const texts = assets.filter((a) => (a.rowType === "headline" || a.rowType === "long_headline" || a.rowType === "description" || a.rowType === "sitelink") && (whole || inArm(a) || (sel.assetIds ?? []).includes(a.id)));
+  const texts = assets.filter((a) => (a.rowType === "headline" || a.rowType === "long_headline" || a.rowType === "description" || a.rowType === "sitelink") && !blocked.has(a.id) && (whole || inArm(a) || (sel.assetIds ?? []).includes(a.id)));
   if (texts.length && want("texts")) {
     const tEv = new Map([...ev.texts, ...ev.sitelinks].map((t) => [t.id, t]));
     files["teksty_google_ads.csv"] = strToU8("\uFEFF" + Papa.unparse(texts.map((t) => ({ experiment_id: t.experimentId ?? "", variant: t.variant ?? "", asset_id: t.assetKey, typ: t.rowType, tekst: t.adText ?? "", znaki: [...(t.adText ?? "")].length, opis_1: ((t.lp ?? {}) as Record<string, string>).sitelink_description_1 ?? "", opis_2: ((t.lp ?? {}) as Record<string, string>).sitelink_description_2 ?? "", url: t.landingUrl ?? "", landing_variant: t.landingVariantId ?? "", status: tEv.get(t.id)?.gate.status ?? "" })), { delimiter: ";" }));
   }
-  if (whole && want("report")) files[`${slug}_google_adwords.csv`] = strToU8(exportAdwordsCsv(assets.map(toExportable), slug));
+  if (whole && want("report") && !sel.onlyReady) files[`${slug}_google_adwords.csv`] = strToU8(exportAdwordsCsv(assets.map(toExportable), slug));
   // video: what to record (script, teleprompter, subtitles, shot list) + the MP4s already rendered
   const vids = videoConcepts(list.filter((a) => (a.rowType === "video" || a.rowType === "video_scene") && want("videos") && picked(assets.find((x) => x.id === a.id)!)));
   for (const v of vids) {

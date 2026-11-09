@@ -184,6 +184,7 @@ model Project {
   /// Google Adwords: landing page variants (URL, name), URL strategy (Final URL expansion)
   adwordsLanding     Json?
   adwordsClaims      AdwordsClaim[]
+  adwordsShares      AdwordsShare[]
   adwordsHistory     AdwordsHistoryImport[]
   adFootage          AdFootage[]
   adReels            AdReel[]
@@ -1535,4 +1536,21 @@ model AdwordsClaim {
   updatedAt      DateTime  @updatedAt
 
   @@unique([projectId, key])
+}
+
+/// Google Adwords: a read-only link for an agency (no login) — the token is the capability; revocable, expiring
+model AdwordsShare {
+  id           String    @id @default(cuid())
+  projectId    String
+  project      Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  token        String    @unique
+  label        String
+  createdBy    String?
+  expiresAt    DateTime?
+  revokedAt    DateTime?
+  lastAccessAt DateTime?
+  accessCount  Int       @default(0)
+  createdAt    DateTime  @default(now())
+
+  @@index([projectId])
 }

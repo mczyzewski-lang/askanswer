@@ -16,6 +16,7 @@ import { HistoryTab } from "./history";
 import { ExperimentsTab } from "./experiments";
 import { AssistantTab } from "./assistant";
 import { LandingContentTab } from "./landing-content";
+import { ShareButton } from "./share";
 import type { AwData, Toast } from "./types";
 
 const TABS = [
@@ -62,6 +63,7 @@ export function AdwordsProject({ projectId }: { projectId: string }) {
           <p className="text-sm text-muted">Komponenty Performance Max: grafiki, wideo, teksty, ocena i paczka dla agencji. To narzędzie do przygotowania kreacji — nie publikuje reklam.</p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <ShareButton projectId={projectId} canEdit={data.canEdit} toast={toast} />
           <a href={`${base}/zip?fmt=png`} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-ink px-3 text-sm font-medium text-white" data-testid="export-zip">
             <Package className="h-4 w-4" /> ZIP (PNG)
           </a>
