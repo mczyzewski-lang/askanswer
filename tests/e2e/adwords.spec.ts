@@ -131,7 +131,27 @@ test("Google Adwords UI: import, gallery, editor (preview = export), expert phot
   await page.getByLabel("Imię i nazwisko").fill("Ktoś");
   await page.getByTestId("photo-file").setInputFiles({ name: "zdjecie.jpg", mimeType: "image/jpeg", buffer: Buffer.from("to nie jest obraz") });
   await page.getByTestId("photo-add").click();
-  await expect(page.getByText(/uszkodzony|format/)).toBeVisible();
+  await expect(page.getByText(/uszkodzony|format/).first()).toBeVisible();
+  // the refused file stays on the list with its reason; removed by hand
+  await expect(page.getByTestId("photo-queue-row")).toHaveCount(1);
+  await page.getByTestId("photo-queue-row").getByRole("button", { name: /Usuń/ }).click();
+  // several photos at once: one key each (key_1, key_2, key_3), shared name / consent
+  const more = [1, 2, 3].map((i) => {
+    const f = path.join(os.tmpdir(), `anna-${i}-${Date.now()}.jpg`);
+    execFileSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", `testsrc2=size=${700 + i * 10}x900:duration=1`, "-frames:v", "1", f]);
+    return f;
+  });
+  await page.getByLabel("Klucz zdjęcia").fill("ekspert_anna");
+  await page.getByLabel("Imię i nazwisko").fill("Anna Mediatorka");
+  await page.getByTestId("photo-file").setInputFiles(more);
+  await expect(page.getByTestId("photo-queue-row")).toHaveCount(3);
+  await expect(page.getByTestId("photo-queue-row").nth(2).getByRole("textbox").first()).toHaveValue("ekspert_anna_3");
+  await page.getByTestId("photo-queue-row").nth(1).getByRole("textbox").nth(1).fill("Anna (profil)");
+  await expect(page.getByTestId("photo-add")).toHaveText("Dodaj 3 zdjęcia");
+  await page.getByTestId("photo-add").click();
+  await expect(page.getByTestId("expert-photo")).toHaveCount(4);
+  await expect(page.getByTestId("photo-queue")).toHaveCount(0);
+  await expect(page.getByTestId("expert-photo").filter({ hasText: "Anna (profil)" })).toContainText("ekspert_anna_2");
 
   // the gallery: 6 concepts + 2 clean photos; G02 uses the photo → blocked until consent is confirmed
   await page.getByTestId("adwords-tabs").getByRole("button", { name: "Kreacje graficzne" }).click();
@@ -140,7 +160,7 @@ test("Google Adwords UI: import, gallery, editor (preview = export), expert phot
   const editor = page.getByTestId("concept-editor");
   await expect(editor.getByTestId("gate-problems")).toContainText("zgody");
   await page.getByTestId("adwords-tabs").getByRole("button", { name: "Zdjęcia ekspertów" }).click();
-  await page.getByTestId("photo-consent").check();
+  await page.getByTestId("expert-photo").filter({ hasText: "ekspert_marek" }).getByTestId("photo-consent").check();
   await page.getByTestId("adwords-tabs").getByRole("button", { name: "Kreacje graficzne" }).click();
   await page.getByTestId("concept-card").filter({ hasText: "G02" }).click();
   await expect(editor).not.toContainText("Brak potwierdzonej zgody");

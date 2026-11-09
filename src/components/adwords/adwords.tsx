@@ -2,7 +2,8 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { AlertTriangle, Copy, Download, Package, Printer, Trash2, Upload } from "lucide-react";
+import { AlertTriangle, Copy, Download, Package, Printer, Trash2, Upload, X } from "lucide-react";
+import { DropZone } from "@/components/drop-zone";
 import { Button, Card, EmptyState, Input, Label, NativeSelect, Textarea, useToast } from "@/components/ui";
 import { api, cn } from "@/lib/utils";
 import { imageSetChecks, SCORING_B_CRITERIA, textSetChecks } from "@/lib/adwords/score";
@@ -271,7 +272,59 @@ function ReportTab({ data, reload, toast }: { data: AwData; reload: () => Promis
 function PhotosTab({ data, reload, toast }: { data: AwData; reload: () => Promise<void>; toast: Toast }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [form, setForm] = useState({ key: "", name: "", role: "", altText: "", consentConfirmed: false, consentNote: "" });
-  const [file, setFile] = useState<File | null>(null);
+  // several photos at once: each with its own key (and name, if different) — sent one by one
+  const [files, setFiles] = useState<Array<{ file: File; key: string; name: string; state: "new" | "sending" | "error"; error?: string }>>([]);
+  const [sending, setSending] = useState(false);
+  const taken = new Set(data.photos.map((p) => p.key));
+  const slugKey = (n: string) =>
+    n
+      .replace(/\.[a-z0-9]+$/i, "")
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/ł/g, "l")
+      .replace(/[^a-z0-9_.-]+/g, "_")
+      .replace(/^_+|_+$/g, "")
+      .slice(0, 60) || "zdjecie";
+  const addFiles = (list: File[]) => {
+    const ok = list.filter((f) => /\.(png|jpe?g|webp)$/i.test(f.name));
+    if (ok.length < list.length) toast(`Pominięto ${list.length - ok.length} plików — tylko JPG, PNG, WEBP`, "err");
+    setFiles((cur) => {
+      const used = new Set([...taken, ...cur.map((x) => x.key)]);
+      const next = [...cur];
+      for (const f of ok) {
+        // the typed key for a single photo; with several: key_1, key_2… (or the file name)
+        let k = form.key.trim() ? (ok.length === 1 && !cur.length ? form.key.trim() : `${form.key.trim()}_${next.length + 1}`) : slugKey(f.name);
+        for (let i = 2; used.has(k); i++) k = `${k.replace(/_\d+$/, "")}_${i}`;
+        used.add(k);
+        next.push({ file: f, key: k, name: "", state: "new" });
+      }
+      return next;
+    });
+  };
+  const upload = async () => {
+    setSending(true);
+    let done = 0;
+    const rest: typeof files = [];
+    for (const r of files) {
+      setFiles((cur) => cur.map((x) => (x === r ? { ...x, state: "sending" } : x)));
+      const fd = new FormData();
+      fd.append("file", r.file);
+      for (const [k, v] of Object.entries({ ...form, key: r.key, name: r.name.trim() || form.name })) fd.append(k, String(v));
+      const res = await fetch(base, { method: "POST", body: fd });
+      const j = await res.json().catch(() => ({}));
+      if (res.ok) done++;
+      else rest.push({ ...r, state: "error", error: j.error ?? "Nie udało się" });
+    }
+    setFiles(rest);
+    setSending(false);
+    if (done) {
+      toast(done === 1 ? "Dodano zdjęcie" : `Dodano ${done} zdjęć`);
+      if (!rest.length) setForm({ key: "", name: "", role: "", altText: "", consentConfirmed: false, consentNote: "" });
+      await reload();
+    }
+    if (rest.length) toast(`${rest.length} ${rest.length === 1 ? "zdjęcie nie zostało dodane" : "zdjęć nie zostało dodanych"}: ${rest[0].error}`, "err");
+  };
   // consent shown at once (saved in the background)
   const [consent, setConsent] = useState<Record<string, boolean>>({});
   const keys = [...new Set(data.assets.map((a) => a.expertPhotoKey).filter((k): k is string => !!k))];
@@ -366,10 +419,11 @@ function PhotosTab({ data, reload, toast }: { data: AwData; reload: () => Promis
         ))}
       </div>
       <Card className="space-y-3 p-4" data-testid="photo-upload">
-        <p className="font-medium">Dodaj zdjęcie eksperta</p>
+        <p className="font-medium">Dodaj zdjęcia eksperta</p>
+        <p className="text-xs text-muted">Możesz wybrać lub przeciągnąć kilka plików naraz. Imię, rola, opis i zgoda poniżej dotyczą wszystkich — klucz (i w razie potrzeby imię) ustawisz osobno przy każdym zdjęciu.</p>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <div className="space-y-1">
-            <Label>Klucz (jak w CSV)</Label>
+            <Label>Klucz (jak w CSV; przy kilku: klucz_1, klucz_2…)</Label>
             <Input value={form.key} onChange={(e) => setForm({ ...form, key: e.target.value })} placeholder="ekspert_marek" list="aw-keys" aria-label="Klucz zdjęcia" />
             <datalist id="aw-keys">
               {keys.map((k) => (
@@ -391,31 +445,44 @@ function PhotosTab({ data, reload, toast }: { data: AwData; reload: () => Promis
           </div>
         </div>
         <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={form.consentConfirmed} onChange={(e) => setForm({ ...form, consentConfirmed: e.target.checked })} className="h-4 w-4" /> Potwierdzam zgodę osoby na komercyjne użycie zdjęcia w reklamach
+          <input type="checkbox" checked={form.consentConfirmed} onChange={(e) => setForm({ ...form, consentConfirmed: e.target.checked })} className="h-4 w-4" /> Potwierdzam zgodę osoby na komercyjne użycie zdjęć w reklamach
         </label>
+        <DropZone onFiles={addFiles} accept="image/jpeg,image/png,image/webp" label="Upuść zdjęcia tutaj" className="rounded-xl border border-dashed border-line p-4 text-center text-sm text-muted" data-testid="photo-drop">
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            <Button variant="outline" onClick={() => fileRef.current?.click()} disabled={!data.canEdit}>
+              <Upload /> Wybierz zdjęcia (JPG/PNG/WEBP, ≤15 MB każde)
+            </Button>
+            <span>albo przeciągnij kilka plików</span>
+          </div>
+          <input ref={fileRef} type="file" multiple accept="image/jpeg,image/png,image/webp" className="hidden" data-testid="photo-file" onChange={(e) => (addFiles([...(e.target.files ?? [])]), (e.target.value = ""))} />
+        </DropZone>
+        {files.length ? (
+          <ul className="space-y-1.5" data-testid="photo-queue">
+            {files.map((r, i) => (
+              <li key={`${r.file.name}-${i}`} className="flex flex-wrap items-center gap-2 rounded-lg border border-line px-2 py-1.5 text-sm" data-testid="photo-queue-row">
+                <span className="w-44 truncate text-xs text-muted" title={r.file.name}>
+                  {r.file.name} · {(r.file.size / 1024 / 1024).toFixed(1)} MB
+                </span>
+                <Input className="h-8 w-44 font-mono text-xs" value={r.key} onChange={(e) => setFiles((cur) => cur.map((x, j) => (j === i ? { ...x, key: e.target.value } : x)))} aria-label={`Klucz ${r.file.name}`} />
+                <Input className="h-8 w-44 text-xs" value={r.name} placeholder={form.name || "imię i nazwisko"} onChange={(e) => setFiles((cur) => cur.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))} aria-label={`Imię ${r.file.name}`} />
+                {r.state === "sending" ? <span className="text-xs text-muted">wysyłam…</span> : null}
+                {r.state === "error" ? <span className="text-xs text-red-700">{r.error}</span> : null}
+                <Button size="iconSm" variant="ghost" aria-label={`Usuń ${r.file.name} z listy`} disabled={sending} onClick={() => setFiles((cur) => cur.filter((_, j) => j !== i))}>
+                  <X />
+                </Button>
+              </li>
+            ))}
+          </ul>
+        ) : null}
         <div className="flex flex-wrap items-center gap-2">
-          <Button variant="outline" onClick={() => fileRef.current?.click()}>
-            <Upload /> {file ? file.name : "Wybierz zdjęcie (JPG/PNG/WEBP, ≤15 MB)"}
-          </Button>
-          <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" data-testid="photo-file" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
           <Button
-            disabled={!file || !form.key.trim() || !form.name.trim() || !data.canEdit}
+            disabled={sending || !files.length || files.some((r) => !r.key.trim() || !(r.name.trim() || form.name.trim())) || new Set(files.map((r) => r.key.trim())).size < files.length || !data.canEdit}
             data-testid="photo-add"
-            onClick={async () => {
-              const fd = new FormData();
-              fd.append("file", file!);
-              for (const [k, v] of Object.entries(form)) fd.append(k, String(v));
-              const res = await fetch(base, { method: "POST", body: fd });
-              const j = await res.json().catch(() => ({}));
-              if (!res.ok) return toast(j.error ?? "Nie udało się", "err");
-              toast("Dodano zdjęcie");
-              setForm({ key: "", name: "", role: "", altText: "", consentConfirmed: false, consentNote: "" });
-              setFile(null);
-              await reload();
-            }}
+            onClick={() => void upload()}
           >
-            Dodaj
+            {sending ? "Wysyłam…" : files.length > 1 ? `Dodaj ${files.length} zdjęcia` : "Dodaj"}
           </Button>
+          {files.length && new Set(files.map((r) => r.key.trim())).size < files.length ? <span className="text-xs text-red-700">Klucze muszą być różne.</span> : null}
         </div>
       </Card>
     </div>
