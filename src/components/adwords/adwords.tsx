@@ -15,6 +15,7 @@ import { ImportTab } from "./import";
 import { HistoryTab } from "./history";
 import { ExperimentsTab } from "./experiments";
 import { AssistantTab } from "./assistant";
+import { LandingTab } from "./landing";
 import type { AwData, Toast } from "./types";
 
 const TABS = [
@@ -25,6 +26,7 @@ const TABS = [
   ["eksperymenty", "Eksperymenty A/B"],
   ["historia", "Historia PMax"],
   ["asystent", "Asystent kreacji"],
+  ["landing", "Landing page"],
   ["import", "Import CSV"],
   ["raport", "Raport dla agencji"],
   ["eksperci", "Zdjęcia ekspertów"],
@@ -91,6 +93,7 @@ export function AdwordsProject({ projectId }: { projectId: string }) {
       {tab === "eksperymenty" && data.assets.length ? <ExperimentsTab data={data} reload={load} toast={toast} /> : null}
       {tab === "historia" ? <HistoryTab data={data} reload={load} toast={toast} /> : null}
       {tab === "asystent" ? <AssistantTab data={data} reload={load} toast={toast} onAdded={(k) => setTab(k === "image" ? "grafiki" : "wideo")} /> : null}
+      {tab === "landing" && data.assets.length ? <LandingTab data={data} toast={toast} /> : null}
       {tab === "raport" && data.assets.length ? <ReportTab data={data} reload={load} toast={toast} /> : null}
       {tab === "eksperci" ? <PhotosTab data={data} reload={load} toast={toast} /> : null}
       {tab === "wytyczne" ? <SpecTab data={data} /> : null}

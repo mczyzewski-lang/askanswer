@@ -134,4 +134,15 @@ test("Google Adwords v2: creatives v1 + v2 (experiments), Historia PMax, per-arm
   expect(brief).toContain("Testy A/B");
   expect(brief).toContain("Brakujące dane");
   expect(brief).toContain("ROAS niedostępny");
+  // the landing page tab: the mock repeats the ad's headline / CTA, checks, a spec to download
+  await page.goto(`/admin/adwords/${project.id}?tab=landing`);
+  await expect(page.getByTestId("landing-h1")).not.toBeEmpty();
+  await expect(page.getByTestId("landing-checks")).toContainText("URL");
+  await expect(page.getByTestId("landing-sections")).toContainText("H1 = hasło z reklamy");
+  await page.getByRole("button", { name: "Komputer" }).click();
+  await page.getByTestId("landing-mock").screenshot({ path: "test-results/landing-desktop.png" });
+  await page.getByRole("button", { name: "Telefon" }).click();
+  await page.getByTestId("landing-mock").screenshot({ path: "test-results/landing-mobile.png" });
+  const [dl] = await Promise.all([page.waitForEvent("download"), page.getByTestId("landing-download").click()]);
+  expect(dl.suggestedFilename()).toMatch(/^landing_page_.*\.md$/);
 });

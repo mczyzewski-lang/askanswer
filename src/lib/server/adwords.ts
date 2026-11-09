@@ -12,6 +12,7 @@ import { HttpError } from "./errors";
 import { signedUrl, toLocalFile } from "./storage";
 import { registerFonts } from "../render/server-render";
 import { themeFromRow, DEFAULT_THEME } from "../themes";
+import { landingMarkdown, landingPlan } from "../adwords/landing";
 import { exportAdwordsCsv, parseAdwordsCsv, slugify, type AdwordsColumn, type ParseResult } from "../adwords/csv";
 import { drawCreative, type LayoutKey } from "../adwords/draw";
 import { PMAX_SPEC, formatKeyOf } from "../adwords/spec";
@@ -292,7 +293,7 @@ export interface ZipSelection {
  * arm). Images are rendered now; texts for Google Ads never include the experiment plans or the archive.
  */
 export async function adwordsZip(projectId: string, fmt: "png" | "jpg" = "png", sel: ZipSelection = {}) {
-  const { project, assets, campaigns } = await adwordsProject(projectId);
+  const { project, assets, campaigns, photos } = await adwordsProject(projectId);
   const slug = slugify(project.name);
   const list = assets.map(toAdAsset);
   const whole = !sel.assetIds?.length && !sel.conceptIds?.length && !sel.experimentId;
@@ -370,6 +371,12 @@ export async function adwordsZip(projectId: string, fmt: "png" | "jpg" = "png", 
   if (vids.length) {
     files["wideo/shotlista.csv"] = strToU8(shotlistCsv(vids));
     files["wideo/shotlista.md"] = strToU8(shotlistMarkdown(vids));
+  }
+  if (whole) {
+    for (const c of campaigns.length ? campaigns : [null]) {
+      const plan = landingPlan({ projectName: project.name, campaign: c, assets: list, photos: photos.map((p) => ({ id: p.id, key: p.key, name: p.name, role: p.role ?? null, consentConfirmed: !!p.consentConfirmed })) });
+      files[`landing_page/${c?.code ?? "projekt"}.md`] = strToU8(landingMarkdown(plan, project.name, c?.name ?? null));
+    }
   }
   if (whole) files["brief.md"] = strToU8(project.adwordsBrief ?? defaultBrief(project, { campaigns, assets: list, evaluation: ev, history: (await prisma.adwordsHistoryRow.findMany({ where: { projectId } })) }));
   const label = whole ? "" : sel.experimentId ? `_${sel.experimentId}${sel.variant ? `_${sel.variant}` : ""}` : sel.conceptIds?.length === 1 ? `_${sel.conceptIds[0]}` : "_wybor";

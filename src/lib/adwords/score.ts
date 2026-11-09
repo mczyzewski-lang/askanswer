@@ -319,6 +319,8 @@ const NEEDS_LEGAL = [
   { re: /\b\d+\s*dni\b|w terminie/, why: "obietnica czasowa — wymaga danych o typowych terminach" },
 ];
 const PRICE = /(cena|koszt|zl\b|zlotych|tani|oplat)/;
+/** the text talks about a price / cost */
+export const hasPrice = (text: string) => PRICE.test(fold(text));
 
 /** editorial context of the project: texts from the archive that must not be published again */
 export interface GateOptions {
