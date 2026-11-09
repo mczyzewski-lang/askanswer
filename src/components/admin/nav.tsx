@@ -42,13 +42,14 @@ interface Item {
 
 const starts = (prefix: string) => (p: string) => p === prefix || p.startsWith(`${prefix}/`);
 
-/** The kinds of projects (their lists). */
-const lists: Item[] = [
-  { href: "/admin", label: "Projekty", icon: FolderOpen, match: (p) => p === "/admin" },
-  { href: "/admin/reklamy", label: "Reklamy", icon: Megaphone, match: (p) => p === "/admin/reklamy" },
-  { href: "/admin/auto-reels", label: "Auto Reels", icon: Sparkles, match: (p) => p === "/admin/auto-reels" },
-  { href: "/admin/ads", label: "Ads Studio", icon: Clapperboard, match: (p) => p === "/admin/ads" },
-  { href: "/admin/adwords", label: "Google Adwords", icon: Target, match: (p) => p === "/admin/adwords" },
+/** All projects; each project's modules (Reklamy, Ads Studio, Auto Reels, Google Adwords…) are reached through the project itself. */
+const lists: Item[] = [{ href: "/admin", label: "Wszystkie projekty", icon: FolderOpen, match: (p) => p === "/admin" }];
+/** where a new project of each kind is created (from the project switcher) */
+const NEW_KINDS: Array<{ href: string; label: string; icon: LucideIcon }> = [
+  { href: "/admin", label: "Projekt (pytania)", icon: FolderOpen },
+  { href: "/admin/reklamy", label: "Reklamy", icon: Megaphone },
+  { href: "/admin/ads", label: "Ads Studio", icon: Clapperboard },
+  { href: "/admin/auto-reels", label: "Auto Reels", icon: Sparkles },
 ];
 
 const KIND_ICON: Record<NavProject["kind"], LucideIcon> = { Projekt: FolderOpen, Reklamy: Megaphone, "Ads Studio": Clapperboard, "Auto Reels": Sparkles };
@@ -126,6 +127,16 @@ function ProjectSwitcher({ projects, current }: { projects: NavProject[]; curren
                 ))}
               </div>
             ))}
+          </div>
+          <div className="mt-1 border-t border-line pt-1" data-testid="project-switcher-new">
+            <p className="px-2.5 pb-0.5 pt-1.5 text-[11px] font-medium uppercase tracking-wide text-muted/80">Nowy / lista projektów</p>
+            <div className="grid grid-cols-2 gap-0.5">
+              {NEW_KINDS.map((k) => (
+                <Link key={k.href} href={k.href} onClick={() => setOpen(false)} className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-muted hover:bg-black/[.04] hover:text-ink">
+                  <k.icon className="h-3.5 w-3.5" strokeWidth={1.75} /> {k.label}
+                </Link>
+              ))}
+            </div>
           </div>
         </Popover.Content>
       </Popover.Portal>
@@ -221,8 +232,7 @@ export function AdminNav({ vertical = false, projects, current: remembered, role
             </div>
           </div>
         ) : null}
-        <Heading>Projekty</Heading>
-        <div className="flex flex-col gap-0.5">
+        <div className="mt-2 flex flex-col gap-0.5 border-t border-line pt-2">
           {lists.map((i) => (
             <NavLink key={i.href} i={i} path={path} />
           ))}

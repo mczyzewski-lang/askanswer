@@ -26,6 +26,9 @@ export const PATCH = route(async (req: Request, ctx: Ctx) => {
 export const DELETE = route(async (_req: Request, ctx: Ctx) => {
   await requireAdmin();
   const { id } = await ctx.params;
+  // a category with questions is never removed by accident (the questions would go with it)
+  const n = await prisma.question.count({ where: { categoryId: id } });
+  if (n) return json({ error: `Kategoria ma ${n} pytań — najpierw je przenieś albo usuń.` }, 409);
   await prisma.category.delete({ where: { id } });
   return json({ ok: true });
 });

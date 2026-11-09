@@ -12,6 +12,8 @@ export interface StyleCategory {
   name: string;
   brollStyle: string | null;
   expertId: string | null;
+  /** questions in the category (when known) — an empty one can be removed */
+  questions?: number;
 }
 
 /** Theme settings → visual style of AI scenes (Higgsfield), default + per category, with theme colours filled in. */
@@ -95,18 +97,54 @@ export function AiStyleCard({
         ) : null}
       </div>
 
-      {projects.map((p) =>
-        p.categories.length ? (
+      {projects.map((p) => {
+        const used = p.categories.filter((c) => c.questions == null || c.questions > 0);
+        const empty = p.categories.filter((c) => c.questions === 0);
+        if (!p.categories.length) return null;
+        return (
           <div key={p.id} className="space-y-2">
-            <p className="text-sm font-medium">
-              Kategorie projektu „{p.name}” <span className="font-normal text-muted">— styl kategorii zastępuje styl motywu</span>
-            </p>
-            {p.categories.map((c) => (
+            {used.length ? (
+              <p className="text-sm font-medium">
+                Kategorie projektu „{p.name}” <span className="font-normal text-muted">— styl kategorii zastępuje styl motywu</span>
+              </p>
+            ) : null}
+            {used.map((c) => (
               <CategoryStyleRow key={c.id} category={c} experts={experts} onSave={(json, ok) => save(`/api/admin/categories/${c.id}`, json, ok)} />
             ))}
+            {empty.length ? (
+              <details className="rounded-xl border border-dashed border-line p-3" data-testid="empty-categories">
+                <summary className="cursor-pointer text-sm text-muted">
+                  Kategorie bez pytań ({empty.length}): {empty.map((c) => c.name).join(", ")} — np. z danych przykładowych; można je usunąć
+                </summary>
+                <ul className="mt-2 space-y-1">
+                  {empty.map((c) => (
+                    <li key={c.id} className="flex items-center justify-between gap-2 text-sm">
+                      <span>{c.name}</span>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={async () => {
+                          if (!confirm(`Usunąć pustą kategorię „${c.name}”?`)) return;
+                          const r = await fetch(`/api/admin/categories/${c.id}`, { method: "DELETE" });
+                          const d = await r.json().catch(() => ({}));
+                          if (!r.ok) toast(d.error ?? "Nie udało się usunąć", "err");
+                          else {
+                            toast(`Usunięto kategorię „${c.name}”`);
+                            router.refresh();
+                          }
+                        }}
+                        data-testid="delete-empty-category"
+                      >
+                        Usuń
+                      </Button>
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            ) : null}
           </div>
-        ) : null,
-      )}
+        );
+      })}
     </Card>
   );
 }

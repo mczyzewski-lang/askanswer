@@ -20,6 +20,17 @@ test("project settings: theme, people and voices under the project", async ({ pa
   // only this project's theme — no list of the other projects' themes, no categories it does not use
   await expect(page.getByTestId("theme-list")).toHaveCount(0);
   await expect(page.getByText(/Kategorie projektu/)).toHaveCount(0);
+  // an empty category that only has a style (e.g. sample data) is listed apart and can be removed
+  const cat = await (await request.post(`/api/admin/projects/${p}/categories`, { data: { name: "Upadłość konsumencka" } })).json();
+  await request.patch(`/api/admin/categories/${cat.id}`, { data: { brollStyle: "Hand-drawn ink" } });
+  await page.reload();
+  await expect(page.getByText(/Kategorie projektu/)).toHaveCount(0);
+  const empty = page.getByTestId("empty-categories");
+  await expect(empty).toContainText("Upadłość konsumencka");
+  await empty.locator("summary").click();
+  page.once("dialog", (d) => void d.accept());
+  await empty.getByTestId("delete-empty-category").click();
+  await expect(page.getByTestId("empty-categories")).toHaveCount(0);
   // the infographic prompt of this theme: shown, editable, "Przywróć bazowy" once it differs
   const ip = page.getByTestId("infographic-prompt");
   await expect(ip.getByTestId("infographic-prompt-text")).toHaveValue(/Headline: «\{\{headline\}\}»/);

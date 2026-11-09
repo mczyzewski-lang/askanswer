@@ -25,7 +25,7 @@ export default async function ProjectSettingsPage({ params, searchParams }: { pa
     : null;
   const logo = row?.logoAssetId ? await prisma.mediaAsset.findUnique({ where: { id: row.logoAssetId } }) : null;
   // this project only, and only the categories it uses (or that have their own style / expert set)
-  const rowOwn = row ? { ...row, projects: row.projects.map((pr) => ({ ...pr, categories: pr.categories.filter((c) => c._count.questions > 0 || c.brollStyle || c.expertId).map(({ _count, ...c }) => (void _count, c)) })) } : null;
+  const rowOwn = row ? { ...row, projects: row.projects.map((pr) => ({ ...pr, categories: pr.categories.filter((c) => c._count.questions > 0 || c.brollStyle || c.expertId).map(({ _count, ...c }) => ({ ...c, questions: _count.questions })) })) } : null;
   const theme = rowOwn ? { ...rowOwn, createdAt: rowOwn.createdAt.toISOString(), updatedAt: rowOwn.updatedAt.toISOString(), logoUrl: logo ? await signedUrl(logo.storageKey) : null } : null;
   const experts = await prisma.expert.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } });
   const data = await projectData(id);

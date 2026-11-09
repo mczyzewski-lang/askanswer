@@ -19,7 +19,10 @@ test("Auto Reels: a recording becomes ready reels (hook + context, pauses cut), 
   // the setup pages are at the bottom, under „Ustawienia”, with the global tools above them
   await expect(side.getByTestId("nav-settings").getByRole("link", { name: "Motywy" })).toBeVisible();
   await expect(side.getByTestId("nav-tools")).toContainText("EduStudio");
-  await side.getByRole("link", { name: "Auto Reels" }).click();
+  // the kinds of projects are not repeated in the menu — a new one is started from the project switcher
+  await expect(side.getByRole("link", { name: "Auto Reels" })).toHaveCount(0);
+  await side.getByTestId("project-switcher").click();
+  await page.getByTestId("project-switcher-new").getByRole("link", { name: "Auto Reels" }).click();
   await expect(page).toHaveURL(/\/admin\/auto-reels$/);
 
   await page.getByLabel("Nazwa").fill("Podcast testowy");
