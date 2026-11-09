@@ -445,7 +445,14 @@ export function drawCreative(ctx: Ctx2D, input: CreativeInput): Measure {
       const ty = horizontal ? cy + r * 2 + unit * 0.02 : cy;
       const tw = horizontal ? cellW : T.w - (tx - T.x);
       const lines = horizontal ? 3 : 2;
-      const sfit = fit(ctx, st, label, unit * (horizontal ? 0.06 : 0.045), unit * (horizontal ? 0.04 : 0.03), tw, lines, 1.2);
+      // the step text fits its cell's width AND height (smaller when the cell is short)
+      const roomH = horizontal ? cellH - r * 2 - unit * 0.02 : cellH;
+      let sp = unit * (horizontal ? 0.06 : 0.045);
+      let sfit = fit(ctx, st, label, sp, unit * (horizontal ? 0.04 : 0.03), tw, lines, 1.2);
+      while (sfit.lines.length * sfit.lineH > roomH + 1 && sp > unit * 0.024) {
+        sp *= 0.92;
+        sfit = fit(ctx, st, label, sp, Math.min(sp, unit * 0.024), tw, lines, 1.2);
+      }
       overflow ||= sfit.overflow || (horizontal ? r * 2 + unit * 0.02 + sfit.lines.length * sfit.lineH > cellH + 1 : sfit.lines.length * sfit.lineH > cellH + 1);
       fonts.push(sfit.px);
       drawLines(ctx, sfit, label, tx, horizontal ? ty : cy + Math.max(0, (r * 2 - sfit.lines.length * sfit.lineH) / 2), ink);
