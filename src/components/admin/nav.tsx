@@ -175,7 +175,10 @@ export function AdminNav({ vertical = false, projects, current: remembered, role
   const onSettings = (sec: string) => () => path === settingsBase && (search.get("section") ?? "theme") === sec;
   const projectItems: Item[] = current
     ? [
-        { href: current.href, label: "Przegląd", icon: LayoutDashboard, match: (p) => p === current.href },
+        // a module project (Ads Studio, Auto Reels, Reklamy): its studio by name, so it is easy to find
+        current.kind === "Projekt"
+          ? { href: current.href, label: "Przegląd", icon: LayoutDashboard, match: (p: string) => p === current.href }
+          : { href: current.href, label: current.kind, icon: KIND_ICON[current.kind], match: (p: string) => p === current.href || p.startsWith(`${current.href}/`) },
         ...(ads ? [{ href: `/admin/projects/${current.id}`, label: "Montaże i eksport", icon: Clapperboard, match: (p: string) => p === `/admin/projects/${current.id}` }] : []),
         { href: `/admin/projects/${current.id}/social`, label: "Harmonogram social", icon: CalendarDays, match: (p: string) => p === `/admin/projects/${current.id}/social` },
         { href: `/admin/adwords/${current.id}`, label: "Google Adwords", icon: Target, match: (p: string) => p === `/admin/adwords/${current.id}` },
