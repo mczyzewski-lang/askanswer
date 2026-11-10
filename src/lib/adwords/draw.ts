@@ -81,7 +81,7 @@ export interface CreativeInput {
   width: number;
   height: number;
   layout: LayoutKey;
-  copy: { headline: string; subheadline?: string | null; body?: string | null; cta?: string | null; comparison?: ComparisonCopy | null; /** a short pill above the headline (e.g. the webinar date) */ badge?: string | null };
+  copy: { headline: string; subheadline?: string | null; body?: string | null; cta?: string | null; comparison?: ComparisonCopy | null; /** a short pill above the headline (e.g. "Bezpłatny webinar on-line") */ badge?: string | null; /** a gold line under the pill (e.g. "wtorek, 24 listopada · 19:00") */ dateLine?: string | null };
   theme: ThemeTokens;
   logo?: ImageLike | null;
   photo?: PhotoInput | null;
@@ -127,7 +127,8 @@ function wrap(ctx: Ctx2D, text: string, maxW: number): { lines: string[]; tooWid
   const lines: string[] = [];
   let line = "";
   let tooWide = false;
-  for (const w of text.split(/\s+/).filter(Boolean)) {
+  // a no-break space (U+00A0) keeps two words together on one line
+  for (const w of text.split(/[ \t\n\r]+/).filter(Boolean)) {
     if (ctx.measureText(w).width > maxW) tooWide = true;
     const t = line ? `${line} ${w}` : w;
     if (line && ctx.measureText(t).width > maxW) {
@@ -144,6 +145,85 @@ interface Fitted {
   lines: string[];
   overflow: boolean;
   lineH: number;
+  /** headline: the first line is the gold prefix ("Rozwód:") */
+  prefix?: boolean;
+  /** headline: the gold prefix starts the first line (wide formats) */
+  prefixInline?: string;
+}
+
+const NBSP = "\u00A0";
+/**
+ * Headline typography (Polish): "Rozwód: …" → the prefix on its own line (gold); a number stays with its
+ * word ("4 lata", "3 miesiące"); a one-letter word ("i", "w", "z"…) never ends a line; the final
+ * punctuation is drawn in gold — a full stop is added when the headline has none.
+ */
+export function typesetHeadline(text: string): { prefix: string | null; body: string } {
+  const t = text.trim().replace(/\s+/g, " ");
+  const m = /^([^:?!.]{2,24}:)\s+(.+)$/.exec(t);
+  const prefix = m && m[1].split(" ").length <= 3 ? m[1] : null;
+  let body = prefix ? m![2] : t;
+  body = body
+    .replace(/(^|\s)(\d+[.,]?\d*)\s+(?=\S)/g, (_, a, n) => `${a}${n}${NBSP}`)
+    .replace(/(^|\s)([aiouwzAIOUWZ])\s+(?=\S)/g, (_, a, w) => `${a}${w}${NBSP}`);
+  if (body && !/[.?!…:;”"»)]$/.test(body)) body += ".";
+  return { prefix, body };
+}
+
+/** fit the headline: its prefix on a line of its own (tall / square) or starting the first line (wide) */
+function fitHeadline(ctx: Ctx2D, text: string, font: (px: number) => string, start: number, min: number, maxW: number, maxLines: number, lineH = 1.12, prefixOwnLine = true): Fitted {
+  const { prefix, body } = typesetHeadline(text);
+  if (!body) return { px: start, lines: [], overflow: false, lineH: start * lineH };
+  const own = !!prefix && prefixOwnLine;
+  const tryAt = (px: number) => {
+    ctx.font = font(px);
+    if (prefix && !own) {
+      const w = wrap(ctx, `${prefix}${NBSP}${body}`.replace(`${prefix}${NBSP}`, `${prefix} `), maxW);
+      return { ok: !w.tooWide && w.lines.length <= maxLines, lines: w.lines };
+    }
+    const w = wrap(ctx, body, maxW);
+    const preOk = !prefix || ctx.measureText(prefix).width <= maxW;
+    const lines = own ? [prefix!, ...w.lines] : w.lines;
+    // the prefix ("Rozwód:") is short — it does not take a line from the body
+    return { ok: preOk && !w.tooWide && lines.length <= maxLines + (own ? 1 : 0), lines };
+  };
+  const meta = { prefix: own, ...(prefix && !own ? { prefixInline: prefix } : {}) };
+  for (let px = Math.round(start); px >= min; px -= Math.max(1, Math.round(px * 0.04))) {
+    const r = tryAt(px);
+    if (r.ok) return { px, lines: r.lines, overflow: false, lineH: px * lineH, ...meta };
+  }
+  const r = tryAt(min);
+  return { px: min, lines: r.lines.slice(0, maxLines + (own ? 1 : 0)), overflow: true, lineH: min * lineH, ...meta };
+}
+
+/** the headline: the prefix line and the final punctuation in the accent colour */
+function drawHeadline(ctx: Ctx2D, f: Fitted, font: (px: number) => string, x: number, y: number, ink: string, accent: string) {
+  ctx.font = font(f.px);
+  ctx.textAlign = "left";
+  ctx.textBaseline = "top";
+  f.lines.forEach((l, i) => {
+    const ly = y + i * f.lineH;
+    if (i === 0 && f.prefix) {
+      ctx.fillStyle = accent;
+      ctx.fillText(l, x, ly);
+      return;
+    }
+    const last = i === f.lines.length - 1 && /[.?!…]$/.test(l);
+    let main = last ? l.slice(0, -1) : l;
+    let lx = x;
+    if (i === 0 && f.prefixInline && main.startsWith(f.prefixInline)) {
+      ctx.fillStyle = accent;
+      ctx.fillText(f.prefixInline, lx, ly);
+      lx += ctx.measureText(f.prefixInline).width;
+      main = main.slice(f.prefixInline.length);
+    }
+    ctx.fillStyle = ink;
+    ctx.fillText(main, lx, ly);
+    if (last) {
+      ctx.fillStyle = accent;
+      ctx.fillText(l.slice(-1), lx + ctx.measureText(main).width, ly);
+    }
+  });
+  return f.lines.length * f.lineH;
 }
 
 /** the largest size from `start` down to `min` at which the text fits in `maxLines` lines of `maxW` */
@@ -287,6 +367,7 @@ export function drawCreative(ctx: Ctx2D, input: CreativeInput): Measure {
   // text area (and the photo region) per layout and format
   let T = { ...S };
   let panelBg = bg;
+  let photoBelow = false;
   if (layout === "expert_split" && photo) {
     let region: { x: number; y: number; w: number; h: number };
     if (kind === "landscape") {
@@ -295,21 +376,39 @@ export function drawCreative(ctx: Ctx2D, input: CreativeInput): Measure {
     } else if (kind === "square") {
       region = { x: W * 0.5, y: 0, w: W * 0.5, h: H };
       T = { x: S.x, y: S.y, w: W * 0.5 - S.x - W * 0.035, h: S.h };
+    } else if (W / H < 0.65) {
+      // 9:16 story: the text on top (below the Reels / Stories top zone), the expert at the bottom — the
+      // bottom 35% is covered by the app's interface, which suits a photo, never text
+      const top = H * 0.52;
+      photoBelow = true;
+      region = { x: 0, y: top, w: W, h: H - top };
+      T = { x: S.x, y: S.y, w: S.w, h: Math.min(S.y + S.h, H * 0.6) - S.y };
     } else {
-      // tall: the photo on top; a 9:16 story keeps the text above its bottom safe zone
-      const ph = W / H < 0.65 ? Math.max(H * 0.3, S.y + S.h * 0.34) : H * 0.5;
+      // 4:5: a pill and a date line take room — the photo gets a bit less
+      const ph = H * (0.5 - (input.copy.badge?.trim() ? 0.05 : 0) - (input.copy.dateLine?.trim() ? 0.05 : 0));
       region = { x: 0, y: 0, w: W, h: ph };
       T = { x: S.x, y: ph, w: S.w, h: S.y + S.h - ph };
     }
     const f = drawPhoto(ctx, photo, region.x, region.y, region.w, region.h);
-    if (f.fx < S.x || f.fx > S.x + S.w || f.fy < S.y || f.fy > S.y + S.h) outsideSafe = true;
+    // (a photo under the 9:16 bottom zone is meant to be there — only text must stay out of it)
+    if (!photoBelow && (f.fx < S.x || f.fx > S.x + S.w || f.fy < S.y || f.fy > S.y + S.h)) outsideSafe = true;
     // soft blend from the photo into the background
-    const g = kind === "portrait" ? ctx.createLinearGradient(0, region.y + region.h * 0.72, 0, region.y + region.h) : ctx.createLinearGradient(region.x, 0, region.x + region.w * 0.28, 0);
-    g.addColorStop(0, kind === "portrait" ? rgba(bg, 0) : rgba(bg, 1));
-    g.addColorStop(1, kind === "portrait" ? rgba(bg, 1) : rgba(bg, 0));
-    ctx.fillStyle = g;
-    if (kind === "portrait") ctx.fillRect(0, region.y + region.h * 0.72, W, region.h * 0.28 + 2);
-    else ctx.fillRect(region.x - 1, 0, region.w * 0.28, H);
+    const storyPhoto = kind === "portrait" && region.y > 0;
+    if (storyPhoto) {
+      // the photo below the text: a soft fade from the background at its top
+      const g = ctx.createLinearGradient(0, region.y - 1, 0, region.y + region.h * 0.3);
+      g.addColorStop(0, rgba(bg, 1));
+      g.addColorStop(1, rgba(bg, 0));
+      ctx.fillStyle = g;
+      ctx.fillRect(0, region.y - 1, W, region.h * 0.3 + 1);
+    } else {
+      const g = kind === "portrait" ? ctx.createLinearGradient(0, region.y + region.h * 0.72, 0, region.y + region.h) : ctx.createLinearGradient(region.x, 0, region.x + region.w * 0.28, 0);
+      g.addColorStop(0, kind === "portrait" ? rgba(bg, 0) : rgba(bg, 1));
+      g.addColorStop(1, kind === "portrait" ? rgba(bg, 1) : rgba(bg, 0));
+      ctx.fillStyle = g;
+      if (kind === "portrait") ctx.fillRect(0, region.y + region.h * 0.72, W, region.h * 0.28 + 2);
+      else ctx.fillRect(region.x - 1, 0, region.w * 0.28, H);
+    }
     panelBg = bg;
   } else {
     // clean brand background: the theme colour with a soft light from the top (no shapes competing with the text)
@@ -325,7 +424,7 @@ export function drawCreative(ctx: Ctx2D, input: CreativeInput): Measure {
 
   let y = T.y;
   // logo: top of the text area (portrait with a photo: over the photo, top-left of the safe area)
-  if (input.logo && layout === "expert_split" && photo && kind === "portrait") {
+  if (input.logo && layout === "expert_split" && photo && kind === "portrait" && !photoBelow) {
     const d = drawLogo(ctx, input.logo, S.x, S.y, S.w * 0.36, H * 0.06);
     boxes.push({ x: S.x, y: S.y, w: d.w, h: d.h });
   } else if (input.logo) {
@@ -374,12 +473,17 @@ export function drawCreative(ctx: Ctx2D, input: CreativeInput): Measure {
       if (!bdf.overflow) break;
     }
   }
-  const badgeBlock = bdf ? bdf.px * 2 + unit * 0.035 : 0;
+  const dateText = (input.copy.dateLine ?? "").trim();
+  // the date: one line, two in a narrow column ("wtorek, 24 listopada" / "19:00")
+  let ddf = dateText && layout !== "process_steps" ? fit(ctx, dateText, label, unit * 0.05, unit * 0.034, T.w, 1, 1.15) : null;
+  if (ddf?.overflow) ddf = fit(ctx, dateText.replace(" · ", "\u00A0· "), label, unit * 0.045, unit * 0.03, T.w, 2, 1.15);
+  const dateH = ddf ? ddf.lines.length * ddf.lineH : 0;
+  const badgeBlock = (bdf ? bdf.px * 2 + unit * (ddf ? 0.02 : 0.035) : 0) + (ddf ? dateH + unit * 0.03 : 0);
   const headStart = unit * (kind === "landscape" ? 0.12 : kind === "portrait" ? 0.115 : 0.11) * Math.min(1, T.w / unit / 0.55);
-  let hf = fit(ctx, headline, head, headStart, headStart * 0.45, T.w, kind === "landscape" ? 3 : 4, 1.08);
+  let hf = fitHeadline(ctx, headline, head, headStart, headStart * 0.45, T.w, kind === "landscape" ? 3 : 4, 1.08, kind !== "landscape");
   // the headline also has to fit the HEIGHT of its room (with the underline), not only the line count
   if (layout !== "process_steps" && !cmp) {
-    for (let hs = headStart * 0.92; hf.lines.length * hf.lineH + unit * 0.06 + badgeBlock > room && hs > headStart * 0.45; hs *= 0.92) hf = fit(ctx, headline, head, hs, Math.min(hs, headStart * 0.45), T.w, kind === "landscape" ? 3 : 4, 1.08);
+    for (let hs = headStart * 0.92; hf.lines.length * hf.lineH + unit * 0.06 + badgeBlock > room && hs > headStart * 0.45; hs *= 0.92) hf = fitHeadline(ctx, headline, head, hs, Math.min(hs, headStart * 0.45), T.w, kind === "landscape" ? 3 : 4, 1.08, kind !== "landscape");
   }
   overflow ||= hf.overflow;
   fonts.push(hf.px);
@@ -408,10 +512,15 @@ export function drawCreative(ctx: Ctx2D, input: CreativeInput): Measure {
       boxes.push({ x: T.x, y, w: bw, h: bh });
       y += bh + unit * 0.025;
     }
+    if (ddf) {
+      drawLines(ctx, ddf, label, T.x, y, theme.accent);
+      boxes.push({ x: T.x, y, w: T.w, h: dateH });
+      y += dateH + unit * 0.025;
+    }
     // the headline leaves the cards enough room
     const sideCards = kind !== "portrait";
-    for (let hs = hf.px * 0.92; bottom - y - (hf.lines.length * hf.lineH + unit * 0.035) < unit * (sideCards ? 0.22 : 0.36) && hs > unit * 0.035; hs *= 0.92) hf = fit(ctx, headline, head, hs, Math.min(hs, unit * 0.035), T.w, 3, 1.08);
-    y += drawLines(ctx, hf, head, T.x, y, ink);
+    for (let hs = hf.px * 0.92; bottom - y - (hf.lines.length * hf.lineH + unit * 0.035) < unit * (sideCards ? 0.22 : 0.36) && hs > unit * 0.035; hs *= 0.92) hf = fitHeadline(ctx, headline, head, hs, Math.min(hs, unit * 0.035), T.w, 4, 1.08, kind !== "landscape");
+    y += drawHeadline(ctx, hf, head, T.x, y, ink, theme.accent);
     boxes.push({ x: T.x, y: y - hf.lines.length * hf.lineH, w: T.w, h: hf.lines.length * hf.lineH });
     y += unit * 0.035;
     const side = kind !== "portrait";
@@ -457,7 +566,7 @@ export function drawCreative(ctx: Ctx2D, input: CreativeInput): Measure {
     });
   } else if (layout === "process_steps" && steps.length) {
     // headline on top, then the steps (columns when wide, rows when tall)
-    y += drawLines(ctx, hf, head, T.x, y, ink);
+    y += drawHeadline(ctx, hf, head, T.x, y, ink, theme.accent);
     boxes.push({ x: T.x, y: y - hf.lines.length * hf.lineH, w: T.w, h: hf.lines.length * hf.lineH });
     y += unit * 0.04;
     const horizontal = kind === "landscape";
@@ -523,9 +632,16 @@ export function drawCreative(ctx: Ctx2D, input: CreativeInput): Measure {
       fonts.push(bdf.px);
       overflow ||= bdf.overflow;
       boxes.push({ x: T.x, y: by, w: bw, h: bh });
-      by += badgeBlock;
+      by += bh + unit * (ddf ? 0.02 : 0.035);
     }
-    const hh = drawLines(ctx, hf, head, T.x, by, ink);
+    if (ddf) {
+      drawLines(ctx, ddf, label, T.x, by, theme.accent);
+      fonts.push(ddf.px);
+      overflow ||= ddf.overflow;
+      boxes.push({ x: T.x, y: by, w: T.w, h: dateH });
+      by += dateH + unit * 0.03;
+    }
+    const hh = drawHeadline(ctx, hf, head, T.x, by, ink, theme.accent);
     boxes.push({ x: T.x, y: by, w: T.w, h: hh });
     by += hh;
     // the brand's gold underline under the headline

@@ -217,6 +217,7 @@ export function MoreCreatives({ data, reload, toast, picked, setPicked }: { data
       <p className="text-xs text-muted">
         Wersje z ekspertem: ta sama treść z każdym zaznaczonym zdjęciem — nowe koncepty G03E, G03E2… (zdjęcie zmienisz też na karcie konceptu przed pobraniem). Porównania: dwie karty „tradycyjnie” vs „z planem” (teksty pisze AI, poprawisz w edytorze) — litera C. Infografiki: OpenAI w kolorach motywu, jak w reelsach — litera I, do zatwierdzenia (tekst na obrazie pisze AI).
       </p>
+      <FindReplace base={base} canEdit={data.canEdit} toast={toast} reload={reload} />
       {fixes ? (
         <div className="space-y-2 rounded-lg border border-line p-3" data-testid="copy-fixes">
           {note ? <p className="text-xs text-muted">{note}</p> : null}
@@ -254,5 +255,57 @@ export function MoreCreatives({ data, reload, toast, picked, setPicked }: { data
         </div>
       ) : null}
     </Card>
+  );
+}
+
+/** find and replace in every text (Google creatives, texts, scenes, Meta ads) — preview first */
+function FindReplace({ base, canEdit, toast, reload }: { base: string; canEdit: boolean; toast: Toast; reload: () => Promise<void> }) {
+  const [find, setFind] = useState("");
+  const [rep, setRep] = useState("");
+  const [preview, setPreview] = useState<Array<{ label: string; fieldLabel: string; before: string; after: string }> | null>(null);
+  const call = async (apply: boolean) => {
+    try {
+      const r = await api<{ count: number; changes: Array<{ label: string; fieldLabel: string; before: string; after: string }> }>(`${base}/replace`, { method: "POST", json: { find, replace: rep, apply } });
+      if (apply) {
+        setPreview(null);
+        await reload();
+        toast(`Zamieniono w ${r.count} miejscach`);
+      } else setPreview(r.changes);
+    } catch (e) {
+      toast((e as Error).message, "err");
+    }
+  };
+  return (
+    <details className="rounded-lg border border-line px-3 py-2" data-testid="find-replace">
+      <summary className="cursor-pointer text-sm font-medium">Znajdź i zamień w tekstach (grafiki, teksty, sceny, Meta)</summary>
+      <div className="mt-2 flex flex-wrap items-end gap-2">
+        <Input className="h-9 w-64" value={find} onChange={(e) => (setFind(e.target.value), setPreview(null))} placeholder="np. Potem pozew" aria-label="Znajdź" />
+        <Input className="h-9 w-64" value={rep} onChange={(e) => (setRep(e.target.value), setPreview(null))} placeholder="np. Dopiero potem pozew" aria-label="Zamień na" />
+        <Button variant="outline" disabled={find.trim().length < 2} onClick={() => void call(false)} data-testid="find-preview">
+          Pokaż zmiany
+        </Button>
+        {preview?.length ? (
+          <Button disabled={!canEdit} onClick={() => void call(true)} data-testid="find-apply">
+            Zamień wszystkie ({preview.length})
+          </Button>
+        ) : null}
+      </div>
+      {preview ? (
+        preview.length ? (
+          <ul className="mt-2 max-h-56 space-y-1 overflow-y-auto text-xs">
+            {preview.slice(0, 60).map((c, i) => (
+              <li key={i}>
+                <span className="font-mono text-muted">
+                  {c.label} · {c.fieldLabel}:
+                </span>{" "}
+                <span className="line-through decoration-black/30">{c.before}</span> → <b>{c.after}</b>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="mt-2 text-xs text-muted">Nie znaleziono.</p>
+        )
+      ) : null}
+    </details>
   );
 }

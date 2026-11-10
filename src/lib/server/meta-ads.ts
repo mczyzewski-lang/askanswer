@@ -88,6 +88,8 @@ export const MetaBody = z.object({
   url: z.string().trim().max(500).nullable().optional(),
   webinarTitle: z.string().max(200).nullable().optional(),
   webinarAt: z.string().datetime().nullable().optional(),
+  badgeText: z.string().max(60).nullable().optional(),
+  showDate: z.boolean().default(true),
   layout: z.enum(["typographic", "process_steps", "comparison"]).default("typographic"),
   extra: z.record(z.string().regex(/^comparison_[a-z_]+$/), z.string().max(200)).nullable().optional(),
   body: z.string().max(400).nullable().optional(),

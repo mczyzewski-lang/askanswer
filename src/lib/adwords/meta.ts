@@ -8,16 +8,16 @@ import Papa from "papaparse";
 import { adClaimProblems, urlStatus } from "./landing-content";
 import { comparisonOf } from "./draw";
 
-/** feed 1:1 and 4:5, Stories / Reels 9:16 with Meta's Reels safe zone (top 14%, bottom 35%, sides 6%) */
+/** feed 1:1 and 4:5, Stories / Reels 9:16 with Meta's Reels safe zone (top 14%, bottom 35%, sides 6%); Ads Guide sizes 1440 px */
 export const META_FORMATS = [
-  { key: "square", label: "Feed 1:1", width: 1080, height: 1080, insets: null },
-  { key: "feed", label: "Feed 4:5", width: 1080, height: 1350, insets: null },
-  { key: "story", label: "Stories / Reels 9:16", width: 1080, height: 1920, insets: { top: 0.14, bottom: 0.35, left: 0.06, right: 0.06 } },
+  { key: "square", label: "Feed 1:1", width: 1440, height: 1440, insets: null },
+  { key: "feed", label: "Feed 4:5", width: 1440, height: 1800, insets: null },
+  { key: "story", label: "Stories / Reels 9:16", width: 1440, height: 2560, insets: { top: 0.14, bottom: 0.35, left: 0.06, right: 0.06 } },
 ] as const;
 export type MetaFormatKey = (typeof META_FORMATS)[number]["key"];
 
-/** text lengths before Meta truncates ("… Więcej") — recommendations, not hard limits */
-export const META_LIMITS = { primaryText: 125, metaHeadline: 40, description: 30 } as const;
+/** text lengths before Meta truncates ("… Więcej") — recommendations, not hard limits; Ads Guide (single image): headline 27, primary text 50–150 (~125 shown) */
+export const META_LIMITS = { primaryText: 125, metaHeadline: 27, description: 30 } as const;
 
 /** the CTA button of Ads Manager (API enum → the Polish label) */
 export const META_CTAS: Record<string, string> = {
@@ -50,6 +50,10 @@ export interface MetaAdData {
   body: string | null;
   withoutExpert: boolean;
   photoIds: string[];
+  /** the pill at the top ("Bezpłatny webinar on-line"); empty = none (a webinar: "Webinar") */
+  badgeText?: string | null;
+  /** the day and date in gold under the pill */
+  showDate?: boolean;
   /** comparison layout: comparison_title / _left_label / _left / _right_label / _right */
   extra?: Record<string, string | undefined> | null;
   /** AI infographic version: format → media asset id */
@@ -66,6 +70,17 @@ export function webinarBadge(at: string | Date | null | undefined): string | nul
   const time = new Intl.DateTimeFormat("pl-PL", { timeZone: WARSAW, hour: "2-digit", minute: "2-digit" }).format(d);
   return `Webinar · ${day} · ${time}`;
 }
+
+/** "wtorek, 24 listopada · 19:00" — the date line on the banner (Warsaw time) */
+export function eventDateLine(at: string | Date | null | undefined): string | null {
+  if (!at) return null;
+  const d = new Date(at);
+  if (Number.isNaN(d.getTime())) return null;
+  const day = new Intl.DateTimeFormat("pl-PL", { timeZone: WARSAW, weekday: "long", day: "numeric", month: "long" }).format(d);
+  const time = new Intl.DateTimeFormat("pl-PL", { timeZone: WARSAW, hour: "2-digit", minute: "2-digit" }).format(d);
+  return `${day} · ${time}`;
+}
+export const DEFAULT_WEBINAR_BADGE = "Bezpłatny webinar on-line";
 
 /** Warsaw's offset (minutes) at a moment */
 function warsawOffset(d: Date) {
@@ -102,7 +117,7 @@ export function metaCreative(ad: MetaAdData, format: MetaFormatKey, mode: boolea
     width: f.width,
     height: f.height,
     layout: layout as "expert_split" | "process_steps" | "typographic" | "comparison" | "infographic",
-    copy: { headline: ad.headline || cmp?.title || ad.metaHeadline || ad.name, body: ad.body, comparison: layout === "comparison" ? cmp : null, cta: ad.ctaImage || META_CTAS[ad.ctaButton] || "Dowiedz się więcej", badge: ad.destination === "webinar" ? webinarBadge(ad.webinarAt) : null },
+    copy: { headline: ad.headline || cmp?.title || ad.metaHeadline || ad.name, body: ad.body, comparison: layout === "comparison" ? cmp : null, cta: ad.ctaImage || META_CTAS[ad.ctaButton] || "Dowiedz się więcej", badge: ad.badgeText?.trim() || (ad.destination === "webinar" ? "Webinar" : null), dateLine: ad.showDate !== false ? eventDateLine(ad.webinarAt) : null },
     safeMargin: 0.1,
     safeInsets: f.insets,
   };

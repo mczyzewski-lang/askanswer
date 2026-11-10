@@ -31,14 +31,30 @@ test("Google Adwords: the topic in every headline (fix proposals), versions with
   await page.goto(`/admin/adwords/${project.id}?tab=grafiki`);
   const more = page.getByTestId("more-creatives");
   await expect(more).toContainText("bez tematu");
+  // 0. the good practices 2026 fold out with their sources
+  await page.getByTestId("best-practices-google").locator("summary").click();
+  await expect(page.getByTestId("best-practices-google")).toContainText("Performance Max");
+  await expect(page.getByTestId("best-practices-google").getByRole("link", { name: "źródło oficjalne" }).first()).toHaveAttribute("href", /google/);
+  // find and replace (preview first): "potem pozew" → "dopiero potem pozew"
+  const fr = page.getByTestId("find-replace");
+  await fr.locator("summary").click();
+  await fr.getByLabel("Znajdź").fill("Najpierw plan, potem pozew");
+  await fr.getByLabel("Zamień na").fill("Najpierw plan, dopiero potem pozew");
+  await fr.getByTestId("find-preview").click();
+  await expect(fr.getByTestId("find-apply")).toBeVisible();
+  await fr.getByTestId("find-apply").click();
+  await expect(page.getByText(/Zamieniono w \d+ miejscach/)).toBeVisible();
+  data = await (await request.get(base)).json();
+  expect(data.assets.filter((a: { headline: string | null; adText: string | null }) => /Najpierw plan, potem pozew/.test(`${a.headline ?? ""} ${a.adText ?? ""}`))).toHaveLength(0);
+  expect(data.assets.some((a: { adText: string | null }) => a.adText === "Najpierw plan, dopiero potem pozew")).toBe(true);
   // 1. proposals: G03 "Najpierw plan, potem pozew" → "… pozew o rozwód" (OpenAI mock), accepted
   await more.getByTestId("copy-fix").click();
   const row = page.getByTestId("copy-fix-row").filter({ hasText: "G03 (grafika)" });
-  await expect(row.getByRole("textbox")).toHaveValue("Najpierw plan, potem pozew o rozwód");
+  await expect(row.getByRole("textbox")).toHaveValue("Najpierw plan, dopiero potem pozew o rozwód");
   await page.getByTestId("copy-fix-apply").click();
   await expect(page.getByTestId("copy-fixes")).toHaveCount(0);
   data = await (await request.get(base)).json();
-  expect(data.assets.filter((a: { conceptId: string; rowType: string }) => a.conceptId === "G03" && a.rowType === "image").every((a: { headline: string }) => a.headline === "Najpierw plan, potem pozew o rozwód")).toBe(true);
+  expect(data.assets.filter((a: { conceptId: string; rowType: string }) => a.conceptId === "G03" && a.rowType === "image").every((a: { headline: string }) => a.headline === "Najpierw plan, dopiero potem pozew o rozwód")).toBe(true);
   expect(data.evaluation.images.find((e: { assetKey: string }) => e.assetKey === "G03-L").gate.problems.map((p: { message: string }) => p.message).join(" ")).not.toContain("nie mówi, czego dotyczy");
 
   // 2. versions with the expert: G03 + G04 picked × both photos → G03E (Anna), G03E2 (Marek), G04E, G04E2

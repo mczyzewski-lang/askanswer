@@ -3,9 +3,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Copy, Download, Loader2, Package, Plus, Sparkles, Trash2 } from "lucide-react";
 import { Button, Card, Input, Label, NativeSelect, Textarea } from "@/components/ui";
 import { api, cn } from "@/lib/utils";
-import { META_CTAS, META_FORMATS, META_LIMITS, metaChecks, metaCreative, metaStatus, metaVersions, webinarBadge, warsawToIso, isoToWarsaw, type MetaAdData, type MetaFormatKey } from "@/lib/adwords/meta";
+import { META_CTAS, META_FORMATS, META_LIMITS, metaChecks, metaCreative, metaStatus, metaVersions, webinarBadge, warsawToIso, isoToWarsaw, DEFAULT_WEBINAR_BADGE, eventDateLine, type MetaAdData, type MetaFormatKey } from "@/lib/adwords/meta";
 import type { Measure } from "@/lib/adwords/score";
 import { CreativeCanvas } from "./canvas";
+import { BestPractices } from "./best-practices";
 import type { AwData, Toast } from "./types";
 
 type Ad = MetaAdData & { id: string; infographicUrls?: Partial<Record<MetaFormatKey, string | null>> };
@@ -67,6 +68,7 @@ export function MetaTab({ data, toast }: { data: AwData; toast: Toast }) {
   if (!ads) return <p className="text-sm text-muted">Wczytuję…</p>;
   return (
     <div className="space-y-4" data-testid="meta">
+      <BestPractices platform="meta" />
       <Card className="flex flex-wrap items-start justify-between gap-3 p-5">
         <div className="max-w-3xl">
           <p className="font-medium">Reklamy Meta (Facebook / Instagram)</p>
@@ -163,7 +165,7 @@ function MetaCard({ ad, data, base, onEdit, onCopy, onDelete, onInfographic, gen
         <div className="min-w-0">
           <p className="font-medium">{ad.name}</p>
           <p className="text-xs text-muted">
-            {ad.destination === "webinar" ? `Webinar: ${ad.webinarTitle ?? ""} · ${webinarBadge(ad.webinarAt)?.replace(/^Webinar · /, "") ?? "bez daty"}` : "Strona"} · {ad.url ?? "brak URL"} · przycisk „{META_CTAS[ad.ctaButton] ?? ad.ctaButton}”
+            {ad.destination === "webinar" ? `Webinar: ${ad.webinarTitle ?? ""} · ${eventDateLine(ad.webinarAt) ?? "bez daty"}` : "Strona"} · {ad.url ?? "brak URL"} · przycisk „{META_CTAS[ad.ctaButton] ?? ad.ctaButton}”
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
@@ -297,7 +299,7 @@ function MetaEditor({ ad, data, onCancel, onSave }: { ad: MetaAdData & { id?: st
             <div className="flex gap-4 text-sm">
               {(["website", "webinar"] as const).map((d) => (
                 <label key={d} className="flex items-center gap-1.5">
-                  <input type="radio" name="dest" checked={a.destination === d} onChange={() => set({ destination: d, ...(d === "webinar" && a.ctaButton === "LEARN_MORE" ? { ctaButton: "SIGN_UP" } : {}) })} aria-label={d === "website" ? "Cel: strona" : "Cel: webinar"} />
+                  <input type="radio" name="dest" checked={a.destination === d} onChange={() => set({ destination: d, ...(d === "webinar" && a.ctaButton === "LEARN_MORE" ? { ctaButton: "SIGN_UP" } : {}), ...(d === "webinar" && !a.badgeText ? { badgeText: DEFAULT_WEBINAR_BADGE } : {}) })} aria-label={d === "website" ? "Cel: strona" : "Cel: webinar"} />
                   {d === "website" ? "Strona" : "Webinar"}
                 </label>
               ))}
@@ -306,18 +308,25 @@ function MetaEditor({ ad, data, onCancel, onSave }: { ad: MetaAdData & { id?: st
               <Label>{a.destination === "webinar" ? "Adres strony webinaru (zapisy)" : "Adres strony"}</Label>
               <Input value={a.url ?? ""} onChange={(e) => set({ url: e.target.value })} placeholder="https://…" aria-label="Adres docelowy" />
             </div>
-            {a.destination === "webinar" ? (
-              <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-2 gap-2">
+              {a.destination === "webinar" ? (
                 <div className="space-y-1">
                   <Label>Tytuł webinaru</Label>
                   <Input value={a.webinarTitle ?? ""} onChange={(e) => set({ webinarTitle: e.target.value })} aria-label="Tytuł webinaru" />
                 </div>
-                <div className="space-y-1">
-                  <Label>Data i godzina (czas polski)</Label>
-                  <Input type="datetime-local" value={isoToWarsaw(a.webinarAt)} onChange={(e) => set({ webinarAt: e.target.value ? warsawToIso(e.target.value) : null })} aria-label="Data webinaru" />
-                </div>
+              ) : null}
+              <div className="space-y-1">
+                <Label>{a.destination === "webinar" ? "Data i godzina (czas polski)" : "Data wydarzenia (opcjonalnie, czas polski)"}</Label>
+                <Input type="datetime-local" value={isoToWarsaw(a.webinarAt)} onChange={(e) => set({ webinarAt: e.target.value ? warsawToIso(e.target.value) : null })} aria-label="Data webinaru" />
               </div>
-            ) : null}
+              <div className="space-y-1">
+                <Label>Plakietka na górze grafiki (opcjonalnie)</Label>
+                <Input value={a.badgeText ?? ""} onChange={(e) => set({ badgeText: e.target.value })} placeholder={DEFAULT_WEBINAR_BADGE} aria-label="Plakietka na górze" />
+              </div>
+              <label className="flex items-end gap-2 pb-2 text-sm">
+                <input type="checkbox" className="h-4 w-4" checked={a.showDate !== false} onChange={(e) => set({ showDate: e.target.checked })} aria-label="Pokaż datę na grafice" /> Pokaż dzień i datę na grafice
+              </label>
+            </div>
           </div>
           <div className="space-y-2 rounded-lg border border-line p-3">
             <p className="text-sm font-medium">Ekspert</p>

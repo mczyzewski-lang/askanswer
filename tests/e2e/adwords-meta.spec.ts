@@ -18,17 +18,21 @@ test("Meta (FB/IG) tab: texts → banners in 3 formats with / without the expert
   await login(page);
   // the tab works in a project without Google creatives
   await page.goto(`/admin/adwords/${project.id}?tab=meta`);
+  await page.getByTestId("best-practices-meta").locator("summary").click();
+  await expect(page.getByTestId("best-practices-meta")).toContainText("Promocja webinaru");
   await page.getByTestId("meta-new").click();
   const ed = page.getByTestId("meta-editor");
   await ed.getByLabel("Nazwa reklamy").fill("Webinar listopad");
   await ed.getByLabel("Tekst główny").fill("Rozwód bez walki w sądzie? Na bezpłatnym webinarze pokażemy, jak przygotować plan rozwodu.");
-  await ed.getByLabel("Nagłówek Meta").fill("Bezpłatny webinar o rozwodzie");
+  await ed.getByLabel("Nagłówek Meta").fill("Bezpłatny webinar: rozwód");
   await ed.getByLabel("Opis Meta").fill("Plan przed pozwem");
   await ed.getByLabel("Hasło na grafice").fill("Rozwód bez walki? Webinar o planie rozwodu");
   await ed.getByLabel("Cel: webinar").check();
   await expect(ed.getByLabel("Przycisk CTA")).toHaveValue("SIGN_UP");
   await ed.getByLabel("Adres docelowy").fill("https://nowy-etap.pl/webinar/");
   await ed.getByLabel("Tytuł webinaru").fill("Plan rozwodu krok po kroku");
+  // switching to a webinar fills the top pill
+  await expect(ed.getByLabel("Plakietka na górze")).toHaveValue("Bezpłatny webinar on-line");
   const future = new Date(Date.now() + 14 * 86_400_000);
   const p2 = (n: number) => String(n).padStart(2, "0");
   await ed.getByLabel("Data webinaru").fill(`${future.getFullYear()}-${p2(future.getMonth() + 1)}-${p2(future.getDate())}T19:00`);
@@ -53,7 +57,7 @@ test("Meta (FB/IG) tab: texts → banners in 3 formats with / without the expert
   // the PNGs: exact sizes, nothing cut off
   const ads = await (await request.get(`${base}/meta`)).json();
   const id = ads[0].id;
-  for (const [format, version, w, h] of [["square", "none", 1080, 1080], ["story", ads[0].photoIds[0], 1080, 1920], ["feed", ads[0].photoIds[0], 1080, 1350]] as const) {
+  for (const [format, version, w, h] of [["square", "none", 1440, 1440], ["story", ads[0].photoIds[0], 1440, 2560], ["feed", ads[0].photoIds[0], 1440, 1800]] as const) {
     const r = await request.get(`${base}/meta/${id}/render?format=${format}&version=${version}`);
     expect(r.status()).toBe(200);
     expect(r.headers()["x-render-overflow"]).toBe("false");

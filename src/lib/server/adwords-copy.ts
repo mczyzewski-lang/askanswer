@@ -17,7 +17,7 @@ Zasady:
 - nie pisz „całkowity koszt rozwodu” (znamy tylko koszt naszej usługi);
 - naturalna polszczyzna, bez wykrzykników i CAPS LOCKA;
 - ściśle trzymaj limit znaków podany przy każdej pozycji (liczą się spacje);
-- przykład: „Najpierw plan. Potem pozew.” → „Najpierw plan i ustalenia. Potem pozew o rozwód.”
+- przykład: „Najpierw plan. Potem pozew.” → „Najpierw plan i ustalenia. Dopiero potem pozew o rozwód.”
 Zwróć JSON: {"items":[{"key":"…","text":"…"}]} — po jednej pozycji na każdy klucz z listy.`;
 
 export interface CopyFix {

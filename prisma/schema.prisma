@@ -1582,7 +1582,12 @@ model MetaAd {
   destination  String    @default("website")
   url          String?
   webinarTitle String?
+  /// the event date (a webinar, or any date to show on the banner)
   webinarAt    DateTime?
+  /// the pill at the top of the banner, e.g. "Bezpłatny webinar on-line"
+  badgeText    String?
+  /// show the day and date (in gold) on the banner
+  showDate     Boolean   @default(true)
   /// typographic | process_steps | comparison (the version without a photo); body = steps
   layout       String    @default("typographic")
   body         String?

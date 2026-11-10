@@ -5,7 +5,7 @@ import { drawCreative } from "../../src/lib/adwords/draw";
 import { DEFAULT_THEME } from "../../src/lib/themes";
 import { META_FORMATS, isoToWarsaw, warsawToIso, metaChecks, metaCreative, metaCsv, metaStatus, metaVersions, webinarBadge, type MetaAdData } from "../../src/lib/adwords/meta";
 
-const ad: MetaAdData = { name: "Webinar listopad", primaryText: "Rozwód bez walki w sądzie? Na webinarze pokażemy, jak przygotować plan.", metaHeadline: "Bezpłatny webinar o rozwodzie", description: "24 listopada, 19:00", ctaButton: "SIGN_UP", headline: "Rozwód bez walki? Webinar o planie rozwodu", ctaImage: "Zapisz się na webinar", destination: "webinar", url: "https://nowy-etap.pl/webinar/", webinarTitle: "Plan rozwodu", webinarAt: "2026-11-24T18:00:00Z", layout: "typographic", body: null, withoutExpert: true, photoIds: ["p1"] };
+const ad: MetaAdData = { name: "Webinar listopad", primaryText: "Rozwód bez walki w sądzie? Na webinarze pokażemy, jak przygotować plan.", metaHeadline: "Bezpłatny webinar: rozwód", description: "24 listopada, 19:00", ctaButton: "SIGN_UP", headline: "Rozwód bez walki? Webinar o planie rozwodu", ctaImage: "Zapisz się na webinar", destination: "webinar", url: "https://nowy-etap.pl/webinar/", webinarTitle: "Plan rozwodu", webinarAt: "2026-11-24T18:00:00Z", layout: "typographic", body: null, withoutExpert: true, photoIds: ["p1"] };
 const photos = [{ id: "p1", name: "Anna", consentConfirmed: true }];
 
 describe("Meta ads", () => {
@@ -13,9 +13,10 @@ describe("Meta ads", () => {
     expect(webinarBadge("2026-11-24T18:00:00Z")).toMatch(/^Webinar · wt\.?,? 24 lis · 19:00$/);
     expect(metaVersions(ad)).toEqual(["none", "p1"]);
     expect(metaVersions({ withoutExpert: false, photoIds: [] })).toEqual(["none"]);
-    expect(META_FORMATS.map((f) => `${f.width}x${f.height}`)).toEqual(["1080x1080", "1080x1350", "1080x1920"]);
+    expect(META_FORMATS.map((f) => `${f.width}x${f.height}`)).toEqual(["1440x1440", "1440x1800", "1440x2560"]);
     const c = metaCreative(ad, "story", true);
-    expect([c.layout, c.copy.badge, c.safeInsets]).toEqual(["expert_split", webinarBadge(ad.webinarAt), { top: 0.14, bottom: 0.35, left: 0.06, right: 0.06 }]);
+    expect([c.layout, c.copy.badge, c.copy.dateLine, c.safeInsets]).toEqual(["expert_split", "Webinar", "wtorek, 24 listopada · 19:00", { top: 0.14, bottom: 0.35, left: 0.06, right: 0.06 }]);
+    expect(metaCreative({ ...ad, badgeText: "Bezpłatny webinar on-line", showDate: false }, "square", false).copy).toMatchObject({ badge: "Bezpłatny webinar on-line", dateLine: null });
     expect(metaCreative({ ...ad, destination: "website" }, "square", false).copy.badge).toBeNull();
   });
   it("checks: a past webinar, no URL, texts over Meta's limits, a photo without consent", () => {
@@ -24,7 +25,7 @@ describe("Meta ads", () => {
     expect(metaChecks(ad, { photos, now: new Date("2026-11-25T10:00:00Z") }).some((c) => c.level === "blokada" && /już się odbył/.test(c.message))).toBe(true);
     expect(metaChecks({ ...ad, url: "" }, { photos, now }).some((c) => c.level === "blokada")).toBe(true);
     expect(metaChecks({ ...ad, webinarAt: null }, { photos, now }).some((c) => /bez daty/.test(c.message))).toBe(true);
-    expect(metaChecks({ ...ad, primaryText: "x".repeat(200), metaHeadline: "y".repeat(50) }, { photos, now }).filter((c) => c.level === "do_poprawy")).toHaveLength(2);
+    expect(metaChecks({ ...ad, primaryText: "x".repeat(200), metaHeadline: "y".repeat(30) }, { photos, now }).filter((c) => c.level === "do_poprawy")).toHaveLength(2);
     expect(metaStatus(metaChecks(ad, { photos: [{ id: "p1", name: "Anna", consentConfirmed: false }], now }))).toBe("blokada");
   });
   it("every format renders without overflow and keeps text inside the safe zone (incl. the 9:16 Reels zone)", () => {
