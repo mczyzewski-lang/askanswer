@@ -254,11 +254,16 @@ export function ThemesView({ themes, experts, initialId, embedded = false }: { t
           <Card className="space-y-3 p-5" data-testid="theme-logos">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="font-medium">Logo</p>
-              {THEME_PRESETS.find((p) => p.key === draft.presetKey && (p.logoFile || p.logoDarkFile)) ? (
-                <Button variant="outline" onClick={() => void save({ presetLogos: draft.presetKey! } as never)} data-testid="preset-logos">
-                  <ImagePlus /> Wstaw logo marki {THEME_PRESETS.find((p) => p.key === draft.presetKey)?.name}
-                </Button>
-              ) : null}
+              {/* the brand logos that come with the app (both versions) — for any theme */}
+              <div className="flex flex-wrap gap-2">
+                {THEME_PRESETS.filter((p) => p.logoFile || p.logoDarkFile)
+                  .sort((x, y) => (x.key === draft.presetKey ? -1 : y.key === draft.presetKey ? 1 : 0))
+                  .map((p) => (
+                    <Button key={p.key} variant="outline" onClick={() => void save({ presetLogos: p.key } as never)} data-testid={`preset-logos-${p.key}`}>
+                      <ImagePlus /> Wstaw logo {p.name}
+                    </Button>
+                  ))}
+              </div>
             </div>
             {(
               [

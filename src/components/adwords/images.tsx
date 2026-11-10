@@ -68,6 +68,14 @@ export function ImagesTab({ data, reload, toast }: { data: AwData; reload: () =>
   if (!images.length) return <Card className="p-6 text-sm text-muted">Brak grafik — zaimportuj CSV (zakładka „Import CSV”).</Card>;
   return (
     <div className="space-y-4">
+      {!data.logoUrl && !data.logoDarkUrl ? (
+        <Card className="border-amber-300 bg-amber-50 p-3 text-sm text-amber-900" data-testid="no-logo">
+          Motyw projektu nie ma logo, więc grafiki są bez logo.{" "}
+          <a className="font-medium underline" href={`/admin/projects/${data.project.id}/settings?section=theme`}>
+            Ustawienia projektu → Motyw projektu → „Wstaw logo Nowy Etap” albo wgraj własne (SVG/PNG)
+          </a>
+        </Card>
+      ) : null}
       <BestPractices platform="google" />
       <MoreCreatives data={data} reload={reload} toast={toast} picked={picked} setPicked={setPicked} />
       <div className="flex flex-wrap items-center gap-2" data-testid="image-filters">

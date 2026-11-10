@@ -956,7 +956,9 @@ function drawComparisonCards(ctx: Ctx2D, input: CreativeInput, S: Box, kind: "la
   const C: Box = wide ? { x: S.x + S.w * 0.47, y: S.y, w: S.w * 0.53, h: S.h } : { x: S.x, y, w: S.w, h: L.y + L.h - bottomH - y };
   // side by side; stacked in the landscape's right column (wide cards keep the text readable)
   const stacked = wide || W / H < 0.65;
-  const gap = unit * (stacked ? 0.045 : 0.05);
+  const gap = unit * (stacked ? 0.045 : 0.055);
+  // the VS: red, bigger than the gap (it overlaps both cards), white ring
+  const vsR = Math.min(unit * 0.068, gap * 1.25);
   const cw = stacked ? C.w : (C.w - gap) / 2;
   const ch = stacked ? (C.h - gap) / 2 : C.h;
   overflow ||= ch <= unit * 0.05;
@@ -976,8 +978,7 @@ function drawComparisonCards(ctx: Ctx2D, input: CreativeInput, S: Box, kind: "la
     // the padding shrinks with the words when the card is tight
     const padK = (kk: number) => pad * Math.max(0.55, Math.min(1, kk));
     // the VS circle bites into the inner side of each card (side by side): the words keep clear of it
-    const vsR = Math.min(unit * 0.052, gap * 0.95);
-    const bite = stacked ? 0 : Math.max(0, vsR - gap / 2 + unit * 0.012);
+    const bite = stacked ? 0 : Math.max(0, vsR - gap / 2 + unit * 0.004);
     const tx = cx + pad + (i === 1 ? bite : 0);
     const tw = cw - pad * 2 - bite;
     let desc = c.desc;
@@ -1023,21 +1024,21 @@ function drawComparisonCards(ctx: Ctx2D, input: CreativeInput, S: Box, kind: "la
     contrasts.push(contrast(c.ttlInk, c.fill), contrast(c.labInk, c.fill), ...(df ? [contrast(c.descInk, c.fill)] : []));
     boxes.push({ x: cx, y: cy, w: cw, h: ch });
   });
-  // the gold VS between the cards
+  // the red VS between the cards
   {
-    const rr = Math.min(unit * 0.052, gap * 0.95); // (= vsR above)
+    const rr = vsR;
     const vx = stacked ? C.x + cw * 0.82 : C.x + cw + gap / 2;
     const vy = stacked ? C.y + ch + gap / 2 : C.y + Math.max(0, ch) / 2;
-    ctx.fillStyle = gold;
+    ctx.fillStyle = "#C8102E";
     ctx.beginPath();
     ctx.arc(vx, vy, rr, 0, Math.PI * 2);
     ctx.fill();
-    ctx.strokeStyle = bg;
-    ctx.lineWidth = Math.max(3, unit * 0.007);
+    ctx.strokeStyle = "#FFFFFF";
+    ctx.lineWidth = Math.max(4, unit * 0.009);
     ctx.stroke();
-    const vInk = contrast("#FFFFFF", gold) >= 2.5 ? "#FFFFFF" : dark;
-    ctx.fillStyle = vInk;
-    ctx.font = label(rr * 0.78);
+    ctx.fillStyle = "#FFFFFF";
+    contrasts.push(contrast("#FFFFFF", "#C8102E"));
+    ctx.font = label(rr * 0.82);
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillText("VS", vx, vy + rr * 0.04);
