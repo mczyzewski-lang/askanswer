@@ -15,7 +15,7 @@ describe("Meta ads", () => {
     expect(metaVersions({ withoutExpert: false, photoIds: [] })).toEqual(["none"]);
     expect(META_FORMATS.map((f) => `${f.width}x${f.height}`)).toEqual(["1440x1440", "1440x1800", "1440x2560"]);
     const c = metaCreative(ad, "story", true);
-    expect([c.layout, c.copy.badge, c.copy.dateLine, c.safeInsets]).toEqual(["expert_split", "Webinar", "wtorek, 24 listopada · 19:00", { top: 0.14, bottom: 0.35, left: 0.06, right: 0.06 }]);
+    expect([c.layout, c.copy.badge, c.copy.dateLine, c.safeInsets]).toEqual(["expert_split", "Webinar", "Wtorek 19:00,\n24 Listopada", { top: 0.14, bottom: 0.35, left: 0.06, right: 0.06 }]);
     expect(metaCreative({ ...ad, badgeText: "Bezpłatny webinar on-line", showDate: false }, "square", false).copy).toMatchObject({ badge: "Bezpłatny webinar on-line", dateLine: null });
     expect(metaCreative({ ...ad, destination: "website" }, "square", false).copy.badge).toBeNull();
   });

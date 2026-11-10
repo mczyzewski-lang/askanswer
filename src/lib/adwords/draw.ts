@@ -81,7 +81,7 @@ export interface CreativeInput {
   width: number;
   height: number;
   layout: LayoutKey;
-  copy: { headline: string; subheadline?: string | null; body?: string | null; cta?: string | null; comparison?: ComparisonCopy | null; /** a short pill above the headline (e.g. "Bezpłatny webinar on-line") */ badge?: string | null; /** a gold line under the pill (e.g. "wtorek, 24 listopada · 19:00") */ dateLine?: string | null };
+  copy: { headline: string; subheadline?: string | null; body?: string | null; cta?: string | null; comparison?: ComparisonCopy | null; /** a short pill above the headline (e.g. "Bezpłatny webinar on-line") */ badge?: string | null; /** a gold line under the pill (e.g. "Wtorek 19:00,\n24 Listopada") */ dateLine?: string | null };
   theme: ThemeTokens;
   logo?: ImageLike | null;
   photo?: PhotoInput | null;
@@ -239,6 +239,15 @@ function fit(ctx: Ctx2D, text: string, font: (px: number) => string, start: numb
   return { px: min, lines: w.lines.slice(0, maxLines), overflow: true, lineH: min * lineH };
 }
 
+/** fixed lines (no re-wrap) at the largest size where the widest one fits */
+function fitLines(ctx: Ctx2D, lines: string[], font: (px: number) => string, start: number, min: number, maxW: number, lineH = 1.12): Fitted {
+  for (let px = Math.round(start); px >= min; px -= Math.max(1, Math.round(px * 0.04))) {
+    ctx.font = font(px);
+    if (lines.every((l) => ctx.measureText(l).width <= maxW)) return { px, lines, overflow: false, lineH: px * lineH };
+  }
+  return { px: min, lines, overflow: true, lineH: min * lineH };
+}
+
 function drawLines(ctx: Ctx2D, f: Fitted, font: (px: number) => string, x: number, y: number, color: string, align: "left" | "center" = "left", maxW = 0) {
   ctx.font = font(f.px);
   ctx.fillStyle = color;
@@ -385,7 +394,7 @@ export function drawCreative(ctx: Ctx2D, input: CreativeInput): Measure {
       T = { x: S.x, y: S.y, w: S.w, h: Math.min(S.y + S.h, H * 0.6) - S.y };
     } else {
       // 4:5: a pill and a date line take room — the photo gets a bit less
-      const ph = H * (0.5 - (input.copy.badge?.trim() ? 0.05 : 0) - (input.copy.dateLine?.trim() ? 0.05 : 0));
+      const ph = H * (0.5 - (input.copy.badge?.trim() ? 0.05 : 0) - (input.copy.dateLine?.trim() ? 0.075 : 0));
       region = { x: 0, y: 0, w: W, h: ph };
       T = { x: S.x, y: ph, w: S.w, h: S.y + S.h - ph };
     }
@@ -474,9 +483,8 @@ export function drawCreative(ctx: Ctx2D, input: CreativeInput): Measure {
     }
   }
   const dateText = (input.copy.dateLine ?? "").trim();
-  // the date: one line, two in a narrow column ("wtorek, 24 listopada" / "19:00")
-  let ddf = dateText && layout !== "process_steps" ? fit(ctx, dateText, label, unit * 0.05, unit * 0.034, T.w, 1, 1.15) : null;
-  if (ddf?.overflow) ddf = fit(ctx, dateText.replace(" · ", "\u00A0· "), label, unit * 0.045, unit * 0.03, T.w, 2, 1.15);
+  // the date: its own lines ("Wtorek 20:00," / "17 Listopada"), one size, each line kept whole
+  const ddf = dateText && layout !== "process_steps" ? fitLines(ctx, dateText.split("\n").map((l) => l.trim()).filter(Boolean), label, unit * 0.05, unit * 0.03, T.w, 1.15) : null;
   const dateH = ddf ? ddf.lines.length * ddf.lineH : 0;
   const badgeBlock = (bdf ? bdf.px * 2 + unit * (ddf ? 0.02 : 0.035) : 0) + (ddf ? dateH + unit * 0.03 : 0);
   const headStart = unit * (kind === "landscape" ? 0.12 : kind === "portrait" ? 0.115 : 0.11) * Math.min(1, T.w / unit / 0.55);

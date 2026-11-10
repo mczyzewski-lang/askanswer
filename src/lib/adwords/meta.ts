@@ -76,9 +76,12 @@ export function eventDateLine(at: string | Date | null | undefined): string | nu
   if (!at) return null;
   const d = new Date(at);
   if (Number.isNaN(d.getTime())) return null;
-  const day = new Intl.DateTimeFormat("pl-PL", { timeZone: WARSAW, weekday: "long", day: "numeric", month: "long" }).format(d);
-  const time = new Intl.DateTimeFormat("pl-PL", { timeZone: WARSAW, hour: "2-digit", minute: "2-digit" }).format(d);
-  return `${day} · ${time}`;
+  const part = (o: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat("pl-PL", { timeZone: WARSAW, ...o }).format(d);
+  const cap = (s: string) => s.charAt(0).toLocaleUpperCase("pl-PL") + s.slice(1);
+  const time = part({ hour: "2-digit", minute: "2-digit" });
+  const month = part({ day: "numeric", month: "long" }).replace(/^\d+\s*/, "");
+  // two lines: "Wtorek 20:00," / "17 Listopada"
+  return `${cap(part({ weekday: "long" }))} ${time},\n${part({ day: "numeric" })} ${cap(month)}`;
 }
 export const DEFAULT_WEBINAR_BADGE = "Bezpłatny webinar on-line";
 

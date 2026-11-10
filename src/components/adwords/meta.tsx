@@ -165,7 +165,7 @@ function MetaCard({ ad, data, base, onEdit, onCopy, onDelete, onInfographic, gen
         <div className="min-w-0">
           <p className="font-medium">{ad.name}</p>
           <p className="text-xs text-muted">
-            {ad.destination === "webinar" ? `Webinar: ${ad.webinarTitle ?? ""} · ${eventDateLine(ad.webinarAt) ?? "bez daty"}` : "Strona"} · {ad.url ?? "brak URL"} · przycisk „{META_CTAS[ad.ctaButton] ?? ad.ctaButton}”
+            {ad.destination === "webinar" ? `Webinar: ${ad.webinarTitle ?? ""} · ${eventDateLine(ad.webinarAt)?.replace("\n", " ") ?? "bez daty"}` : "Strona"} · {ad.url ?? "brak URL"} · przycisk „{META_CTAS[ad.ctaButton] ?? ad.ctaButton}”
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
