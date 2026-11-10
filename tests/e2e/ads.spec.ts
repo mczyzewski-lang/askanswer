@@ -323,7 +323,7 @@ test("ads scoring: OpenAI reviews each script, the new version and an A/B hook c
   await page.getByTestId("ads-score").first().click();
   const dlg = page.getByTestId("ads-review");
   await expect(dlg).toContainText("Hook ogólny");
-  await expect(dlg).toContainText("HOOK 0–2 s");
+  await expect(dlg).toContainText("HOOK 0-2 s");
   await expect(dlg.getByTestId("ads-new-version")).toContainText("Nowe body z propozycji.");
   page.on("dialog", (d) => void d.accept());
   await dlg.getByTestId("ads-apply-hook").first().click();

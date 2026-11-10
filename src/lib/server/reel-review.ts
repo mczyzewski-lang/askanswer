@@ -257,7 +257,7 @@ export async function reviewReel(p: ReviewInput): Promise<ReelReview & { model: 
   const text = data.choices?.[0]?.message?.content ?? "";
   let parsed: unknown;
   try {
-    parsed = JSON.parse(text.replace(/^```(?:json)?\s*|\s*```$/g, "").replace(/[ \u00A0]*[—–][ \u00A0]*/g, (m: string) => (m.length === 1 ? "-" : " - ")));
+    parsed = JSON.parse(text.replace(/^```(?:json)?\s*|\s*```$/g, "").replace(/[—–]/g, "-"));
   } catch {
     throw new Error("OpenAI zwrócił odpowiedź, której nie da się odczytać — spróbuj ponownie.");
   }
@@ -284,7 +284,7 @@ export async function suggestHooks(p: ReviewInput, count = 3): Promise<Array<{ m
   if (!res.ok) throw new Error(openaiErrorText(res.status, data));
   let parsed: { altHooks?: Array<{ mechanism?: unknown; text?: unknown }> } = {};
   try {
-    parsed = JSON.parse((data.choices?.[0]?.message?.content ?? "").replace(/^```(?:json)?\s*|\s*```$/g, "").replace(/[ \u00A0]*[—–][ \u00A0]*/g, (m: string) => (m.length === 1 ? "-" : " - ")));
+    parsed = JSON.parse((data.choices?.[0]?.message?.content ?? "").replace(/^```(?:json)?\s*|\s*```$/g, "").replace(/[—–]/g, "-"));
   } catch {
     throw new Error("OpenAI zwrócił odpowiedź, której nie da się odczytać — spróbuj ponownie.");
   }

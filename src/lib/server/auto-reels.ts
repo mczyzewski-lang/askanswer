@@ -49,7 +49,7 @@ async function askWindow(win: ArSegment[], n: number, opts: { min: number; max: 
   const data = (await res.json().catch(() => ({}))) as { choices?: Array<{ message?: { content?: string } }>; error?: { message?: string; code?: string } };
   if (!res.ok) throw new Error(openaiErrorText(res.status, data));
   try {
-    const parsed = JSON.parse((data.choices?.[0]?.message?.content ?? "{}").replace(/^```(?:json)?\s*|\s*```$/g, "").replace(/[ \u00A0]*[—–][ \u00A0]*/g, (m: string) => (m.length === 1 ? "-" : " - "))) as { reels?: ArRawPick[] };
+    const parsed = JSON.parse((data.choices?.[0]?.message?.content ?? "{}").replace(/^```(?:json)?\s*|\s*```$/g, "").replace(/[—–]/g, "-")) as { reels?: ArRawPick[] };
     return Array.isArray(parsed.reels) ? parsed.reels : [];
   } catch {
     throw new Error("OpenAI zwrócił odpowiedź, której nie da się odczytać — spróbuj ponownie.");

@@ -98,7 +98,7 @@ export async function assistantDraft(projectId: string, prompt: string, kind: "i
   if (!res.ok) return { ...templateDraft(prompt, kind, code), warning: openaiErrorText(res.status, data) };
   let o: Record<string, unknown> = {};
   try {
-    o = JSON.parse((data.choices?.[0]?.message?.content ?? "{}").replace(/^```(?:json)?\s*|\s*```$/g, "").replace(/[ \u00A0]*[—–][ \u00A0]*/g, (m: string) => (m.length === 1 ? "-" : " - ")));
+    o = JSON.parse((data.choices?.[0]?.message?.content ?? "{}").replace(/^```(?:json)?\s*|\s*```$/g, "").replace(/[—–]/g, "-"));
   } catch {
     return { ...templateDraft(prompt, kind, code), warning: "OpenAI zwrócił odpowiedź, której nie da się odczytać — szkic z Twojego opisu." };
   }

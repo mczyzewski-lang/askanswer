@@ -6,8 +6,8 @@ const CONTENT: Record<string, string[]> = {
   adwordsAsset: ["headline", "subheadline", "body", "cta", "adText", "spokenText", "screenText", "lp"],
   metaAd: ["primaryText", "metaHeadline", "description", "headline", "ctaImage", "badgeText", "body", "webinarTitle", "extra"],
 };
-function clean(model: string, data: unknown): unknown {
-  if (Array.isArray(data)) return data.map((d) => clean(model, d));
+export function cleanContent(model: string, data: unknown): unknown {
+  if (Array.isArray(data)) return data.map((d) => cleanContent(model, d));
   if (!data || typeof data !== "object") return data;
   const out: Record<string, unknown> = { ...(data as Record<string, unknown>) };
   for (const f of CONTENT[model] ?? []) {
@@ -23,19 +23,19 @@ function make() {
   const base = new PrismaClient();
   const ops = (model: string) => ({
     async create({ args, query }: { args: { data: unknown }; query: (a: unknown) => Promise<unknown> }) {
-      return query({ ...args, data: clean(model, args.data) });
+      return query({ ...args, data: cleanContent(model, args.data) });
     },
     async createMany({ args, query }: { args: { data: unknown }; query: (a: unknown) => Promise<unknown> }) {
-      return query({ ...args, data: clean(model, args.data) });
+      return query({ ...args, data: cleanContent(model, args.data) });
     },
     async update({ args, query }: { args: { data: unknown }; query: (a: unknown) => Promise<unknown> }) {
-      return query({ ...args, data: clean(model, args.data) });
+      return query({ ...args, data: cleanContent(model, args.data) });
     },
     async updateMany({ args, query }: { args: { data: unknown }; query: (a: unknown) => Promise<unknown> }) {
-      return query({ ...args, data: clean(model, args.data) });
+      return query({ ...args, data: cleanContent(model, args.data) });
     },
     async upsert({ args, query }: { args: { create: unknown; update: unknown }; query: (a: unknown) => Promise<unknown> }) {
-      return query({ ...args, create: clean(model, args.create), update: clean(model, args.update) });
+      return query({ ...args, create: cleanContent(model, args.create), update: cleanContent(model, args.update) });
     },
   });
   return base.$extends({ query: { adwordsAsset: ops("adwordsAsset"), metaAd: ops("metaAd") } as never });

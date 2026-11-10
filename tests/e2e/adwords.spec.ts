@@ -170,7 +170,7 @@ test("Google Adwords UI: import, gallery, editor (preview = export), expert phot
   await editor.getByTestId("concept-save").click();
   await expect(page.getByText("Zapisano koncept")).toBeVisible();
   const data = await (await request.get(`/api/admin/adwords/${project.id}`)).json();
-  expect(data.assets.filter((a: { conceptId: string; headline: string }) => a.conceptId === "G02" && a.headline === "Najpierw plan, potem pozew — ąęż")).toHaveLength(3);
+  expect(data.assets.filter((a: { conceptId: string; headline: string }) => a.conceptId === "G02" && a.headline === "Najpierw plan, potem pozew - ąęż")).toHaveLength(3);
   await editor.getByText("Safe area (80%)").click(); // preview without the frame, like the export
   await page.waitForTimeout(800);
   const diff = await page.evaluate(async ({ id, pid }) => {

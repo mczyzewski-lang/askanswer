@@ -7,7 +7,7 @@ import fsp from "node:fs/promises";
 import { Prisma } from "@prisma/client";
 import { createCanvas, loadImage, type Image } from "@napi-rs/canvas";
 import { strToU8, zipSync } from "fflate";
-import { prisma } from "./db";
+import { cleanContent, prisma } from "./db";
 import { HttpError } from "./errors";
 import { signedUrl, toLocalFile } from "./storage";
 import { registerFonts } from "../render/server-render";
@@ -50,7 +50,7 @@ export async function syncScriptColumns(projectId: string, conceptId: string | n
   const out = collapseDerivedScenes(rows.map(toExportable));
   for (const o of out) {
     const prev = rows.find((r) => r.assetKey === o.assetKey);
-    if (prev && prev.rowType === "video" && !same(prev.lp, o.lp)) await prisma.adwordsAsset.update({ where: { id: prev.id }, data: { lp: (o.lp ?? Prisma.JsonNull) as Prisma.InputJsonValue } });
+    if (prev && prev.rowType === "video" && !same(prev.lp, (cleanContent("adwordsAsset", { lp: o.lp }) as { lp: unknown }).lp)) await prisma.adwordsAsset.update({ where: { id: prev.id }, data: { lp: (o.lp ?? Prisma.JsonNull) as Prisma.InputJsonValue } });
   }
 }
 
@@ -136,7 +136,8 @@ export async function importAdwordsCsv(projectId: string, text: string, opts: { 
           created++;
           continue;
         }
-        const changed = Object.entries({ ...data, lp: lpVal }).some(([k, v]) => !same((prev as Record<string, unknown>)[k], v));
+        // compared as it would be saved (content without the long dash)
+        const changed = Object.entries(cleanContent("adwordsAsset", { ...data, lp: lpVal }) as Record<string, unknown>).some(([k, v]) => !same((prev as Record<string, unknown>)[k], v));
         if (!changed) {
           unchanged++;
           continue;

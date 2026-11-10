@@ -84,7 +84,7 @@ export async function copyFixes(projectId: string): Promise<{ topic: string | nu
   }
   let got: Array<{ key?: string; text?: string }> = [];
   try {
-    got = (JSON.parse((data.choices?.[0]?.message?.content ?? "{}").replace(/^```(?:json)?\s*|\s*```$/g, "").replace(/[ \u00A0]*[—–][ \u00A0]*/g, (m: string) => (m.length === 1 ? "-" : " - "))) as { items?: typeof got }).items ?? [];
+    got = (JSON.parse((data.choices?.[0]?.message?.content ?? "{}").replace(/^```(?:json)?\s*|\s*```$/g, "").replace(/[—–]/g, "-")) as { items?: typeof got }).items ?? [];
   } catch {
     /* fall back below */
   }

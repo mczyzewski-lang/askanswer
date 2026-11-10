@@ -89,7 +89,7 @@ test("CSV v5 (99 columns) and v1 (30): import report, all 50 ad assets + 16 land
   const header = csv.split("\r\n")[0].replace(/^﻿/, "").split(";");
   expect(header).toEqual(V5.split(/\r?\n/)[0].replace(/^﻿/, "").split(";"));
   expect(csv).toContain("video_spoken_3_9");
-  expect(csv).toContain("Najpierw plan — co ustalić.");
+  expect(csv).toContain("Najpierw plan - co ustalić.");
   const p5b = await newProject(request, "Nowy Etap kopia");
   const r2 = await imp(request, p5b, csv);
   expect([r2.created, r2.derivedScenes, r2.total]).toEqual([82, 16, 66]);
@@ -97,7 +97,7 @@ test("CSV v5 (99 columns) and v1 (30): import report, all 50 ad assets + 16 land
   const s2 = await state(request, p5b);
   expect(s2).toEqual(s1);
   expect((s2["G07-L"].lp as Record<string, string>).comparison_right).toBe("Plan, potem pozew");
-  expect(s2["V01-SC2"].spokenText).toBe("Najpierw plan — co ustalić.");
+  expect(s2["V01-SC2"].spokenText).toBe("Najpierw plan - co ustalić.");
   // and back into the first project: nothing changes, nothing is duplicated
   const back = await imp(request, p5, csv);
   expect([back.created, back.updated]).toEqual([0, 0]);

@@ -67,7 +67,7 @@ export async function draftVisual(compositionId: string, d: DraftInput) {
   const data = (await res.json().catch(() => ({}))) as { choices?: Array<{ message?: { content?: string } }>; error?: { message?: string; code?: string } };
   if (!res.ok) return { ...fallback(d, style, theme), engine: "template" as const, warning: openaiErrorText(res.status, data) };
   try {
-    const out = JSON.parse((data.choices?.[0]?.message?.content ?? "{}").replace(/^```(?:json)?\s*|\s*```$/g, "").replace(/[ \u00A0]*[—–][ \u00A0]*/g, (m: string) => (m.length === 1 ? "-" : " - "))) as Record<string, unknown>;
+    const out = JSON.parse((data.choices?.[0]?.message?.content ?? "{}").replace(/^```(?:json)?\s*|\s*```$/g, "").replace(/[—–]/g, "-")) as Record<string, unknown>;
     if (d.kind === "video" && typeof out.prompt === "string" && out.prompt.trim().length > 20) {
       const prompt = out.prompt.trim();
       const hasPalette = [theme.primary, theme.accent, theme.background].some((h) => prompt.toLowerCase().includes(h.toLowerCase()) || prompt.toLowerCase().includes(colorName(h).toLowerCase()));

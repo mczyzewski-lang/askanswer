@@ -181,7 +181,7 @@ export async function proposeContent(projectId: string): Promise<{ analysis: Ana
   if (!res?.ok) return { analysis, proposals: finish(ruleProposals(analysis)), summary: analysis.bullets, tests: [], engine: "rule", warning: res ? openaiErrorText(res.status, data) : "Brak połączenia z OpenAI — propozycje z reguł." };
   let o: Record<string, unknown> = {};
   try {
-    o = JSON.parse((data.choices?.[0]?.message?.content ?? "{}").replace(/^```(?:json)?\s*|\s*```$/g, "").replace(/[ \u00A0]*[—–][ \u00A0]*/g, (m: string) => (m.length === 1 ? "-" : " - ")));
+    o = JSON.parse((data.choices?.[0]?.message?.content ?? "{}").replace(/^```(?:json)?\s*|\s*```$/g, "").replace(/[—–]/g, "-"));
   } catch {
     return { analysis, proposals: finish(ruleProposals(analysis)), summary: analysis.bullets, tests: [], engine: "rule", warning: "OpenAI zwrócił odpowiedź, której nie da się odczytać — propozycje z reguł." };
   }

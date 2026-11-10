@@ -4,7 +4,8 @@
  */
 export function plainDashes(s: string): string {
   if (!/[—–]/.test(s)) return s;
-  return s.replace(/[  ]*[—–][  ]*/g, (m) => (m.length === 1 ? "-" : " - "));
+  // only the character changes: the spacing around it stays as written
+  return s.replace(/[—–]/g, "-");
 }
 
 /** every string inside (objects, arrays) with plain dashes */
