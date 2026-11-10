@@ -7,6 +7,7 @@ import { PMAX_SPEC } from "@/lib/adwords/spec";
 import { LAYOUTS, type LayoutKey } from "@/lib/adwords/draw";
 import { CreativeCanvas, SceneCanvas } from "./canvas";
 import type { AwData, Toast } from "./types";
+import { ProposalsPanel } from "./proposals";
 
 interface Draft {
   kind: "image" | "video";
@@ -58,6 +59,7 @@ export function AssistantTab({ data, reload, toast, onAdded }: { data: AwData; r
   const setIm = (p: Partial<NonNullable<Draft["image"]>>) => setDraft((d) => (d && d.image ? { ...d, image: { ...d.image, ...p } } : d));
   return (
     <div className="space-y-4" data-testid="assistant">
+      <ProposalsPanel data={data} reload={reload} toast={toast} />
       <Card className="space-y-3 p-5">
         <p className="font-medium">Asystent kreacji</p>
         <p className="text-sm text-muted">Napisz, jaką kreację chcesz dodać i z jaką treścią — AI przygotuje koncept w motywie projektu (grafika w 3 formatach albo scenariusz wideo do nagrania), z zasadami PMax i redakcyjnymi. Nic się nie zapisze, dopóki nie zaakceptujesz.</p>

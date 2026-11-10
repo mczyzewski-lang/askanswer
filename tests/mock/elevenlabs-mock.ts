@@ -170,6 +170,26 @@ const server = http.createServer(async (req, res) => {
             : { kind: "image", concept_id: code, rationale: "Jedno hasło o planie i CTA.", image: { layout: "typographic", headline: "Plan przed pozwem", subheadline: "Ustalcie wszystko spokojnie", body: "", cta: "Umów konsultację", visual_brief: "Typografia na tle motywu", use_expert_photo: false }, headline_for_ads: "Plan przed pozwem" };
           return json(200, { id: "chatcmpl-mock", object: "chat.completion", model: body.model, choices: [{ index: 0, message: { role: "assistant", content: JSON.stringify(out) }, finish_reason: "stop" }] });
         }
+        if (String(body.messages?.[0]?.content ?? "").startsWith("ADWORDS_PROPOSE")) {
+          const out = {
+            summary: ["Najwięcej kliknięć dał kąt „bez walki w sądzie” — budujemy na nim.", "Brakuje krótkich nagłówków ≤15 znaków.", "Dodajemy porównanie i proces jako nowe kąty."],
+            headlines: [
+              { text: "Rozwód bez walki w sądzie", angle: "bez_wojny", why: "lider ekspozycji" },
+              { text: "Rozwód? Najpierw plan", angle: "plan_pozew", why: "pytanie + mechanizm" },
+              { text: "Rozwód z planem", angle: "plan_pozew", why: "krótki ≤15" },
+              { text: "Najlepszy rozwód w mieście", angle: "inne", why: "test reguł" },
+            ],
+            long_headlines: [{ text: "Rozwód bez walki: najpierw plan i ustalenia, dopiero potem pozew", angle: "plan_pozew", why: "pełny mechanizm" }],
+            descriptions: [{ text: "Porozmawiaj z nami o planie rozwodu i poznaj koszt naszej usługi przed decyzją.", angle: "koszt", why: "koszt usługi" }],
+            image_concepts: [
+              { headline: "Rozwód: tradycyjnie czy z planem?", layout: "comparison", cta: "Umów rozmowę", left_label: "Tradycyjnie", left: "Najpierw pozew, potem spór", right_label: "Z planem", right: "Najpierw ustalenia, potem pozew", angle: "porównanie", why: "nowy kąt" },
+              { headline: "Rozwód krok po kroku", layout: "process_steps", cta: "Umów rozmowę", body: "Rozmowa | Plan | Pozew", angle: "proces", why: "redukcja niepewności" },
+            ],
+            meta_ads: [{ name: "Meta AI — bez walki", primary_text: "Rozwód nie musi oznaczać walki w sądzie. Zacznij od rozmowy i planu.", headline: "Rozwód bez walki w sądzie", description: "Najpierw plan", image_headline: "Rozwód bez walki w sądzie", cta_button: "CONTACT_US", angle: "bez_wojny", why: "lider" }],
+            tests: [{ hypothesis: "Konkret wygrywa z ogólnikiem", a: "Rozwód bez walki w sądzie", b: "Rozwód bez wojny" }],
+          };
+          return json(200, { id: "chatcmpl-mock", object: "chat.completion", model: body.model, choices: [{ index: 0, message: { role: "assistant", content: JSON.stringify(out) }, finish_reason: "stop" }] });
+        }
         if (String(body.messages?.[0]?.content ?? "").startsWith("ADWORDS_COMPARE")) {
           const h = /Hasło: (.+)/.exec(user)?.[1] ?? "Plan";
           const out = { title: "Rozwód: tradycyjnie czy z planem?", left_label: "Tradycyjnie", left: "Najpierw pozew, potem spór", right_label: "Z planem", right: h.slice(0, 45) };

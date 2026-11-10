@@ -32,7 +32,7 @@ export interface AssistantDraft {
   warning?: string | null;
 }
 
-const nextCode = (taken: Set<string>, prefix: string) => {
+export const nextCode = (taken: Set<string>, prefix: string) => {
   for (let i = 1; i < 1000; i++) {
     const c = `${prefix}${String(i).padStart(2, "0")}`;
     if (!taken.has(c)) return c;
