@@ -189,6 +189,20 @@ export function MoreCreatives({ data, reload, toast, picked, setPicked }: { data
           {busy === "tpl" ? <Loader2 className="animate-spin" /> : <Columns2 />} 5 gotowych porównań (karty)
         </Button>
         <Button
+          disabled={!data.canEdit || busy !== null}
+          title="10 grafik PMax z kątów, które w historii miały najwyższy CTR i najwięcej kliknięć: 6 kart porównania + 4 z ekspertem, każda z prawdziwym zdjęciem eksperta (ze zgodą)"
+          onClick={() =>
+            void run("p10", async () => {
+              const r = await api<{ made: string[]; skipped: string[]; photo: string | null }>(`${base}/variants`, { method: "POST", json: { kind: "pmax10" } });
+              await reload();
+              toast(r.made.length ? `Dodano ${r.made.length} reklam PMax z historii: ${r.made.join(", ")}${r.photo ? ` (ekspert: ${r.photo})` : " — dodaj zdjęcie eksperta ze zgodą, żeby podnieść wiarygodność"}` : "Te reklamy są już w galerii")
+            })
+          }
+          data-testid="variants-pmax10"
+        >
+          {busy === "p10" ? <Loader2 className="animate-spin" /> : <Sparkles />} 10 reklam PMax z historii
+        </Button>
+        <Button
           variant="outline"
           disabled={!data.canEdit || busy !== null || !picked.length || running > 0}
           title={picked.length ? "" : "Zaznacz koncepty (pole wyboru na karcie)"}

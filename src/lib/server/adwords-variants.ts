@@ -327,3 +327,89 @@ export async function comparisonTemplates(projectId: string, keys?: string[]) {
   }
   return { made, skipped };
 }
+
+// ------------------------------------------------------------------------- 10 PMax creatives from history
+
+/**
+ * Ten PMax image concepts built on the history report (1 Jan – 8 Nov 2026): the text angles with the
+ * best directional CTR and the most clicks carried into images (the old images had ~0.25% CTR, the
+ * best headlines 12–17%). No numbers without a source, no promise of the unconfirmed free plan, the
+ * topic in every headline (or on top of the card), ≤32 characters, a mechanism in the sub-line, one
+ * CTA, the real expert's photo.
+ */
+export const PMAX_TOP10: Array<{
+  key: string;
+  layout: "comparison" | "expert_split";
+  headline: string;
+  sub: string;
+  cta: string;
+  cmp?: { left_label: string; left_title: string; left: string; right_title: string; right: string };
+  history: string;
+}> = [
+  { key: "bez-walki", layout: "comparison", headline: "Rozwód bez walki w sądzie", sub: "Najpierw ustalenia, potem pozew.", cta: "Sprawdź, jak to działa", cmp: { left_label: "Gdy jest spór", left_title: "Walka w sądzie", left: "Pisma, rozprawy, kolejne terminy", right_title: "Ustalenia przed sądem", right: "Rozmowa, porozumienie, dokumenty" }, history: "„Rozwód bez walki w sądzie”: najwięcej kliknięć (122 tys.), CTR 13,3%" },
+  { key: "zanim-pozew", layout: "comparison", headline: "Sprawdź, zanim złożysz pozew", sub: "Plan i ustalenia przed pozwem.", cta: "Sprawdź przed pozwem", cmp: { left_label: "Tradycyjnie", left_title: "Najpierw pozew", left: "Pozew, odpowiedź, spór o szczegóły", right_title: "Najpierw plan", right: "Ustalenia, dokumenty, potem pozew" }, history: "„Sprawdź, zanim złożysz pozew”: CTR 17,0%" },
+  { key: "obnizyc-koszty", layout: "comparison", headline: "Jak obniżyć koszty rozwodu?", sub: "Poznaj zakres i cenę usługi z góry.", cta: "Sprawdź koszt usługi", cmp: { left_label: "Tradycyjnie", left_title: "„To zależy…”", left: "Kolejne czynności, kolejne koszty", right_title: "Cena znana z góry", right: "Zakres i cena usługi przed decyzją" }, history: "„Jak obniżyć koszty rozwodu?”: najwyższy CTR 17,1%" },
+  { key: "porozumienie", layout: "comparison", headline: "Porozumienie zamiast sporu", sub: "Wspólne ustalenia o dzieciach i majątku.", cta: "Umów konsultację", cmp: { left_label: "Spór", left_title: "Każdy o swoje", left: "Stanowiska, pisma, decyzja sądu", right_title: "Wspólne ustalenia", right: "Dzieci, majątek, kontakty: spisane razem" }, history: "„Porozumienie zamiast sporu”: CTR 10,5%; „Złóż to zamiast pozwu”: 119 tys. kliknięć" },
+  { key: "koszt-z-gory", layout: "comparison", headline: "Chcesz znać koszt z góry?", sub: "Bez niespodzianek i burzy nerwów.", cta: "Poznaj cenę usługi", cmp: { left_label: "Bez wyceny", left_title: "Niespodzianki", left: "Dopłaty za kolejne kroki", right_title: "Cena na start", right: "Wiesz, za co płacisz, zanim zaczniesz" }, history: "opis „Rozwód - chcesz znać z góry koszt i uniknąć burzy nerwów?”: CTR 13,2%, 70 tys. kliknięć" },
+  { key: "bez-winy", layout: "comparison", headline: "Rozwód bez orzekania o winie", sub: "Spokojniej dla Was i dla dzieci.", cta: "Sprawdź, czy to dla Was", cmp: { left_label: "Spór o winę", left_title: "Dowody i świadkowie", left: "Długi spór o to, kto zawinił", right_title: "Zgodny wniosek", right: "Wspólne ustalenia, mniej stresu" }, history: "„Rozwód bez orzekania o winie”: CTR 11,6%" },
+  { key: "mediator", layout: "expert_split", headline: "Spokojny rozwód z mediatorem", sub: "Ustalenia o dzieciach i majątku.", cta: "Umów konsultację", history: "„Spokojny rozwód z mediatorem”: CTR 12,4%; opis o mediatorze: 30 tys. kliknięć" },
+  { key: "dzieci", layout: "expert_split", headline: "Rozwód a opieka nad dziećmi", sub: "Ustalenia z mediatorem, bez sporu.", cta: "Umów konsultację", history: "opis „Mediator pomoże Wam ustalić podział majątku i opiekę nad dziećmi”: 30 tys. kliknięć, CTR 9,7%" },
+  { key: "online", layout: "expert_split", headline: "Mediacja rozwodowa online", sub: "Ustalenia bez wychodzenia z domu.", cta: "Umów rozmowę online", history: "„Mediacja rozwodowa online”: CTR 11,8%" },
+  { key: "plan-pozew", layout: "expert_split", headline: "Rozwód: plan przed pozwem", sub: "Krok po kroku, z prawnikiem.", cta: "Poznaj plan działania", history: "kąt „najpierw porozumienie, potem pozew”: mediana CTR 12,2%" },
+];
+
+/** the ten concepts (P01–P10, 3 Google formats each) with the first consented expert photo; added once */
+export async function pmaxTopTen(projectId: string) {
+  const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, include: { theme: { include: { expertPhotos: true } } } });
+  const photo = project.theme?.expertPhotos.find((p) => p.consentConfirmed) ?? null;
+  const used = await taken(projectId);
+  const existing = await prisma.adwordsAsset.findMany({ where: { projectId, rowType: "image" }, select: { edit: true, campaignCode: true, assetGroup: true, landingUrl: true } });
+  const have = new Set(existing.map((a) => ((a.edit ?? {}) as { template?: string }).template).filter(Boolean));
+  const base = existing.find((a) => a.landingUrl) ?? existing[0] ?? null;
+  const formats = [
+    { key: "L", ratio: "1.91:1", width: 1200, height: 628 },
+    { key: "SQ", ratio: "1:1", width: 1200, height: 1200 },
+    { key: "P", ratio: "4:5", width: 960, height: 1200 },
+  ];
+  let max = (await prisma.adwordsAsset.aggregate({ where: { projectId }, _max: { order: true } }))._max.order ?? 0;
+  const made: string[] = [];
+  const skipped: string[] = [];
+  for (const t of PMAX_TOP10) {
+    if (have.has(`pmax10:${t.key}`)) {
+      skipped.push(t.key);
+      continue;
+    }
+    let code = "";
+    for (let i = 1; i < 1000 && !code; i++) if (!used.has(`P${String(i).padStart(2, "0")}`)) code = `P${String(i).padStart(2, "0")}`;
+    used.add(code);
+    for (const f of formats) {
+      await prisma.adwordsAsset.create({
+        data: {
+          projectId,
+          conceptId: code,
+          assetKey: `${code}-${f.key}`,
+          rowType: "image",
+          aspectRatio: f.ratio,
+          width: f.width,
+          height: f.height,
+          headline: t.headline,
+          subheadline: t.sub,
+          cta: t.cta,
+          layout: t.layout,
+          expertPhotoId: photo?.id ?? null,
+          campaignCode: base?.campaignCode ?? null,
+          assetGroup: base?.assetGroup ?? null,
+          landingUrl: base?.landingUrl ?? null,
+          funnel: "sprzedaz",
+          status: "draft",
+          scoreNote: `Z historii PMax: ${t.history}`.slice(0, 500),
+          ...(t.cmp ? { lp: { layout_id: "comparison", comparison_title: t.headline, comparison_left_label: t.cmp.left_label, comparison_left_title: t.cmp.left_title, comparison_left: t.cmp.left, comparison_right_label: project.name, comparison_right_title: t.cmp.right_title, comparison_right: t.cmp.right } as Prisma.InputJsonValue } : {}),
+          edit: { template: `pmax10:${t.key}` } as Prisma.InputJsonValue,
+          order: ++max,
+        },
+      });
+    }
+    made.push(code);
+  }
+  return { made, skipped, photo: photo?.name ?? null };
+}

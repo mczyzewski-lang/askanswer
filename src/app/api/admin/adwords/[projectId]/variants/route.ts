@@ -2,16 +2,17 @@ import { z } from "zod";
 import { prisma } from "@/lib/server/db";
 import { requireAdmin } from "@/lib/server/auth";
 import { json, route } from "@/lib/server/http";
-import { comparisonTemplates, comparisonVariants, expertVariants, startInfographics } from "@/lib/server/adwords-variants";
+import { comparisonTemplates, comparisonVariants, pmaxTopTen, expertVariants, startInfographics } from "@/lib/server/adwords-variants";
 
 /** more creatives from the concepts: kind "expert" (real photos, at once) or "infographic" (OpenAI, background jobs) */
 export const POST = route(async (req: Request, ctx: { params: Promise<{ projectId: string }> }) => {
   await requireAdmin();
   const { projectId } = await ctx.params;
-  const b = z.object({ kind: z.enum(["expert", "infographic", "comparison", "templates"]), keys: z.array(z.string().max(40)).max(20).optional(), conceptIds: z.array(z.string().max(40)).max(50).optional(), photoIds: z.array(z.string().max(64)).max(30).optional() }).parse(await req.json());
+  const b = z.object({ kind: z.enum(["expert", "infographic", "comparison", "templates", "pmax10"]), keys: z.array(z.string().max(40)).max(20).optional(), conceptIds: z.array(z.string().max(40)).max(50).optional(), photoIds: z.array(z.string().max(64)).max(30).optional() }).parse(await req.json());
   if (b.kind === "expert") return json(await expertVariants(projectId, b.conceptIds, b.photoIds));
   if (b.kind === "comparison") return json(await comparisonVariants(projectId, b.conceptIds));
   if (b.kind === "templates") return json(await comparisonTemplates(projectId, b.keys));
+  if (b.kind === "pmax10") return json(await pmaxTopTen(projectId));
   return json(await startInfographics(projectId, b.conceptIds ?? []), 202);
 });
 

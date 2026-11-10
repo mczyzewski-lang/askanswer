@@ -8,6 +8,7 @@
  */
 import { PMAX_SPEC, formatKeyOf, type TextKind } from "./spec";
 import { adClaimProblems, urlStatus } from "./landing-content";
+import { comparisonOf } from "./draw";
 
 export interface AdAsset {
   id?: string;
@@ -379,7 +380,8 @@ export function gateImage(v: AdAsset, ctx: BrandContext, m: Measure | null, phot
   if (usesPhoto && photo && !photo.consentConfirmed) p.push({ level: "blokada", message: "Brak potwierdzonej zgody na reklamowe użycie zdjęcia eksperta." });
   if (v.rowType !== "image_clean") {
     if (!(v.headline ?? "").trim()) p.push({ level: "do_poprawy", message: "Brak hasła." });
-    if (v.layout !== "infographic") p.push(...topicProblem(v.headline ?? "", opts, "Hasło grafiki"));
+    // (the comparison cards draw the topic on top — "Rozwód:" — when the headline lacks it)
+    if (v.layout !== "infographic" && !(v.layout === "comparison" && comparisonOf(v.lp as Record<string, string> | null))) p.push(...topicProblem(v.headline ?? "", opts, "Hasło grafiki"));
     p.push(...claimProblems(v, [v.headline, v.subheadline, v.body, v.cta].join(" "), opts));
   } else p.push(...claimProblems(v, "", opts));
   if (!(v.landingUrl || ctx.landingUrl)) p.push({ level: "do_poprawy", message: "Brak adresu strony docelowej (uzupełnij w kampanii)." });

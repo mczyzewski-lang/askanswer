@@ -796,6 +796,9 @@ function drawComparisonCards(ctx: Ctx2D, input: CreativeInput, S: Box, kind: "la
   const dark = luminance(theme.background) < 0.2 ? theme.background : luminance(theme.primary) < 0.2 ? theme.primary : "#24413C";
   const gold = theme.accent;
   const goldInk = contrast(gold, bg) >= 3 ? gold : mix(gold, "#000000", 0.28);
+  // the gold of buttons / pills: light enough for the dark label to read (≥ 4.5:1)
+  let btnGold = gold;
+  for (let t = 0.04; contrast(dark, btnGold) < 4.6 && t <= 0.6; t += 0.04) btnGold = mix(gold, "#FFFFFF", t);
   const ink = dark;
   const head = (px: number) => `800 ${px}px "${theme.questionFont}"`;
   const title = (px: number) => `700 ${px}px "${theme.questionFont}"`;
@@ -824,6 +827,9 @@ function drawComparisonCards(ctx: Ctx2D, input: CreativeInput, S: Box, kind: "la
   ctx.restore();
 
   const wide = kind === "landscape";
+  // readable in a PMax thumbnail: no text under 3% of the height when it can fit at that size
+  // (the PMax formats by the height, as Google scores them; the tall Meta story by its width)
+  const floor = Math.ceil(W / H >= 0.7 ? H * 0.03 : unit * 0.025);
   // landscape: the words on the left, the cards on the right; else everything stacked and centred
   const L: Box = wide ? { x: S.x, y: S.y, w: S.w * 0.43, h: S.h } : { ...S };
   const centre = !wide;
@@ -832,7 +838,7 @@ function drawComparisonCards(ctx: Ctx2D, input: CreativeInput, S: Box, kind: "la
   // the logo: small, between two gold rules
   const logo = logoOn(input, bg);
   if (logo) {
-    const lh = unit * (wide ? 0.065 : 0.055);
+    const lh = unit * (wide ? 0.065 : 0.045);
     const sc = Math.min((L.w * (wide ? 0.6 : 0.42)) / logo.width, lh / logo.height);
     const lw = logo.width * sc;
     const lhh = logo.height * sc;
@@ -849,7 +855,7 @@ function drawComparisonCards(ctx: Ctx2D, input: CreativeInput, S: Box, kind: "la
         ctx.fillRect(lx + lw + gap, ly, len, Math.max(2, unit * 0.003));
       }
     }
-    y += lhh + unit * 0.04;
+    y += lhh + unit * (wide ? 0.04 : 0.03);
   }
 
   // a pill (e.g. "Bezpłatny webinar on-line") and the date lines (Meta webinar)
@@ -861,11 +867,11 @@ function drawComparisonCards(ctx: Ctx2D, input: CreativeInput, S: Box, kind: "la
     const bw = Math.min(L.w, ctx.measureText(bt).width + bf.px * 1.6);
     const bh = bf.px * 2;
     const bx = centre ? L.x + (L.w - bw) / 2 : L.x;
-    ctx.fillStyle = gold;
+    ctx.fillStyle = btnGold;
     roundRect(ctx, bx, y, bw, bh, bh / 2);
     ctx.fill();
-    const bInk = inkOn(gold, dark);
-    contrasts.push(contrast(bInk, gold));
+    const bInk = dark;
+    contrasts.push(contrast(bInk, btnGold));
     ctx.fillStyle = bInk;
     ctx.textBaseline = "middle";
     ctx.fillText(bt, bx + bf.px * 0.8, y + bh / 2 + bf.px * 0.04);
@@ -888,14 +894,18 @@ function drawComparisonCards(ctx: Ctx2D, input: CreativeInput, S: Box, kind: "la
   // the bottom: CTA (and the note above it)
   const ctaText = (input.copy.cta ?? "").trim();
   const ctaLabel = ctaText ? `${ctaText} →` : "";
-  const ctaPx = unit * (wide ? 0.058 : W / H < 0.65 ? 0.042 : 0.05);
-  const ctaFit = ctaText ? fit(ctx, ctaLabel, label, ctaPx, ctaPx * 0.45, L.w - ctaPx * 1.6, 1, 1) : null;
-  const ctaH = ctaFit ? ctaFit.px * 2.4 : 0;
+  const ctaPx = unit * (wide ? 0.058 : W / H < 0.65 ? 0.042 : input.photo ? 0.044 : 0.05);
+  // (with the expert's photo beside it, the button is narrower)
+  const avatarD = input.photo ? Math.round(ctaPx * 2.4) : 0;
+  const ctaRoom = L.w - (avatarD ? avatarD + unit * 0.025 : 0);
+  let ctaFit = ctaText ? fit(ctx, ctaLabel, label, ctaPx, Math.max(floor, ctaPx * 0.6), ctaRoom - ctaPx * 1.6, 1, 1) : null;
+  if (ctaFit?.overflow) ctaFit = fit(ctx, ctaLabel, label, ctaPx, ctaPx * 0.45, ctaRoom - ctaPx * 1.6, 1, 1);
+  const ctaH = ctaFit ? Math.max(ctaFit.px * 2.4, avatarD ? avatarD * 0.86 : 0) : 0;
   const noteText = (cmp.note ?? "").trim();
   // (no note on the landscape, nor on a banner that already carries a webinar pill / date)
   const noteFit = noteText && !wide && !badgeText && !dateLines.length ? fit(ctx, noteText, italic, unit * 0.03, unit * 0.024, L.w - unit * 0.2, 2, 1.25) : null;
   const noteH = noteFit ? noteFit.lines.length * noteFit.lineH + unit * 0.035 : 0;
-  const bottomH = (ctaFit ? ctaH + unit * 0.035 : 0) + noteH;
+  const bottomH = (ctaFit ? Math.max(ctaH, avatarD) + unit * 0.035 : 0) + noteH;
 
   // the headline: the topic always on top
   let headline = (input.copy.headline || cmp.title || "").trim();
@@ -906,11 +916,11 @@ function drawComparisonCards(ctx: Ctx2D, input: CreativeInput, S: Box, kind: "la
   const room = L.y + L.h - y - bottomH - minCards;
   const hStart = unit * (wide ? 0.075 : 0.085);
   let hf = fitHeadline(ctx, headline, head, hStart, hStart * 0.5, L.w, wide ? 4 : 2, 1.08, true);
-  let sfit = subText ? fit(ctx, subText, italic, hf.px * 0.48, unit * 0.028, L.w, 2, 1.25) : null;
+  let sfit = subText ? fit(ctx, subText, italic, Math.max(floor, hf.px * 0.48), Math.max(floor, unit * 0.028), L.w, 2, 1.25) : null;
   const textH = () => hf.lines.length * hf.lineH + unit * 0.045 + (sfit ? sfit.lines.length * sfit.lineH + unit * 0.02 : 0) + unit * 0.035;
-  for (let hs = hStart * 0.94; textH() > room && hs > hStart * 0.38; hs *= 0.94) {
-    hf = fitHeadline(ctx, headline, head, hs, Math.min(hs, hStart * 0.38), L.w, wide ? 4 : 3, 1.08, true);
-    if (subText) sfit = fit(ctx, subText, italic, Math.max(unit * 0.028, hs * 0.48), unit * 0.026, L.w, 2, 1.25);
+  for (let hs = hStart * 0.94; textH() > room && hs > Math.max(floor, hStart * 0.38); hs *= 0.94) {
+    hf = fitHeadline(ctx, headline, head, hs, Math.min(hs, Math.max(floor, hStart * 0.38)), L.w, wide ? 4 : 3, 1.08, true);
+    if (subText) sfit = fit(ctx, subText, italic, Math.max(floor, unit * 0.028, hs * 0.48), Math.max(floor, unit * 0.026), L.w, 2, 1.25);
   }
   overflow ||= hf.overflow || textH() > room + 1;
   fonts.push(hf.px);
@@ -954,7 +964,7 @@ function drawComparisonCards(ctx: Ctx2D, input: CreativeInput, S: Box, kind: "la
   const leftFill = "#F1E6E2";
   const sides = [
     { fill: leftFill, lab: cmp.leftLabel || "Tradycyjnie", labInk: "#87584C", ttl: cmp.leftTitle || cmp.left, ttlInk: "#2F2624", desc: cmp.leftTitle ? cmp.left : "", descInk: "#5C4A45" },
-    { fill: dark, lab: cmp.rightLabel || "Z nami", labInk: contrast(theme.highlight, dark) >= contrast(gold, dark) ? theme.highlight : gold, ttl: cmp.rightTitle || cmp.right, ttlInk: "#FFFFFF", desc: cmp.rightTitle ? cmp.right : "", descInk: mix("#FFFFFF", dark, 0.15) },
+    { fill: dark, lab: cmp.rightLabel || "Z nami", labInk: [theme.highlight, gold, mix(gold, "#FFFFFF", 0.3)].find((c) => contrast(c, dark) >= 4.5) ?? "#FFFFFF", ttl: cmp.rightTitle || cmp.right, ttlInk: "#FFFFFF", desc: cmp.rightTitle ? cmp.right : "", descInk: mix("#FFFFFF", dark, 0.15) },
   ];
   const r = unit * 0.03;
   sides.forEach((c, i) => {
@@ -965,20 +975,40 @@ function drawComparisonCards(ctx: Ctx2D, input: CreativeInput, S: Box, kind: "la
     ctx.fill();
     // the padding shrinks with the words when the card is tight
     const padK = (kk: number) => pad * Math.max(0.55, Math.min(1, kk));
-    const tw = cw - pad * 2;
+    // the VS circle bites into the inner side of each card (side by side): the words keep clear of it
+    const vsR = Math.min(unit * 0.052, gap * 0.95);
+    const bite = stacked ? 0 : Math.max(0, vsR - gap / 2 + unit * 0.012);
+    const tx = cx + pad + (i === 1 ? bite : 0);
+    const tw = cw - pad * 2 - bite;
+    let desc = c.desc;
     // label, bold line and description scale together until they fit the card
     let k = 1;
+    let useFloor = true;
     let lf: Fitted, tf: Fitted, df: Fitted | null;
     const base = { lab: unit * 0.026, ttl: unit * (wide ? 0.058 : 0.054), desc: unit * (wide ? 0.038 : 0.034) };
     for (;;) {
-      const at = (v: number) => Math.max(8, Math.floor(v));
+      const at = (v: number) => Math.max(useFloor ? floor : 8, Math.floor(v));
       lf = fit(ctx, c.lab.toUpperCase(), label, at(base.lab * Math.max(k, 0.8)), at(base.lab * Math.max(k, 0.8)), tw, 2, 1.2);
       tf = fit(ctx, c.ttl, title, at(base.ttl * k), at(base.ttl * k), tw, 3, 1.12);
-      df = c.desc ? fit(ctx, c.desc, body, at(base.desc * k), at(base.desc * k), tw, 5, 1.3) : null;
+      df = desc ? fit(ctx, desc, body, at(base.desc * k), at(base.desc * k), tw, 5, 1.3) : null;
       const total = lf.lines.length * lf.lineH + unit * 0.02 * k + tf.lines.length * tf.lineH + (df ? unit * 0.02 * k + df.lines.length * df.lineH : 0);
-      if ((!lf.overflow && !tf.overflow && !df?.overflow && total <= ch - padK(k) * 2) || k < 0.4) {
-        overflow ||= lf.overflow || tf.overflow || !!df?.overflow || total > ch - padK(k) * 2 + 1;
+      const fits = !lf.overflow && !tf.overflow && !df?.overflow && total <= ch - padK(k) * 2;
+      if (fits || (k < 0.4 && !useFloor)) {
+        overflow ||= !fits;
         break;
+      }
+      // at the floor and still too much: first the description goes (label + the bold line stay readable)
+      if (useFloor && desc && (k < 0.4 || [base.lab * Math.max(k, 0.8), base.ttl * k, base.desc * k].every((v) => v <= floor))) {
+        desc = "";
+        k = 1;
+        continue;
+      }
+      // then let it get smaller than the floor
+      if (useFloor && (k < 0.4 || [base.lab * Math.max(k, 0.8), base.ttl * k, base.desc * k].every((v) => v <= floor))) {
+        useFloor = false;
+        desc = c.desc;
+        k = Math.min(1, floor / Math.max(base.desc, base.lab));
+        continue;
       }
       k *= 0.94;
     }
@@ -986,16 +1016,16 @@ function drawComparisonCards(ctx: Ctx2D, input: CreativeInput, S: Box, kind: "la
     const total = lf.lines.length * lf.lineH + sp + tf.lines.length * tf.lineH + (df ? sp + df.lines.length * df.lineH : 0);
     // the words sit in the middle of a roomy card (top-aligned when it is tight)
     let ty = cy + Math.max(padK(k), (ch - total) / 2);
-    ty += drawLines(ctx, lf, label, cx + pad, ty, c.labInk) + sp;
-    ty += drawLines(ctx, tf, title, cx + pad, ty, c.ttlInk);
-    if (df) drawLines(ctx, df, body, cx + pad, ty + sp, c.descInk);
+    ty += drawLines(ctx, lf, label, tx, ty, c.labInk) + sp;
+    ty += drawLines(ctx, tf, title, tx, ty, c.ttlInk);
+    if (df) drawLines(ctx, df, body, tx, ty + sp, c.descInk);
     fonts.push(lf.px, tf.px, ...(df ? [df.px] : []));
     contrasts.push(contrast(c.ttlInk, c.fill), contrast(c.labInk, c.fill), ...(df ? [contrast(c.descInk, c.fill)] : []));
     boxes.push({ x: cx, y: cy, w: cw, h: ch });
   });
   // the gold VS between the cards
   {
-    const rr = Math.min(unit * 0.052, gap * 0.95);
+    const rr = Math.min(unit * 0.052, gap * 0.95); // (= vsR above)
     const vx = stacked ? C.x + cw * 0.82 : C.x + cw + gap / 2;
     const vy = stacked ? C.y + ch + gap / 2 : C.y + Math.max(0, ch) / 2;
     ctx.fillStyle = gold;
@@ -1037,17 +1067,38 @@ function drawComparisonCards(ctx: Ctx2D, input: CreativeInput, S: Box, kind: "la
   if (ctaFit) {
     ctx.font = label(ctaFit.px);
     const text = ctaFit.lines[0] ?? ctaLabel;
-    const bw = W / H < 0.65 ? L.w : Math.min(L.w, ctx.measureText(text).width + ctaFit.px * 2.4);
-    const bx = centre ? L.x + (L.w - bw) / 2 : L.x;
-    const cy = L.y + L.h - ctaH;
+    const gapA = avatarD ? unit * 0.025 : 0;
+    const bw = W / H < 0.65 ? ctaRoom : Math.min(ctaRoom, ctx.measureText(text).width + ctaFit.px * 2.4);
+    const groupW = bw + (avatarD ? avatarD + gapA : 0);
+    const gx = centre ? L.x + (L.w - groupW) / 2 : L.x;
+    const bx = gx + (avatarD ? avatarD + gapA : 0);
+    const cy = L.y + L.h - Math.max(ctaH, avatarD) / 2 - ctaH / 2;
+    if (avatarD && input.photo) {
+      // the real expert beside the action: a round photo in a gold ring
+      const ay = L.y + L.h - Math.max(ctaH, avatarD);
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(gx + avatarD / 2, ay + avatarD / 2, avatarD / 2, 0, Math.PI * 2);
+      ctx.clip();
+      ctx.fillStyle = dark;
+      ctx.fillRect(gx, ay, avatarD, avatarD);
+      drawPhoto(ctx, { ...input.photo, zoom: Math.max(input.photo.zoom ?? 1, 1.6) }, gx, ay, avatarD, avatarD);
+      ctx.restore();
+      ctx.strokeStyle = gold;
+      ctx.lineWidth = Math.max(3, unit * 0.006);
+      ctx.beginPath();
+      ctx.arc(gx + avatarD / 2, ay + avatarD / 2, avatarD / 2, 0, Math.PI * 2);
+      ctx.stroke();
+      boxes.push({ x: gx, y: ay, w: avatarD, h: avatarD });
+    }
     const g = ctx.createLinearGradient(bx, cy, bx + bw, cy);
-    g.addColorStop(0, mix(gold, "#FFFFFF", 0.12));
-    g.addColorStop(1, mix(gold, "#000000", 0.08));
+    g.addColorStop(0, mix(btnGold, "#FFFFFF", 0.14));
+    g.addColorStop(1, btnGold);
     ctx.fillStyle = g;
     roundRect(ctx, bx, cy, bw, ctaH, ctaH / 2);
     ctx.fill();
-    const cInk = contrast("#FFFFFF", gold) >= 3 ? "#FFFFFF" : dark;
-    contrasts.push(contrast(cInk, gold));
+    const cInk = dark;
+    contrasts.push(contrast(cInk, btnGold));
     ctx.fillStyle = cInk;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
