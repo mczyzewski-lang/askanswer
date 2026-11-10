@@ -24,9 +24,10 @@ export default async function ProjectSettingsPage({ params, searchParams }: { pa
     ? await prisma.theme.findUnique({ where: { id: p.themeId }, include: { projects: { where: { id }, select: { id: true, name: true, categories: { orderBy: { order: "asc" }, select: { id: true, name: true, brollStyle: true, expertId: true, _count: { select: { questions: true } } } } } } } })
     : null;
   const logo = row?.logoAssetId ? await prisma.mediaAsset.findUnique({ where: { id: row.logoAssetId } }) : null;
+  const logoDark = row?.logoDarkAssetId ? await prisma.mediaAsset.findUnique({ where: { id: row.logoDarkAssetId } }) : null;
   // this project only, and only the categories it uses (or that have their own style / expert set)
   const rowOwn = row ? { ...row, projects: row.projects.map((pr) => ({ ...pr, categories: pr.categories.filter((c) => c._count.questions > 0 || c.brollStyle || c.expertId).map(({ _count, ...c }) => ({ ...c, questions: _count.questions })) })) } : null;
-  const theme = rowOwn ? { ...rowOwn, createdAt: rowOwn.createdAt.toISOString(), updatedAt: rowOwn.updatedAt.toISOString(), logoUrl: logo ? await signedUrl(logo.storageKey) : null } : null;
+  const theme = rowOwn ? { ...rowOwn, createdAt: rowOwn.createdAt.toISOString(), updatedAt: rowOwn.updatedAt.toISOString(), logoUrl: logo ? await signedUrl(logo.storageKey) : null, logoDarkUrl: logoDark ? await signedUrl(logoDark.storageKey) : null } : null;
   const experts = await prisma.expert.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } });
   const data = await projectData(id);
   const back = p.autoReels ? `/admin/auto-reels/${id}` : ads ? `/admin/ads/${id}` : `/admin/projects/${id}`;

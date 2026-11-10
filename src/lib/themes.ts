@@ -5,7 +5,7 @@ import type { ThemeTokens } from "./editor/types";
  * brand colours of any company. Administrators set exact brand colours and logos
  * in "Motywy" (Theme Settings).
  */
-export const THEME_PRESETS: Array<ThemeTokens & { key: string; description: string; /** file in public/presets, set as the theme logo */ logoFile?: string }> = [
+export const THEME_PRESETS: Array<ThemeTokens & { key: string; description: string; /** file in public/presets, set as the theme logo (light backgrounds) */ logoFile?: string; /** the version for dark backgrounds */ logoDarkFile?: string }> = [
   {
     key: "pravna",
     name: "Pravna",
@@ -24,6 +24,8 @@ export const THEME_PRESETS: Array<ThemeTokens & { key: string; description: stri
     key: "nowy-etap",
     name: "Nowy Etap",
     description: "Głęboka zieleń i złoto kancelarii rozwodowej",
+    logoFile: "nowy-etap.png",
+    logoDarkFile: "nowy-etap-white.png",
     primary: "#34524E",
     accent: "#B79559",
     secondary: "#FCF9F8",

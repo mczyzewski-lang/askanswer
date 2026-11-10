@@ -13,7 +13,8 @@ export default async function ThemesPage({ searchParams }: { searchParams: Promi
   const themes = await Promise.all(
     rows.map(async (t) => {
       const logo = t.logoAssetId ? await prisma.mediaAsset.findUnique({ where: { id: t.logoAssetId } }) : null;
-      return { ...t, createdAt: t.createdAt.toISOString(), updatedAt: t.updatedAt.toISOString(), logoUrl: logo ? await signedUrl(logo.storageKey) : null };
+      const dark = t.logoDarkAssetId ? await prisma.mediaAsset.findUnique({ where: { id: t.logoDarkAssetId } }) : null;
+      return { ...t, createdAt: t.createdAt.toISOString(), updatedAt: t.updatedAt.toISOString(), logoUrl: logo ? await signedUrl(logo.storageKey) : null, logoDarkUrl: dark ? await signedUrl(dark.storageKey) : null };
     }),
   );
   return <ThemesView themes={themes} experts={experts} initialId={theme ?? themes[0]?.id ?? null} />;

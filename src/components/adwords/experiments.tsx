@@ -132,7 +132,7 @@ function ArmView({ arm, data, experimentId }: { arm: Arm; data: AwData; experime
           <div className="flex gap-1.5 overflow-x-auto">
             {v.scenes.map((s, i) => (
               <div key={s.assetKey} className="w-24 shrink-0 space-y-0.5">
-                <SceneCanvas className="w-full rounded border border-line" input={{ width: 270, height: 480, theme: data.theme, screenText: s.screenText || s.spokenText || "", visualBrief: s.visualBrief, sceneLabel: `${s.startS}–${s.endS} s`, logoUrl: data.logoUrl, photo: null, isCta: i === v.scenes.length - 1 && v.scenes.length > 1 }} />
+                <SceneCanvas className="w-full rounded border border-line" input={{ width: 270, height: 480, theme: data.theme, screenText: s.screenText || s.spokenText || "", visualBrief: s.visualBrief, sceneLabel: `${s.startS}–${s.endS} s`, logoUrl: data.logoUrl, logoDarkUrl: data.logoDarkUrl ?? null, photo: null, isCta: i === v.scenes.length - 1 && v.scenes.length > 1 }} />
               </div>
             ))}
           </div>

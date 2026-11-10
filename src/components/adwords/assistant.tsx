@@ -130,7 +130,7 @@ export function AssistantTab({ data, reload, toast, onAdded }: { data: AwData; r
                   <CreativeCanvas
                     key={f.key}
                     className={f.key === "landscape" ? "w-[46%] rounded border border-line" : f.key === "square" ? "w-[26%] rounded border border-line" : "w-[22%] rounded border border-line"}
-                    input={{ width: f.width, height: f.height, layout: im.useExpertPhoto && photo ? "expert_split" : im.layout === "expert_split" ? "typographic" : im.layout, copy: { headline: im.headline, subheadline: im.subheadline, body: im.body, cta: im.cta }, theme: data.theme, logoUrl: data.logoUrl, photo: im.useExpertPhoto && photo ? { url: photo.url, focalX: photo.focalX, focalY: photo.focalY } : null }}
+                    input={{ width: f.width, height: f.height, layout: im.useExpertPhoto && photo ? "expert_split" : im.layout === "expert_split" ? "typographic" : im.layout, copy: { headline: im.headline, subheadline: im.subheadline, body: im.body, cta: im.cta }, theme: data.theme, logoUrl: data.logoUrl, logoDarkUrl: data.logoDarkUrl ?? null, topic: data.project.topic, photo: im.useExpertPhoto && photo ? { url: photo.url, focalX: photo.focalX, focalY: photo.focalY } : null }}
                   />
                 ))}
               </div>
@@ -146,7 +146,7 @@ export function AssistantTab({ data, reload, toast, onAdded }: { data: AwData; r
                   <Textarea rows={2} className="text-xs" value={s.spokenText} aria-label={`Słowa sceny ${i + 1}`} onChange={(e) => setDraft({ ...draft, video: { ...draft.video!, scenes: draft.video!.scenes.map((x, j) => (j === i ? { ...x, spokenText: e.target.value } : x)) } })} />
                   <Textarea rows={2} className="text-xs" value={s.screenText} aria-label={`Napis sceny ${i + 1}`} onChange={(e) => setDraft({ ...draft, video: { ...draft.video!, scenes: draft.video!.scenes.map((x, j) => (j === i ? { ...x, screenText: e.target.value } : x)) } })} />
                   <Textarea rows={2} className="text-xs" value={s.visualBrief} aria-label={`Kadr sceny ${i + 1}`} onChange={(e) => setDraft({ ...draft, video: { ...draft.video!, scenes: draft.video!.scenes.map((x, j) => (j === i ? { ...x, visualBrief: e.target.value } : x)) } })} />
-                  <SceneCanvas className="w-full rounded border border-line" input={{ width: 270, height: 480, theme: data.theme, screenText: s.screenText || s.spokenText, visualBrief: s.visualBrief, sceneLabel: `Scena ${i + 1}`, logoUrl: data.logoUrl, photo: null, isCta: i === draft.video!.scenes.length - 1 }} />
+                  <SceneCanvas className="w-full rounded border border-line" input={{ width: 270, height: 480, theme: data.theme, screenText: s.screenText || s.spokenText, visualBrief: s.visualBrief, sceneLabel: `Scena ${i + 1}`, logoUrl: data.logoUrl, logoDarkUrl: data.logoDarkUrl ?? null, photo: null, isCta: i === draft.video!.scenes.length - 1 }} />
                 </div>
               ))}
             </div>

@@ -138,7 +138,7 @@ function Previews({ ad, data, base, onMeasure, small }: { ad: MetaAdData & { id?
           <div className="flex items-end gap-2">
             {META_FORMATS.map((f) => (
               <figure key={f.key} className={cn(small ? (f.key === "story" ? "w-[18%]" : f.key === "feed" ? "w-[24%]" : "w-[30%]") : f.key === "story" ? "w-[22%]" : f.key === "feed" ? "w-[30%]" : "w-[37%]")}>
-                <CreativeCanvas input={{ ...metaCreative(ad as MetaAdData, f.key as MetaFormatKey, v === "info" ? "info" : v !== "none" && !!photoOf(data, v)), theme: data.theme, logoUrl: data.logoUrl, photo: photoOf(data, v, ad, f.key as MetaFormatKey) }} className="w-full rounded border border-line" onMeasure={onMeasure ? (m) => onMeasure(`${v}|${f.key}`, m) : undefined} />
+                <CreativeCanvas input={{ ...metaCreative(ad as MetaAdData, f.key as MetaFormatKey, v === "info" ? "info" : v !== "none" && !!photoOf(data, v)), theme: data.theme, logoUrl: data.logoUrl, logoDarkUrl: data.logoDarkUrl ?? null, topic: data.project.topic, photo: photoOf(data, v, ad, f.key as MetaFormatKey) }} className="w-full rounded border border-line" onMeasure={onMeasure ? (m) => onMeasure(`${v}|${f.key}`, m) : undefined} />
                 <figcaption className="mt-0.5 flex justify-between text-[10px] text-muted">
                   <span>{f.label}</span>
                   {base && ad.id ? (
@@ -368,12 +368,15 @@ function MetaEditor({ ad, data, onCancel, onSave }: { ad: MetaAdData & { id?: st
                     {(
                       [
                         ["comparison_left_label", "Lewa — etykieta", "Tradycyjnie"],
-                        ["comparison_right_label", "Prawa — etykieta", "Z planem"],
+                        ["comparison_right_label", "Prawa — etykieta", "Nowy Etap"],
+                        ["comparison_left_title", "Lewa — mocna linia", "Najpierw pozew"],
+                        ["comparison_right_title", "Prawa — mocna linia", "Najpierw plan"],
                         ["comparison_left", "Lewa — treść", "Najpierw pozew, potem spór"],
                         ["comparison_right", "Prawa — treść", "Najpierw plan, potem pozew"],
+                        ["comparison_note", "Linia pod kartami (opcjonalnie)", "Najpierw plan, dopiero potem pozew."],
                       ] as const
                     ).map(([k, l, ph]) => (
-                      <div key={k} className="space-y-1">
+                      <div key={k} className={k === "comparison_note" ? "col-span-2 space-y-1" : "space-y-1"}>
                         <Label>{l}</Label>
                         <Input value={a.extra?.[k] ?? ""} placeholder={ph} onChange={(e) => set({ extra: { ...(a.extra ?? {}), [k]: e.target.value } })} aria-label={`Meta ${l}`} />
                       </div>

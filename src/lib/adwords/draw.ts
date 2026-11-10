@@ -21,14 +21,20 @@ export const LAYOUTS: Record<Exclude<LayoutKey, "clean_photo">, string> = {
 export interface ComparisonCopy {
   title?: string | null;
   leftLabel?: string | null;
+  /** the left card's bold line (e.g. "Najpierw pozew"); without it `left` is the bold line */
+  leftTitle?: string | null;
   left: string;
   rightLabel?: string | null;
+  rightTitle?: string | null;
   right: string;
+  /** a calm line under the cards (e.g. "Najpierw plan i ustalenia, dopiero potem pozew o rozwód.") */
+  note?: string | null;
 }
 /** comparison_* fields of a record → the comparison copy (null when a side is missing) */
 export function comparisonOf(lp: Record<string, string | undefined> | null | undefined): ComparisonCopy | null {
   if (!lp?.comparison_left?.trim() || !lp?.comparison_right?.trim()) return null;
-  return { title: lp.comparison_title ?? null, leftLabel: lp.comparison_left_label ?? null, left: lp.comparison_left, rightLabel: lp.comparison_right_label ?? null, right: lp.comparison_right };
+  const opt = (k: "leftTitle" | "rightTitle" | "note", v: string | undefined) => (v?.trim() ? { [k]: v.trim() } : {});
+  return { title: lp.comparison_title ?? null, leftLabel: lp.comparison_left_label ?? null, left: lp.comparison_left, rightLabel: lp.comparison_right_label ?? null, right: lp.comparison_right, ...opt("leftTitle", lp.comparison_left_title), ...opt("rightTitle", lp.comparison_right_title), ...opt("note", lp.comparison_note) };
 }
 
 export interface ImageLike {
@@ -41,6 +47,7 @@ export interface Ctx2D {
   fillStyle: unknown;
   strokeStyle: unknown;
   lineWidth: number;
+  lineCap?: string;
   font: string;
   textAlign: string;
   textBaseline: string;
@@ -54,6 +61,7 @@ export interface Ctx2D {
   lineTo(x: number, y: number): void;
   arcTo(x1: number, y1: number, x2: number, y2: number, r: number): void;
   arc(x: number, y: number, r: number, a0: number, a1: number): void;
+  quadraticCurveTo(cpx: number, cpy: number, x: number, y: number): void;
   closePath(): void;
   fill(): void;
   stroke(): void;
@@ -83,7 +91,12 @@ export interface CreativeInput {
   layout: LayoutKey;
   copy: { headline: string; subheadline?: string | null; body?: string | null; cta?: string | null; comparison?: ComparisonCopy | null; /** a short pill above the headline (e.g. "Bezpłatny webinar on-line") */ badge?: string | null; /** a gold line under the pill (e.g. "Wtorek 19:00,\n24 Listopada") */ dateLine?: string | null };
   theme: ThemeTokens;
+  /** the logo for light backgrounds (or the only one) */
   logo?: ImageLike | null;
+  /** the logo for dark backgrounds (e.g. white) — used on dark banners when given */
+  logoDark?: ImageLike | null;
+  /** the project's topic (e.g. "rozwód"): the comparison cards show it on top when the headline lacks it */
+  topic?: string | null;
   photo?: PhotoInput | null;
   /** preview only: the safe-area frame */
   showSafeArea?: boolean;
@@ -199,12 +212,13 @@ function fitHeadline(ctx: Ctx2D, text: string, font: (px: number) => string, sta
 }
 
 /** the headline: the prefix line and the final punctuation in the accent colour */
-function drawHeadline(ctx: Ctx2D, f: Fitted, font: (px: number) => string, x: number, y: number, ink: string, accent: string) {
+function drawHeadline(ctx: Ctx2D, f: Fitted, font: (px: number) => string, x0: number, y: number, ink: string, accent: string, centerW = 0) {
   ctx.font = font(f.px);
   ctx.textAlign = "left";
   ctx.textBaseline = "top";
   f.lines.forEach((l, i) => {
     const ly = y + i * f.lineH;
+    const x = centerW ? x0 + (centerW - ctx.measureText(l).width) / 2 : x0;
     if (i === 0 && f.prefix) {
       ctx.fillStyle = accent;
       ctx.fillText(l, x, ly);
@@ -336,6 +350,9 @@ export function drawCreative(ctx: Ctx2D, input: CreativeInput): Measure {
   const photo = input.photo ?? null;
   const layout: LayoutKey = input.layout === "expert_split" && !photo ? "typographic" : input.layout;
 
+  // comparison: the light "cards" design (logo on top, the topic on top, two cards with VS, gold CTA)
+  if (layout === "comparison" && input.copy.comparison) return drawComparisonCards(ctx, input, S, kind);
+
   if (layout === "clean_photo") {
     if (photo) {
       const f = drawPhoto(ctx, photo, 0, 0, W, H);
@@ -436,12 +453,12 @@ export function drawCreative(ctx: Ctx2D, input: CreativeInput): Measure {
 
   let y = T.y;
   // logo: top of the text area (portrait with a photo: over the photo, top-left of the safe area)
-  if (input.logo && layout === "expert_split" && photo && kind === "portrait" && !photoBelow) {
-    const d = drawLogo(ctx, input.logo, S.x, S.y, S.w * 0.36, H * 0.06);
+  if (logoOn(input, panelBg) && layout === "expert_split" && photo && kind === "portrait" && !photoBelow) {
+    const d = drawLogo(ctx, logoOn(input, panelBg)!, S.x, S.y, S.w * 0.36, H * 0.06);
     boxes.push({ x: S.x, y: S.y, w: d.w, h: d.h });
-  } else if (input.logo) {
+  } else if (logoOn(input, panelBg)) {
     const lh = (kind === "landscape" ? 0.1 : 0.075) * H;
-    const d = drawLogo(ctx, input.logo, T.x, y, T.w * 0.42, lh);
+    const d = drawLogo(ctx, logoOn(input, panelBg)!, T.x, y, T.w * 0.42, lh);
     boxes.push({ x: T.x, y, w: d.w, h: d.h });
     y += d.h + unit * 0.035;
   }
@@ -469,8 +486,7 @@ export function drawCreative(ctx: Ctx2D, input: CreativeInput): Measure {
   const headline = input.copy.headline.trim();
   const subline = (input.copy.subheadline ?? "").trim();
   const steps = layout === "process_steps" ? stepsOf(input.copy.body) : [];
-  const cmp = layout === "comparison" ? (input.copy.comparison ?? null) : null;
-  const proof = layout !== "process_steps" && !cmp && input.showDetails ? (input.copy.body ?? "").trim() : "";
+  const proof = layout !== "process_steps" && input.showDetails ? (input.copy.body ?? "").trim() : "";
   const room = bottom - y;
   // a narrow text column (next to the photo) starts smaller
   // a pill above the headline (the webinar date)
@@ -493,7 +509,7 @@ export function drawCreative(ctx: Ctx2D, input: CreativeInput): Measure {
   const headStart = unit * (kind === "landscape" ? 0.12 : kind === "portrait" ? 0.115 : 0.11) * Math.min(1, T.w / unit / 0.55);
   let hf = fitHeadline(ctx, headline, head, headStart, headStart * 0.45, T.w, kind === "landscape" ? 3 : 4, 1.08, kind !== "landscape");
   // the headline also has to fit the HEIGHT of its room (with the underline), not only the line count
-  if (layout !== "process_steps" && !cmp) {
+  if (layout !== "process_steps") {
     for (let hs = headStart * 0.92; hf.lines.length * hf.lineH + unit * 0.06 + badgeBlock > room && hs > headStart * 0.45; hs *= 0.92) hf = fitHeadline(ctx, headline, head, hs, Math.min(hs, headStart * 0.45), T.w, kind === "landscape" ? 3 : 4, 1.08, kind !== "landscape");
   }
   overflow ||= hf.overflow;
@@ -506,76 +522,7 @@ export function drawCreative(ctx: Ctx2D, input: CreativeInput): Measure {
   }
   const used = hf.lines.length * hf.lineH + unit * 0.03 + (sf ? unit * 0.03 + sf.lines.length * sf.lineH : 0);
 
-  if (cmp) {
-    // headline on top, then two cards: the usual way (muted) vs ours (accent) — side by side when wide, stacked when tall
-    if (bdf) {
-      const bt = bdf.lines[0] ?? "";
-      ctx.font = label(bdf.px);
-      const bw = Math.min(T.w, ctx.measureText(bt).width + bdf.px * 1.6);
-      const bh = bdf.px * 2;
-      ctx.fillStyle = theme.accent;
-      roundRect(ctx, T.x, y, bw, bh, bh / 2);
-      ctx.fill();
-      ctx.fillStyle = inkOn(theme.accent, theme.background);
-      ctx.textBaseline = "middle";
-      ctx.fillText(bt, T.x + bdf.px * 0.8, y + bh / 2 + bdf.px * 0.04);
-      ctx.textBaseline = "top";
-      boxes.push({ x: T.x, y, w: bw, h: bh });
-      y += bh + unit * 0.025;
-    }
-    if (ddf) {
-      drawLines(ctx, ddf, label, T.x, y, theme.accent);
-      boxes.push({ x: T.x, y, w: T.w, h: dateH });
-      y += dateH + unit * 0.025;
-    }
-    // the headline leaves the cards enough room
-    const sideCards = kind !== "portrait";
-    for (let hs = hf.px * 0.92; bottom - y - (hf.lines.length * hf.lineH + unit * 0.035) < unit * (sideCards ? 0.22 : 0.36) && hs > unit * 0.035; hs *= 0.92) hf = fitHeadline(ctx, headline, head, hs, Math.min(hs, unit * 0.035), T.w, 4, 1.08, kind !== "landscape");
-    y += drawHeadline(ctx, hf, head, T.x, y, ink, theme.accent);
-    boxes.push({ x: T.x, y: y - hf.lines.length * hf.lineH, w: T.w, h: hf.lines.length * hf.lineH });
-    y += unit * 0.035;
-    const side = kind !== "portrait";
-    const gap = unit * 0.03;
-    const cw = side ? (T.w - gap) / 2 : T.w;
-    const avail = bottom - y;
-    const ch = side ? avail : (avail - gap) / 2;
-    const pad = unit * 0.03;
-    const cards = [
-      { label: cmp.leftLabel || "Tradycyjnie", text: cmp.left, ours: false },
-      { label: cmp.rightLabel || "Z nami", text: cmp.right, ours: true },
-    ];
-    cards.forEach((c, i) => {
-      const cx = side ? T.x + i * (cw + gap) : T.x;
-      const cy = side ? y : y + i * (ch + gap);
-      ctx.fillStyle = c.ours ? rgba(theme.accent, 0.18) : rgba(theme.text, 0.06);
-      roundRect(ctx, cx, cy, cw, ch, unit * 0.025);
-      ctx.fill();
-      if (c.ours) {
-        ctx.strokeStyle = theme.accent;
-        ctx.lineWidth = Math.max(2, unit * 0.006);
-        roundRect(ctx, cx, cy, cw, ch, unit * 0.025);
-        ctx.stroke();
-      }
-      const lf = fit(ctx, c.label.toUpperCase(), label, unit * 0.03, unit * 0.022, cw - pad * 2, 1, 1.2);
-      const labInk = c.ours ? inkOn(bg, theme.accent) : rgba(ink, 0.7);
-      if (c.ours) contrasts.push(contrast(inkOn(bg, theme.accent), bg));
-      // the text of a card fits its width AND its height
-      let ts = unit * (side ? 0.06 : 0.055);
-      let tf = fit(ctx, c.text, head, ts, unit * 0.03, cw - pad * 2, side ? 4 : 2, 1.12);
-      while (lf.lines.length * lf.lineH + unit * 0.015 + tf.lines.length * tf.lineH > ch - pad * 2 && ts > unit * 0.026) {
-        ts *= 0.92;
-        tf = fit(ctx, c.text, head, ts, Math.min(ts, unit * 0.026), cw - pad * 2, side ? 4 : 3, 1.12);
-      }
-      const blockH = lf.lines.length * lf.lineH + unit * 0.015 + tf.lines.length * tf.lineH;
-      overflow ||= tf.overflow || ch <= 0 || blockH > ch - pad * 2 + 1;
-      fonts.push(lf.px, tf.px);
-      // label + text centred in the card
-      const ty = cy + Math.max(pad, (ch - blockH) / 2);
-      drawLines(ctx, lf, label, cx + pad, ty, labInk);
-      drawLines(ctx, tf, head, cx + pad, ty + lf.lines.length * lf.lineH + unit * 0.015, ink);
-      boxes.push({ x: cx, y: cy, w: cw, h: ch });
-    });
-  } else if (layout === "process_steps" && steps.length) {
+  if (layout === "process_steps" && steps.length) {
     // headline on top, then the steps (columns when wide, rows when tall)
     y += drawHeadline(ctx, hf, head, T.x, y, ink, theme.accent);
     boxes.push({ x: T.x, y: y - hf.lines.length * hf.lineH, w: T.w, h: hf.lines.length * hf.lineH });
@@ -809,4 +756,307 @@ export function drawSceneFrame(ctx: Ctx2D, f: SceneFrameInput): Measure {
   drawLines(ctx, tf, head, S.x, ty, ink);
   if (f.logo) drawLogo(ctx, f.logo, S.x, S.y + S.h - unit * 0.08, S.w * 0.4, unit * 0.08);
   return { overflow: tf.overflow, outsideSafe: false, minFontPx: tf.px, contrast: contrast(ink, panel), height: H };
+}
+
+// --------------------------------------------------------------------------- comparison: light cards
+
+type Box = { x: number; y: number; w: number; h: number };
+const foldPl = (s: string) => s.toLowerCase().replace(/[ąćęłńóśźż]/g, (c) => ({ ą: "a", ć: "c", ę: "e", ł: "l", ń: "n", ó: "o", ś: "s", ź: "z", ż: "z" })[c]!);
+/** the text names the topic ("Rozwód…", "rozwodu", "po rozwodzie" — by the stem) */
+function namesTopic(text: string, topic: string) {
+  const first = foldPl(topic.split(/[,;]/)[0].trim()).split(/\s+/)[0] ?? "";
+  if (!first) return true;
+  return foldPl(text).includes(first.slice(0, Math.max(4, first.length - 2)));
+}
+/** the logo that reads on this background: the dark-background version on dark, else the main one */
+function logoOn(input: CreativeInput, bgHex: string): ImageLike | null {
+  return luminance(bgHex) < 0.35 ? (input.logoDark ?? input.logo ?? null) : (input.logo ?? input.logoDark ?? null);
+}
+function mix(a: string, b: string, t: number) {
+  const x = rgb(a);
+  const y = rgb(b);
+  return `#${x.map((v, i) => Math.round(v + (y[i] - v) * t).toString(16).padStart(2, "0")).join("")}`;
+}
+
+/**
+ * The comparison creative in the light "cards" style: a cream background, the small logo on top
+ * between two gold rules, the headline (the topic always on top — "Rozwód:" in gold when the
+ * headline does not say it), two cards (the usual way on a soft rose, ours on the brand's dark
+ * green) with a gold VS between them, an optional calm line, the gold CTA.
+ */
+function drawComparisonCards(ctx: Ctx2D, input: CreativeInput, S: Box, kind: "landscape" | "portrait" | "square"): Measure {
+  const { width: W, height: H, theme } = input;
+  const cmp = input.copy.comparison!;
+  const unit = Math.min(W, H);
+  const bg = luminance(theme.secondary) > 0.75 ? theme.secondary : "#FBF8F4";
+  const dark = luminance(theme.background) < 0.2 ? theme.background : luminance(theme.primary) < 0.2 ? theme.primary : "#24413C";
+  const gold = theme.accent;
+  const goldInk = contrast(gold, bg) >= 3 ? gold : mix(gold, "#000000", 0.28);
+  const ink = dark;
+  const head = (px: number) => `800 ${px}px "${theme.questionFont}"`;
+  const title = (px: number) => `700 ${px}px "${theme.questionFont}"`;
+  const body = (px: number) => `500 ${px}px "${theme.subtitleFont}"`;
+  const italic = (px: number) => `italic 500 ${px}px "${theme.subtitleFont}"`;
+  const label = (px: number) => `700 ${px}px "${theme.labelFont}"`;
+  const fonts: number[] = [];
+  const contrasts: number[] = [contrast(ink, bg)];
+  const boxes: Box[] = [];
+  let overflow = false;
+
+  // the cream page and two thin gold arcs in the corners
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, W, H);
+  ctx.save();
+  ctx.strokeStyle = rgba(gold, 0.75);
+  ctx.lineWidth = Math.max(2, unit * 0.004);
+  ctx.beginPath();
+  ctx.moveTo(0, H * 0.13);
+  ctx.quadraticCurveTo(W * 0.05, H * 0.03, W * 0.14, 0);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(W, H * 0.87);
+  ctx.quadraticCurveTo(W * 0.95, H * 0.97, W * 0.86, H);
+  ctx.stroke();
+  ctx.restore();
+
+  const wide = kind === "landscape";
+  // landscape: the words on the left, the cards on the right; else everything stacked and centred
+  const L: Box = wide ? { x: S.x, y: S.y, w: S.w * 0.43, h: S.h } : { ...S };
+  const centre = !wide;
+  let y = L.y;
+
+  // the logo: small, between two gold rules
+  const logo = logoOn(input, bg);
+  if (logo) {
+    const lh = unit * (wide ? 0.065 : 0.055);
+    const sc = Math.min((L.w * (wide ? 0.6 : 0.42)) / logo.width, lh / logo.height);
+    const lw = logo.width * sc;
+    const lhh = logo.height * sc;
+    const lx = centre ? L.x + (L.w - lw) / 2 : L.x;
+    ctx.drawImage(logo as never, 0, 0, logo.width, logo.height, lx, y, lw, lhh);
+    boxes.push({ x: lx, y, w: lw, h: lhh });
+    if (centre) {
+      const gap = unit * 0.03;
+      const len = Math.min(unit * 0.16, (L.w - lw) / 2 - gap);
+      if (len > unit * 0.03) {
+        ctx.fillStyle = gold;
+        const ly = y + lhh / 2 - 1;
+        ctx.fillRect(lx - gap - len, ly, len, Math.max(2, unit * 0.003));
+        ctx.fillRect(lx + lw + gap, ly, len, Math.max(2, unit * 0.003));
+      }
+    }
+    y += lhh + unit * 0.04;
+  }
+
+  // a pill (e.g. "Bezpłatny webinar on-line") and the date lines (Meta webinar)
+  const badgeText = (input.copy.badge ?? "").trim().toUpperCase();
+  if (badgeText) {
+    const bf = fit(ctx, badgeText, label, unit * 0.032, unit * 0.024, L.w - unit * 0.05, 1, 1);
+    ctx.font = label(bf.px);
+    const bt = bf.lines[0] ?? badgeText;
+    const bw = Math.min(L.w, ctx.measureText(bt).width + bf.px * 1.6);
+    const bh = bf.px * 2;
+    const bx = centre ? L.x + (L.w - bw) / 2 : L.x;
+    ctx.fillStyle = gold;
+    roundRect(ctx, bx, y, bw, bh, bh / 2);
+    ctx.fill();
+    const bInk = inkOn(gold, dark);
+    contrasts.push(contrast(bInk, gold));
+    ctx.fillStyle = bInk;
+    ctx.textBaseline = "middle";
+    ctx.fillText(bt, bx + bf.px * 0.8, y + bh / 2 + bf.px * 0.04);
+    ctx.textBaseline = "top";
+    fonts.push(bf.px);
+    overflow ||= bf.overflow;
+    boxes.push({ x: bx, y, w: bw, h: bh });
+    y += bh + unit * 0.02;
+  }
+  const dateLines = (input.copy.dateLine ?? "").split("\n").map((l) => l.trim()).filter(Boolean);
+  if (dateLines.length) {
+    const df = fitLines(ctx, dateLines, label, unit * (W / H < 0.65 ? 0.034 : 0.04), unit * 0.026, L.w, 1.15);
+    drawLines(ctx, df, label, L.x, y, goldInk, centre ? "center" : "left", L.w);
+    fonts.push(df.px);
+    overflow ||= df.overflow;
+    boxes.push({ x: L.x, y, w: L.w, h: df.lines.length * df.lineH });
+    y += df.lines.length * df.lineH + unit * 0.025;
+  }
+
+  // the bottom: CTA (and the note above it)
+  const ctaText = (input.copy.cta ?? "").trim();
+  const ctaLabel = ctaText ? `${ctaText} →` : "";
+  const ctaPx = unit * (wide ? 0.058 : W / H < 0.65 ? 0.042 : 0.05);
+  const ctaFit = ctaText ? fit(ctx, ctaLabel, label, ctaPx, ctaPx * 0.45, L.w - ctaPx * 1.6, 1, 1) : null;
+  const ctaH = ctaFit ? ctaFit.px * 2.4 : 0;
+  const noteText = (cmp.note ?? "").trim();
+  // (no note on the landscape, nor on a banner that already carries a webinar pill / date)
+  const noteFit = noteText && !wide && !badgeText && !dateLines.length ? fit(ctx, noteText, italic, unit * 0.03, unit * 0.024, L.w - unit * 0.2, 2, 1.25) : null;
+  const noteH = noteFit ? noteFit.lines.length * noteFit.lineH + unit * 0.035 : 0;
+  const bottomH = (ctaFit ? ctaH + unit * 0.035 : 0) + noteH;
+
+  // the headline: the topic always on top
+  let headline = (input.copy.headline || cmp.title || "").trim();
+  const topic = input.topic?.split(/[,;]/)[0].trim();
+  if (topic && headline && !namesTopic(headline, topic)) headline = `${topic.charAt(0).toLocaleUpperCase("pl-PL")}${topic.slice(1)}: ${headline}`;
+  const subText = (input.copy.subheadline ?? "").trim();
+  const minCards = wide ? 0 : W / H < 0.65 ? S.h * 0.36 : Math.min(unit * 0.22, S.h * 0.24);
+  const room = L.y + L.h - y - bottomH - minCards;
+  const hStart = unit * (wide ? 0.075 : 0.085);
+  let hf = fitHeadline(ctx, headline, head, hStart, hStart * 0.5, L.w, wide ? 4 : 2, 1.08, true);
+  let sfit = subText ? fit(ctx, subText, italic, hf.px * 0.48, unit * 0.028, L.w, 2, 1.25) : null;
+  const textH = () => hf.lines.length * hf.lineH + unit * 0.045 + (sfit ? sfit.lines.length * sfit.lineH + unit * 0.02 : 0) + unit * 0.035;
+  for (let hs = hStart * 0.94; textH() > room && hs > hStart * 0.38; hs *= 0.94) {
+    hf = fitHeadline(ctx, headline, head, hs, Math.min(hs, hStart * 0.38), L.w, wide ? 4 : 3, 1.08, true);
+    if (subText) sfit = fit(ctx, subText, italic, Math.max(unit * 0.028, hs * 0.48), unit * 0.026, L.w, 2, 1.25);
+  }
+  overflow ||= hf.overflow || textH() > room + 1;
+  fonts.push(hf.px);
+  const hh = drawHeadline(ctx, hf, head, L.x, y, ink, goldInk, centre ? L.w : 0);
+  boxes.push({ x: L.x, y, w: L.w, h: hh });
+  y += hh;
+  // the gold swoosh under the headline
+  {
+    const sw = Math.min(L.w * 0.5, unit * 0.36);
+    const sx = centre ? L.x + (L.w - sw) / 2 : L.x;
+    const sy = y + unit * 0.02;
+    ctx.save();
+    ctx.strokeStyle = gold;
+    ctx.lineWidth = Math.max(3, unit * 0.006);
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(sx, sy + unit * 0.008);
+    ctx.quadraticCurveTo(sx + sw / 2, sy - unit * 0.01, sx + sw, sy + unit * 0.004);
+    ctx.stroke();
+    ctx.restore();
+    y += unit * 0.045;
+  }
+  if (sfit) {
+    const sh = drawLines(ctx, sfit, italic, L.x, y, ink, centre ? "center" : "left", L.w);
+    fonts.push(sfit.px);
+    overflow ||= sfit.overflow;
+    boxes.push({ x: L.x, y, w: L.w, h: sh });
+    y += sh + unit * 0.02;
+  }
+  y += unit * 0.035;
+
+  // the cards
+  const C: Box = wide ? { x: S.x + S.w * 0.47, y: S.y, w: S.w * 0.53, h: S.h } : { x: S.x, y, w: S.w, h: L.y + L.h - bottomH - y };
+  // side by side; stacked in the landscape's right column (wide cards keep the text readable)
+  const stacked = wide || W / H < 0.65;
+  const gap = unit * (stacked ? 0.045 : 0.05);
+  const cw = stacked ? C.w : (C.w - gap) / 2;
+  const ch = stacked ? (C.h - gap) / 2 : C.h;
+  overflow ||= ch <= unit * 0.05;
+  const pad = unit * 0.035;
+  const leftFill = "#F1E6E2";
+  const sides = [
+    { fill: leftFill, lab: cmp.leftLabel || "Tradycyjnie", labInk: "#87584C", ttl: cmp.leftTitle || cmp.left, ttlInk: "#2F2624", desc: cmp.leftTitle ? cmp.left : "", descInk: "#5C4A45" },
+    { fill: dark, lab: cmp.rightLabel || "Z nami", labInk: contrast(theme.highlight, dark) >= contrast(gold, dark) ? theme.highlight : gold, ttl: cmp.rightTitle || cmp.right, ttlInk: "#FFFFFF", desc: cmp.rightTitle ? cmp.right : "", descInk: mix("#FFFFFF", dark, 0.15) },
+  ];
+  const r = unit * 0.03;
+  sides.forEach((c, i) => {
+    const cx = stacked ? C.x : C.x + i * (cw + gap);
+    const cy = stacked ? C.y + i * (ch + gap) : C.y;
+    ctx.fillStyle = c.fill;
+    roundRect(ctx, cx, cy, cw, Math.max(0, ch), r);
+    ctx.fill();
+    // the padding shrinks with the words when the card is tight
+    const padK = (kk: number) => pad * Math.max(0.55, Math.min(1, kk));
+    const tw = cw - pad * 2;
+    // label, bold line and description scale together until they fit the card
+    let k = 1;
+    let lf: Fitted, tf: Fitted, df: Fitted | null;
+    const base = { lab: unit * 0.026, ttl: unit * (wide ? 0.058 : 0.054), desc: unit * (wide ? 0.038 : 0.034) };
+    for (;;) {
+      const at = (v: number) => Math.max(8, Math.floor(v));
+      lf = fit(ctx, c.lab.toUpperCase(), label, at(base.lab * Math.max(k, 0.8)), at(base.lab * Math.max(k, 0.8)), tw, 2, 1.2);
+      tf = fit(ctx, c.ttl, title, at(base.ttl * k), at(base.ttl * k), tw, 3, 1.12);
+      df = c.desc ? fit(ctx, c.desc, body, at(base.desc * k), at(base.desc * k), tw, 5, 1.3) : null;
+      const total = lf.lines.length * lf.lineH + unit * 0.02 * k + tf.lines.length * tf.lineH + (df ? unit * 0.02 * k + df.lines.length * df.lineH : 0);
+      if ((!lf.overflow && !tf.overflow && !df?.overflow && total <= ch - padK(k) * 2) || k < 0.4) {
+        overflow ||= lf.overflow || tf.overflow || !!df?.overflow || total > ch - padK(k) * 2 + 1;
+        break;
+      }
+      k *= 0.94;
+    }
+    const sp = unit * 0.02 * k;
+    const total = lf.lines.length * lf.lineH + sp + tf.lines.length * tf.lineH + (df ? sp + df.lines.length * df.lineH : 0);
+    // the words sit in the middle of a roomy card (top-aligned when it is tight)
+    let ty = cy + Math.max(padK(k), (ch - total) / 2);
+    ty += drawLines(ctx, lf, label, cx + pad, ty, c.labInk) + sp;
+    ty += drawLines(ctx, tf, title, cx + pad, ty, c.ttlInk);
+    if (df) drawLines(ctx, df, body, cx + pad, ty + sp, c.descInk);
+    fonts.push(lf.px, tf.px, ...(df ? [df.px] : []));
+    contrasts.push(contrast(c.ttlInk, c.fill), contrast(c.labInk, c.fill), ...(df ? [contrast(c.descInk, c.fill)] : []));
+    boxes.push({ x: cx, y: cy, w: cw, h: ch });
+  });
+  // the gold VS between the cards
+  {
+    const rr = Math.min(unit * 0.052, gap * 0.95);
+    const vx = stacked ? C.x + cw * 0.82 : C.x + cw + gap / 2;
+    const vy = stacked ? C.y + ch + gap / 2 : C.y + Math.max(0, ch) / 2;
+    ctx.fillStyle = gold;
+    ctx.beginPath();
+    ctx.arc(vx, vy, rr, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = bg;
+    ctx.lineWidth = Math.max(3, unit * 0.007);
+    ctx.stroke();
+    const vInk = contrast("#FFFFFF", gold) >= 2.5 ? "#FFFFFF" : dark;
+    ctx.fillStyle = vInk;
+    ctx.font = label(rr * 0.78);
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("VS", vx, vy + rr * 0.04);
+    ctx.textAlign = "left";
+    ctx.textBaseline = "top";
+  }
+
+  // the note with gold rules, then the CTA
+  let by = L.y + L.h - bottomH;
+  if (noteFit) {
+    by += unit * 0.03;
+    const nh = drawLines(ctx, noteFit, italic, L.x, by, ink, "center", L.w);
+    ctx.font = italic(noteFit.px);
+    const nw = Math.max(...noteFit.lines.map((l) => ctx.measureText(l).width));
+    const rule = Math.min(unit * 0.06, (L.w - nw) / 2 - unit * 0.03);
+    if (rule > unit * 0.015) {
+      ctx.fillStyle = gold;
+      const ry = by + nh / 2 - 1;
+      ctx.fillRect(L.x + (L.w - nw) / 2 - unit * 0.025 - rule, ry, rule, Math.max(2, unit * 0.003));
+      ctx.fillRect(L.x + (L.w + nw) / 2 + unit * 0.025, ry, rule, Math.max(2, unit * 0.003));
+    }
+    fonts.push(noteFit.px);
+    overflow ||= noteFit.overflow;
+    boxes.push({ x: L.x, y: by, w: L.w, h: nh });
+    by += nh + unit * 0.005;
+  }
+  if (ctaFit) {
+    ctx.font = label(ctaFit.px);
+    const text = ctaFit.lines[0] ?? ctaLabel;
+    const bw = W / H < 0.65 ? L.w : Math.min(L.w, ctx.measureText(text).width + ctaFit.px * 2.4);
+    const bx = centre ? L.x + (L.w - bw) / 2 : L.x;
+    const cy = L.y + L.h - ctaH;
+    const g = ctx.createLinearGradient(bx, cy, bx + bw, cy);
+    g.addColorStop(0, mix(gold, "#FFFFFF", 0.12));
+    g.addColorStop(1, mix(gold, "#000000", 0.08));
+    ctx.fillStyle = g;
+    roundRect(ctx, bx, cy, bw, ctaH, ctaH / 2);
+    ctx.fill();
+    const cInk = contrast("#FFFFFF", gold) >= 3 ? "#FFFFFF" : dark;
+    contrasts.push(contrast(cInk, gold));
+    ctx.fillStyle = cInk;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(text, bx + bw / 2, cy + ctaH / 2 + ctaFit.px * 0.04);
+    ctx.textAlign = "left";
+    ctx.textBaseline = "top";
+    fonts.push(ctaFit.px);
+    overflow ||= ctaFit.overflow;
+    boxes.push({ x: bx, y: cy, w: bw, h: ctaH });
+  }
+
+  let outsideSafe = false;
+  for (const b of boxes) if (b.x < S.x - 1 || b.y < S.y - 1 || b.x + b.w > S.x + S.w + 1 || b.y + b.h > S.y + S.h + 1) outsideSafe = true;
+  if (input.showSafeArea) safeFrame(ctx, S);
+  return { overflow, outsideSafe, minFontPx: fonts.length ? Math.min(...fonts) : 0, contrast: contrasts.length ? Math.min(...contrasts) : 21, height: H };
 }

@@ -35,6 +35,8 @@ export function useCreativeInput(data: AwData) {
       copy: { headline: a.headline || comparisonOf(a.lp)?.title || "", subheadline: a.subheadline, body: a.body, cta: a.cta, comparison: comparisonOf(a.lp) },
       theme: data.theme,
       logoUrl: data.logoUrl,
+      logoDarkUrl: data.logoDarkUrl ?? null,
+      topic: data.project.topic,
       photo: a.effectiveLayout === "infographic" ? (a.infographicUrl ? { url: a.infographicUrl, focalX: 0.5, focalY: 0.5 } : null) : photo && !e.photoHidden ? { url: photo.url, focalX: photo.focalX, focalY: photo.focalY, zoom: e.zoom, offsetX: e.offsetX, offsetY: e.offsetY } : null,
       showSafeArea,
       safeMargin: PMAX_SPEC.images.safeMargin,
@@ -311,12 +313,15 @@ function ConceptEditor({ conceptId, data, reload, toast, onClose }: { conceptId:
                   {(
                     [
                       ["comparison_left_label", "Lewa — etykieta", "Tradycyjnie"],
-                      ["comparison_right_label", "Prawa — etykieta", "Z nami"],
-                      ["comparison_left", "Lewa — treść", ""],
-                      ["comparison_right", "Prawa — treść", ""],
+                      ["comparison_right_label", "Prawa — etykieta", "Nowy Etap"],
+                      ["comparison_left_title", "Lewa — mocna linia", "Najpierw pozew"],
+                      ["comparison_right_title", "Prawa — mocna linia", "Najpierw plan"],
+                      ["comparison_left", "Lewa — treść", "Pozew → odpowiedź → kolejne pisma"],
+                      ["comparison_right", "Prawa — treść", "Plan → rozmowy → ustalenia → pozew"],
+                      ["comparison_note", "Linia pod kartami (opcjonalnie)", "Najpierw plan i ustalenia, dopiero potem pozew."],
                     ] as const
                   ).map(([k, l, ph]) => (
-                    <div key={k} className="space-y-1">
+                    <div key={k} className={k === "comparison_note" ? "col-span-2 space-y-1" : "space-y-1"}>
                       <Label>{l}</Label>
                       <Input value={cur.lp?.[k] ?? ""} placeholder={ph} onChange={(e) => change({ lp: { ...(cur.lp ?? {}), [k]: e.target.value } })} aria-label={l} />
                     </div>

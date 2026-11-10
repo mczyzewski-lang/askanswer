@@ -175,6 +175,21 @@ export function MoreCreatives({ data, reload, toast, picked, setPicked }: { data
         </Button>
         <Button
           variant="outline"
+          disabled={!data.canEdit || busy !== null}
+          title="Pięć porównań w stylu kart: „A gdyby odwrócić kolejność?”, „Ile będzie kosztować rozwód?”, „Rozwód nie musi oznaczać wojny”, „Wiesz, co będzie dalej?”, „Za co właściwie płacisz?”"
+          onClick={() =>
+            void run("tpl", async () => {
+              const r = await api<{ made: string[]; skipped: string[] }>(`${base}/variants`, { method: "POST", json: { kind: "templates" } });
+              await reload();
+              toast(r.made.length ? `Dodano ${r.made.length} porównań (karty): ${r.made.join(", ")} — teksty poprawisz w edytorze` : "Te porównania są już w galerii");
+            })
+          }
+          data-testid="variants-templates"
+        >
+          {busy === "tpl" ? <Loader2 className="animate-spin" /> : <Columns2 />} 5 gotowych porównań (karty)
+        </Button>
+        <Button
+          variant="outline"
           disabled={!data.canEdit || busy !== null || !picked.length || running > 0}
           title={picked.length ? "" : "Zaznacz koncepty (pole wyboru na karcie)"}
           onClick={() =>

@@ -4,7 +4,7 @@ import { json, route } from "@/lib/server/http";
 import { ProjectInput } from "@/lib/server/schemas";
 import { THEME_PRESETS } from "@/lib/themes";
 import { dashboardData } from "@/lib/server/project-data";
-import { presetLogoAssetId } from "@/lib/server/preset-logo";
+import { presetLogos } from "@/lib/server/preset-logo";
 
 // one neutral category to start; the project's own ones come from the CSV import or "Kategorie"
 const DEFAULT_CATEGORIES = ["Ogólne"];
@@ -34,8 +34,8 @@ export const POST = route(async (req: Request) => {
   const project = await prisma.project.create({
     data: { ...body, ...(leadMagnets ? { leadMagnets } : {}), themeId: theme.id, categories: { create: DEFAULT_CATEGORIES.map((name, order) => ({ name, order })) } },
   });
-  const logoAssetId = await presetLogoAssetId(preset.key, project.id);
-  if (logoAssetId) await prisma.theme.update({ where: { id: theme.id }, data: { logoAssetId } });
+  const logos = await presetLogos(preset.key, project.id);
+  if (Object.keys(logos).length) await prisma.theme.update({ where: { id: theme.id }, data: logos });
   await grantCreator(me, project.id);
   return json(project, 201);
 });

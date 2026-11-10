@@ -155,7 +155,7 @@ function VideoConceptView({ conceptId, data, reload, toast }: { conceptId: strin
             <Textarea rows={3} className="text-xs" value={s.spokenText ?? ""} onChange={(e) => set(s.id, { spokenText: e.target.value })} aria-label={`Słowa eksperta ${i + 1}`} placeholder="Słowa eksperta (lektor / teleprompter)" />
             <Textarea rows={3} className="text-xs" value={s.screenText ?? ""} onChange={(e) => set(s.id, { screenText: e.target.value })} aria-label={`Napis ${i + 1}`} placeholder="Napis na ekranie" />
             <Textarea rows={3} className="text-xs" value={s.visualBrief ?? ""} onChange={(e) => set(s.id, { visualBrief: e.target.value })} aria-label={`Kadr ${i + 1}`} placeholder="Kadr, obraz, B-roll, ruch" />
-            <SceneCanvas className="w-full rounded border border-line" input={{ width: 270, height: 480, theme: data.theme, screenText: s.screenText || s.spokenText || "", visualBrief: s.visualBrief, sceneLabel: `Scena ${s.sceneIndex}`, logoUrl: data.logoUrl, photo: i === scenes.length - 1 ? null : photo(s), isCta: i === scenes.length - 1 && scenes.length > 1 }} />
+            <SceneCanvas className="w-full rounded border border-line" input={{ width: 270, height: 480, theme: data.theme, screenText: s.screenText || s.spokenText || "", visualBrief: s.visualBrief, sceneLabel: `Scena ${s.sceneIndex}`, logoUrl: data.logoUrl, logoDarkUrl: data.logoDarkUrl ?? null, photo: i === scenes.length - 1 ? null : photo(s), isCta: i === scenes.length - 1 && scenes.length > 1 }} />
           </div>
         ))}
         <div className="flex flex-wrap gap-2">
@@ -183,7 +183,7 @@ function VideoConceptView({ conceptId, data, reload, toast }: { conceptId: strin
         <div className="flex gap-2 overflow-x-auto pb-1">
           {scenes.map((s, i) => (
             <div key={s.id} className="shrink-0 space-y-1" style={{ width: orient === "landscape" ? 260 : orient === "square" ? 170 : 130 }}>
-              <SceneCanvas className="w-full rounded border border-line" input={{ width: f.width / 4, height: f.height / 4, theme: data.theme, screenText: s.screenText || s.spokenText || "", visualBrief: s.visualBrief, sceneLabel: `Scena ${s.sceneIndex}`, logoUrl: data.logoUrl, photo: i === scenes.length - 1 ? null : photo(s), isCta: i === scenes.length - 1 && scenes.length > 1 }} />
+              <SceneCanvas className="w-full rounded border border-line" input={{ width: f.width / 4, height: f.height / 4, theme: data.theme, screenText: s.screenText || s.spokenText || "", visualBrief: s.visualBrief, sceneLabel: `Scena ${s.sceneIndex}`, logoUrl: data.logoUrl, logoDarkUrl: data.logoDarkUrl ?? null, photo: i === scenes.length - 1 ? null : photo(s), isCta: i === scenes.length - 1 && scenes.length > 1 }} />
               <p className="text-[10px] text-muted">
                 {s.startS}–{s.endS} s
               </p>

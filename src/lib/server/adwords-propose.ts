@@ -34,7 +34,7 @@ Zwróć JSON:
  "headlines":[{"text":"…","angle":"…","why":"…"}] (12),
  "long_headlines":[{"text":"…","angle":"…","why":"…"}] (3),
  "descriptions":[{"text":"…","angle":"…","why":"…"}] (4),
- "image_concepts":[{"headline":"…","layout":"typographic|comparison|process_steps|expert","cta":"…","body":"kroki rozdzielone | (dla process_steps)","left_label":"…","left":"…","right_label":"…","right":"…","angle":"…","why":"…"}] (4),
+ "image_concepts":[{"headline":"…","layout":"typographic|comparison|process_steps|expert","cta":"…","body":"kroki rozdzielone | (dla process_steps)","left_label":"…","left_title":"…","left":"…","right_label":"…","right_title":"…","right":"…","angle":"…","why":"…"}] (4),
  "meta_ads":[{"name":"…","primary_text":"…","headline":"…","description":"…","image_headline":"…","cta_button":"LEARN_MORE|SIGN_UP|CONTACT_US|BOOK_NOW|MESSAGE_PAGE","angle":"…","why":"…"}] (3),
  "tests":[{"hypothesis":"…","a":"…","b":"…"}] (2)}`;
 
@@ -190,7 +190,7 @@ export async function proposeContent(projectId: string): Promise<{ analysis: Ana
     ...arr("headlines").map((x) => ({ kind: "headline" as const, text: s(x.text, 60), angle: s(x.angle, 40), why: s(x.why), limit: PMAX_SPEC.texts.headline.maxChars })),
     ...arr("long_headlines").map((x) => ({ kind: "long_headline" as const, text: s(x.text, 120), angle: s(x.angle, 40), why: s(x.why), limit: PMAX_SPEC.texts.long_headline.maxChars })),
     ...arr("descriptions").map((x) => ({ kind: "description" as const, text: s(x.text, 120), angle: s(x.angle, 40), why: s(x.why), limit: PMAX_SPEC.texts.description.maxChars })),
-    ...arr("image_concepts").map((x) => ({ kind: "image" as const, text: s(x.headline, 80), angle: s(x.angle, 40), why: s(x.why), limit: 60, data: { layout: ["typographic", "comparison", "process_steps", "expert"].includes(String(x.layout)) ? String(x.layout) : "typographic", cta: s(x.cta, 40), body: s(x.body, 160), left_label: s(x.left_label, 24), left: s(x.left, 60), right_label: s(x.right_label, 24), right: s(x.right, 60) } })),
+    ...arr("image_concepts").map((x) => ({ kind: "image" as const, text: s(x.headline, 80), angle: s(x.angle, 40), why: s(x.why), limit: 60, data: { layout: ["typographic", "comparison", "process_steps", "expert"].includes(String(x.layout)) ? String(x.layout) : "typographic", cta: s(x.cta, 40), body: s(x.body, 160), left_label: s(x.left_label, 24), left_title: s(x.left_title, 40), left: s(x.left, 90), right_label: s(x.right_label, 24), right_title: s(x.right_title, 40), right: s(x.right, 90) } })),
     ...arr("meta_ads").map((x) => ({ kind: "meta" as const, text: s(x.image_headline, 80), angle: s(x.angle, 40), why: s(x.why), data: { name: s(x.name, 80), primary_text: s(x.primary_text, 400), headline: s(x.headline, 60), description: s(x.description, 60), cta_button: META_CTAS[String(x.cta_button)] ? String(x.cta_button) : "LEARN_MORE" } })),
   ].filter((p) => p.text);
   const tests = arr("tests").map((t) => ({ hypothesis: s(t.hypothesis), a: s(t.a, 120), b: s(t.b, 120) }));
@@ -221,7 +221,7 @@ export async function applyProposals(projectId: string, picked: Proposal[], opts
       const d = p.data ?? {};
       const expert = d.layout === "expert" && photo;
       const layout = expert ? "expert_split" : d.layout === "expert" ? "typographic" : d.layout;
-      const lp = layout === "comparison" ? { layout_id: "comparison", comparison_title: p.text, comparison_left_label: d.left_label || "Tradycyjnie", comparison_left: d.left, comparison_right_label: d.right_label || "Z planem", comparison_right: d.right } : undefined;
+      const lp = layout === "comparison" ? { layout_id: "comparison", comparison_title: p.text, comparison_left_label: d.left_label || "Tradycyjnie", comparison_left: d.left, comparison_right_label: d.right_label || "Z planem", comparison_right: d.right, ...(d.left_title ? { comparison_left_title: d.left_title } : {}), ...(d.right_title ? { comparison_right_title: d.right_title } : {}) } : undefined;
       for (const f of PMAX_SPEC.images.formats) {
         await prisma.adwordsAsset.create({
           data: { projectId, conceptId: code, assetKey: `${code}-${f.key === "landscape" ? "L" : f.key === "square" ? "SQ" : "P"}`, rowType: "image", aspectRatio: f.ratio, width: f.width, height: f.height, headline: p.text, body: d.body || null, cta: d.cta || null, layout, expertPhotoId: expert ? photo!.id : null, campaignCode: campaign, assetGroup: group, landingUrl: url, funnel: "sprzedaz", status: "draft", scoreNote: `AI: ${p.angle} — ${p.why}`.slice(0, 500), ...(lp ? { lp } : {}), order: order++ },

@@ -174,14 +174,18 @@ export async function runAdInfographic(projectId: string, conceptId: string) {
 
 export const COMPARE_SYSTEM = `ADWORDS_COMPARE
 Tworzysz grafikę porównawczą (dwie karty: „tradycyjnie” vs „z nami”) do reklamy kancelarii w Google Ads / Meta, na podstawie istniejącego hasła.
-Zasady: krótko (każda strona ≤ 45 znaków, etykiety ≤ 18), konkretnie, bez liczb, terminów, cen i obietnic wyniku, których nie ma w źródle; bez „gwarantujemy”; naturalna polszczyzna; prawa strona to mechanizm z hasła.
-Zwróć JSON: {"title":"…","left_label":"…","left":"…","right_label":"…","right":"…"}`;
+Karta = etykieta (np. „TRADYCYJNIE”, „GDY JEST SPÓR”, „BEZ PLANU” / nazwa marki) + mocna linia (≤ 28 znaków, np. „Najpierw pozew” / „Najpierw plan”) + opis (≤ 70 znaków, np. „Pozew → odpowiedź → kolejne pisma” / „Plan → rozmowy → ustalenia → pozew”).
+Tytuł to pytanie albo teza klienta (np. „A gdyby odwrócić kolejność?”, „Ile będzie kosztować rozwód?”), ≤ 45 znaków.
+Zasady: konkretnie, bez liczb, terminów, cen i obietnic wyniku, których nie ma w źródle; nie sugeruj, że każdy tradycyjny proces to wojna; bez „gwarantujemy”; naturalna polszczyzna; prawa strona to mechanizm z hasła.
+Zwróć JSON: {"title":"…","left_label":"…","left_title":"…","left":"…","right_label":"…","right_title":"…","right":"…"}`;
 
 export interface CompareCopy {
   title: string;
   left_label: string;
+  left_title?: string;
   left: string;
   right_label: string;
+  right_title?: string;
   right: string;
 }
 /** without OpenAI: a plain rule from the headline and the topic */
@@ -209,7 +213,7 @@ async function compareCopy(headline: string, body: string | null, topic: string 
     const d = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
     const o = JSON.parse((d.choices?.[0]?.message?.content ?? "{}").replace(/^```(?:json)?\s*|\s*```$/g, "")) as Partial<CompareCopy>;
     const cut = (v: unknown, n: number) => String(v ?? "").trim().slice(0, n);
-    const out = { title: cut(o.title, 70), left_label: cut(o.left_label, 24), left: cut(o.left, 60), right_label: cut(o.right_label, 24), right: cut(o.right, 60) };
+    const out = { title: cut(o.title, 70), left_label: cut(o.left_label, 24), left_title: cut(o.left_title, 40), left: cut(o.left, 90), right_label: cut(o.right_label, 24), right_title: cut(o.right_title, 40), right: cut(o.right, 90) };
     return out.left && out.right ? out : compareRule(headline, topic);
   } catch {
     return compareRule(headline, topic);
@@ -247,7 +251,7 @@ export async function comparisonVariants(projectId: string, conceptIds?: string[
           experimentId: null,
           variant: null,
           pairedAssetId: null,
-          lp: { ...((r.lp ?? {}) as object), layout_id: "comparison", comparison_title: cc.title, comparison_left_label: cc.left_label, comparison_left: cc.left, comparison_right_label: cc.right_label, comparison_right: cc.right } as Prisma.InputJsonValue,
+          lp: { ...((r.lp ?? {}) as object), layout_id: "comparison", comparison_title: cc.title, comparison_left_label: cc.left_label, comparison_left: cc.left, comparison_right_label: cc.right_label, comparison_right: cc.right, ...(cc.left_title ? { comparison_left_title: cc.left_title } : {}), ...(cc.right_title ? { comparison_right_title: cc.right_title } : {}) } as Prisma.InputJsonValue,
           edit: { variantOf: c } as Prisma.InputJsonValue,
           extra: (r.extra ?? Prisma.JsonNull) as Prisma.InputJsonValue,
           order: ++max,
@@ -255,6 +259,70 @@ export async function comparisonVariants(projectId: string, conceptIds?: string[
       });
     }
     made.push(`${c}C`);
+  }
+  return { made, skipped };
+}
+
+// ------------------------------------------------------------------------------- comparison templates
+
+/** ready comparison concepts (the light "cards" design): the question on top, the usual way vs ours */
+export const COMPARISON_TEMPLATES: Array<{ key: string; title: string; left_label: string; left_title: string; left: string; right_title: string; right: string; cta: string; why: string }> = [
+  { key: "kolejnosc", title: "„A gdyby odwrócić kolejność?”", left_label: "Tradycyjnie", left_title: "Najpierw pozew", left: "Pozew → odpowiedź → kolejne pisma → ustalenia w trakcie sporu", right_title: "Najpierw plan", right: "Plan → rozmowy → ustalenia → pozew", cta: "Odbierz bezpłatny Plan Rozwodu", why: "pokazuje mechanizm, nie ogólną obietnicę" },
+  { key: "cena", title: "„Ile będzie kosztować rozwód?”", left_label: "Tradycyjnie", left_title: "„To zależy…”", left: "Koszty kolejnych czynności mogą być trudne do przewidzenia.", right_title: "Cena znana z góry", right: "Poznajesz cenę i zakres naszej usługi przed decyzją.", cta: "Sprawdź koszt i odbierz Plan", why: "trafia w obawę o koszty — cena usługi, nie wszystkich kosztów sądowych" },
+  { key: "bez-wojny", title: "„Rozwód nie musi oznaczać wojny”", left_label: "Gdy jest spór", left_title: "Walka o każde ustalenie", left: "Konflikt → stanowiska stron → rozstrzygnięcia sądu", right_title: "Najpierw rozmowa", right: "Mediacja → próba porozumienia → przygotowanie dokumentów", cta: "Sprawdź, jak działa rozwód bez wojny", why: "emocjonalny kontrast, bez sugerowania, że każdy rozwód to wojna" },
+  { key: "kroki", title: "„Wiesz, co będzie dalej?”", left_label: "Bez planu", left_title: "Co teraz?", left: "Niepewność, kolejne decyzje, zmieniające się ustalenia.", right_title: "Znasz kolejne kroki", right: "Plan działania, lista dokumentów i uporządkowany proces.", cta: "Poznaj swój Plan Rozwodu", why: "poczucie kontroli, bez obietnic czasu" },
+  { key: "zakres", title: "„Za co właściwie płacisz?”", left_label: "Tradycyjny model godzinowy", left_title: "Płacisz za kolejne czynności", left: "Konsultacje, pisma i dodatkowy czas pracy.", right_title: "Znasz zakres pomocy", right: "Wiesz, jakie działania obejmuje proponowana usługa.", cta: "Poznaj zakres i cenę usługi", why: "dla porównujących kancelarie (częściowo jak „cena”)" },
+];
+
+/** the templates as new concepts (3 Google formats each); a template already added is skipped */
+export async function comparisonTemplates(projectId: string, keys?: string[]) {
+  const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId } });
+  const used = await taken(projectId);
+  const existing = await prisma.adwordsAsset.findMany({ where: { projectId, rowType: "image" }, select: { edit: true, campaignCode: true, assetGroup: true, landingUrl: true } });
+  const have = new Set(existing.map((a) => ((a.edit ?? {}) as { template?: string }).template).filter(Boolean));
+  const base = existing.find((a) => a.landingUrl) ?? existing[0] ?? null;
+  const formats = [
+    { key: "L", ratio: "1.91:1", width: 1200, height: 628 },
+    { key: "SQ", ratio: "1:1", width: 1200, height: 1200 },
+    { key: "P", ratio: "4:5", width: 960, height: 1200 },
+  ];
+  let max = (await prisma.adwordsAsset.aggregate({ where: { projectId }, _max: { order: true } }))._max.order ?? 0;
+  const made: string[] = [];
+  const skipped: string[] = [];
+  for (const t of COMPARISON_TEMPLATES.filter((x) => !keys?.length || keys.includes(x.key))) {
+    if (have.has(t.key)) {
+      skipped.push(t.key);
+      continue;
+    }
+    let code = "";
+    for (let i = 1; i < 1000 && !code; i++) if (!used.has(`K${String(i).padStart(2, "0")}`)) code = `K${String(i).padStart(2, "0")}`;
+    used.add(code);
+    for (const f of formats) {
+      await prisma.adwordsAsset.create({
+        data: {
+          projectId,
+          conceptId: code,
+          assetKey: `${code}-${f.key}`,
+          rowType: "image",
+          aspectRatio: f.ratio,
+          width: f.width,
+          height: f.height,
+          headline: t.title,
+          cta: t.cta,
+          layout: "comparison",
+          campaignCode: base?.campaignCode ?? null,
+          assetGroup: base?.assetGroup ?? null,
+          landingUrl: base?.landingUrl ?? null,
+          funnel: "sprzedaz",
+          status: "draft",
+          scoreNote: `Porównanie: ${t.why}`,
+          lp: { layout_id: "comparison", comparison_title: t.title, comparison_left_label: t.left_label, comparison_left_title: t.left_title, comparison_left: t.left, comparison_right_label: project.name, comparison_right_title: t.right_title, comparison_right: t.right } as Prisma.InputJsonValue,
+          edit: { template: t.key } as Prisma.InputJsonValue,
+          order: ++max,
+        },
+      });
+    }
+    made.push(code);
   }
   return { made, skipped };
 }

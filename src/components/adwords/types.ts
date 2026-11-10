@@ -82,6 +82,8 @@ export interface AwData {
   canEdit: boolean;
   theme: ThemeTokens;
   logoUrl: string | null;
+  /** the logo for dark backgrounds */
+  logoDarkUrl?: string | null;
   campaigns: AwCampaign[];
   assets: AwAsset[];
   photos: AwPhoto[];

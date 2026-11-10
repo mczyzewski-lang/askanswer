@@ -216,7 +216,14 @@ export const orientationName = (w: number, h: number) => (formatKeyOf(null, w, h
 export const fileNameOf = (slug: string, a: { conceptId: string | null; assetKey: string }, w: number, h: number, ext: string) => `${slug}_${a.conceptId ?? a.assetKey}_${orientationName(w, h)}_${w}x${h}.${ext}`;
 
 /** Render one image row at its format's size (the recommended pixels when the row has none). */
-export async function renderAdwordsImage(assetDbId: string, fmt: "png" | "jpg" = "png", cache?: { logo?: Image | null; photos?: Map<string, Image | null> }) {
+/** the project's topic as the gallery computes it (set by hand, else from its texts) — the same on the server */
+export async function topicFor(project: { id: string; adwordsTopic?: string | null }): Promise<string | null> {
+  if (project.adwordsTopic?.trim()) return project.adwordsTopic.trim();
+  const assets = await prisma.adwordsAsset.findMany({ where: { projectId: project.id }, select: { headline: true, adText: true, subheadline: true, body: true } });
+  return projectTopic(project, assets);
+}
+
+export async function renderAdwordsImage(assetDbId: string, fmt: "png" | "jpg" = "png", cache?: { logo?: Image | null; logoDark?: Image | null; topic?: string | null; photos?: Map<string, Image | null> }) {
   const a = await prisma.adwordsAsset.findUniqueOrThrow({ where: { id: assetDbId }, include: { project: { include: { theme: { include: { expertPhotos: true } } } } } });
   if (a.rowType !== "image" && a.rowType !== "image_clean") throw new HttpError(400, "To nie jest grafika");
   const key = formatKeyOf(a.aspectRatio, a.width, a.height);
@@ -228,6 +235,10 @@ export async function renderAdwordsImage(assetDbId: string, fmt: "png" | "jpg" =
   const theme = a.project.theme ? themeFromRow(a.project.theme) : DEFAULT_THEME;
   const logo = cache && "logo" in cache ? cache.logo : await loadAssetImage(a.project.theme?.logoAssetId);
   if (cache && !("logo" in cache)) cache.logo = logo;
+  const logoDark = cache && "logoDark" in cache ? cache.logoDark : await loadAssetImage(a.project.theme?.logoDarkAssetId);
+  if (cache && !("logoDark" in cache)) cache.logoDark = logoDark;
+  const topic = cache && "topic" in cache ? cache.topic : await topicFor(a.project);
+  if (cache && !("topic" in cache)) cache.topic = topic;
   const photoRow = a.expertPhotoId ? a.project.theme?.expertPhotos.find((p) => p.id === a.expertPhotoId) : a.expertPhotoKey ? a.project.theme?.expertPhotos.find((p) => p.key === a.expertPhotoKey) : null;
   const edit = (a.edit ?? {}) as AssetEdit;
   let photoImg: Image | null = null;
@@ -249,6 +260,8 @@ export async function renderAdwordsImage(assetDbId: string, fmt: "png" | "jpg" =
     copy: { headline: a.headline || comparisonOf((a.lp as Record<string, string> | null))?.title || "", subheadline: a.subheadline, body: a.body, cta: a.cta, comparison: comparisonOf((a.lp as Record<string, string> | null)) },
     theme,
     logo,
+    logoDark,
+    topic,
     photo: infoImg ? { image: infoImg, focalX: 0.5, focalY: 0.5 } : photoImg && photoRow ? { image: photoImg, focalX: photoRow.focalX, focalY: photoRow.focalY, zoom: edit.zoom, offsetX: edit.offsetX, offsetY: edit.offsetY } : null,
     safeMargin: PMAX_SPEC.images.safeMargin,
   });
@@ -412,7 +425,7 @@ export async function adwordsZip(projectId: string, fmt: "png" | "jpg" = "png", 
   const manifest: Array<Record<string, string | number>> = [];
   const measures = new Map<string, Measure>();
   const sizes = new Map<string, number>();
-  const cache: { logo?: Image | null; photos: Map<string, Image | null> } = { photos: new Map() };
+  const cache: { logo?: Image | null; logoDark?: Image | null; topic?: string | null; photos: Map<string, Image | null> } = { photos: new Map() };
   const rendered: Array<{ a: (typeof assets)[number]; name: string; w: number; h: number; bytes: number }> = [];
   for (const a of assets.filter((x) => (x.rowType === "image" || x.rowType === "image_clean") && picked(x) && want("images"))) {
     const r = await renderAdwordsImage(a.id, fmt, cache);

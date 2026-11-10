@@ -29,6 +29,8 @@ interface ThemeRow {
   questionPosition: string;
   logoAssetId: string | null;
   logoUrl: string | null;
+  logoDarkAssetId?: string | null;
+  logoDarkUrl?: string | null;
   brollStyle: string | null;
   infographicPrompt?: string | null;
   projects: Array<{ id: string; name: string; categories: StyleCategory[] }>;
@@ -56,7 +58,6 @@ export function ThemesView({ themes, experts, initialId, embedded = false }: { t
     setLastId(current.id);
     setDraft(current);
   }
-  const fileRef = useRef<HTMLInputElement>(null);
   const unused = themes.filter((t) => !t.projects.length);
   const tokens = useMemo(() => (draft ? themeFromRow(draft) : null), [draft]);
   if (!current || !draft || !tokens) return <EmptyState title="Brak motywów projektów">Motyw jest tworzony automatycznie razem z projektem.</EmptyState>;
@@ -250,44 +251,62 @@ export function ThemesView({ themes, experts, initialId, embedded = false }: { t
               </div>
             </div>
           </Card>
-          <Card className="space-y-3 p-5">
-            <p className="font-medium">Logo</p>
-            <div className="flex items-center gap-4">
-              <div className="flex h-16 w-40 items-center justify-center rounded-xl border border-dashed border-line bg-[repeating-conic-gradient(#f3f3f3_0_25%,#fff_0_50%)] bg-[length:16px_16px]">
-                {draft.logoUrl ? <img src={draft.logoUrl} alt="Logo" className="max-h-12 max-w-36 object-contain" /> : <span className="text-xs text-muted">brak logo</span>}
-              </div>
-              <div className="flex gap-2">
-                <Button variant="outline" onClick={() => fileRef.current?.click()}>
-                  <ImagePlus /> Wgraj logo
+          <Card className="space-y-3 p-5" data-testid="theme-logos">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="font-medium">Logo</p>
+              {THEME_PRESETS.find((p) => p.key === draft.presetKey && (p.logoFile || p.logoDarkFile)) ? (
+                <Button variant="outline" onClick={() => void save({ presetLogos: draft.presetKey! } as never)} data-testid="preset-logos">
+                  <ImagePlus /> Wstaw logo marki {THEME_PRESETS.find((p) => p.key === draft.presetKey)?.name}
                 </Button>
-                {draft.logoAssetId ? (
-                  <Button variant="ghost" onClick={() => save({ logoAssetId: null })}>
-                    <Trash2 /> Usuń
-                  </Button>
-                ) : null}
-              </div>
-              <input
-                ref={fileRef}
-                type="file"
-                accept="image/png,image/jpeg,image/webp"
-                className="hidden"
-                onChange={async (e) => {
-                  const f = e.target.files?.[0];
-                  e.target.value = "";
-                  if (!f) return;
-                  const fd = new FormData();
-                  fd.set("file", f);
-                  const res = await fetch(`/api/admin/themes/${draft.id}/logo`, { method: "POST", body: fd });
-                  const d = await res.json();
-                  if (!res.ok) toast(d.error ?? "Błąd wysyłania", "err");
-                  else {
-                    toast("Wgrano logo");
-                    router.refresh();
-                  }
-                }}
-              />
+              ) : null}
             </div>
-            <p className="text-xs text-muted">PNG z przezroczystością, maks. 5 MB. Logo pojawia się w nowych filmach (warstwa „Logo”) i można je dodać w Studio.</p>
+            {(
+              [
+                ["light", "Na jasne tło", draft.logoUrl, draft.logoAssetId, "logoAssetId", "#ffffff"],
+                ["dark", "Na ciemne tło", draft.logoDarkUrl ?? null, draft.logoDarkAssetId ?? null, "logoDarkAssetId", draft.backgroundColor],
+              ] as const
+            ).map(([variant, title, url, id, field, bgc]) => (
+              <div key={variant} className="flex flex-wrap items-center gap-4" data-testid={`logo-${variant}`}>
+                <div className="flex h-16 w-44 items-center justify-center rounded-xl border border-line" style={{ background: bgc }}>
+                  {url ? <img src={url} alt={`Logo — ${title}`} className="max-h-12 max-w-40 object-contain" /> : <span className={cn("text-xs", variant === "dark" ? "text-white/70" : "text-muted")}>brak</span>}
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-medium">{title}</p>
+                  <div className="mt-1 flex gap-2">
+                    <label className="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-lg border border-line px-3 text-sm hover:border-black/20">
+                      <ImagePlus className="h-4 w-4" /> Wgraj
+                      <input
+                        type="file"
+                        accept="image/svg+xml,image/png,image/jpeg,image/webp"
+                        className="hidden"
+                        data-testid={`logo-upload-${variant}`}
+                        onChange={async (e) => {
+                          const f = e.target.files?.[0];
+                          e.target.value = "";
+                          if (!f) return;
+                          const fd = new FormData();
+                          fd.set("file", f);
+                          fd.set("variant", variant);
+                          const res = await fetch(`/api/admin/themes/${draft.id}/logo`, { method: "POST", body: fd });
+                          const d = await res.json();
+                          if (!res.ok) toast(d.error ?? "Błąd wysyłania", "err");
+                          else {
+                            toast(d.counterpart ? "Wgrano logo — z SVG zrobiłem też wersję na drugie tło" : "Wgrano logo");
+                            router.refresh();
+                          }
+                        }}
+                      />
+                    </label>
+                    {id ? (
+                      <Button variant="ghost" onClick={() => save({ [field]: null } as never)}>
+                        <Trash2 /> Usuń
+                      </Button>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+            ))}
+            <p className="text-xs text-muted">SVG, PNG z przezroczystością, JPG lub WEBP, maks. 5 MB. SVG zamieniam na PNG; jeśli drugiej wersji brakuje, robię ją z SVG (białe ↔ kolor motywu). Grafiki same wybierają wersję do tła — na jasnych kartach porównania jasna, na ciemnych banerach ciemna.</p>
           </Card>
           <div className="flex gap-3">
             <Button disabled={!dirty} onClick={() => save()}>

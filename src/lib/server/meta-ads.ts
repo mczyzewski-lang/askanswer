@@ -7,7 +7,7 @@ import { createCanvas, type Image } from "@napi-rs/canvas";
 import { strToU8, zipSync } from "fflate";
 import { prisma } from "./db";
 import { HttpError } from "./errors";
-import { loadAssetImage } from "./adwords";
+import { loadAssetImage, topicFor } from "./adwords";
 import { registerFonts } from "../render/server-render";
 import { themeFromRow, DEFAULT_THEME } from "../themes";
 import { drawCreative } from "../adwords/draw";
@@ -23,7 +23,7 @@ export const metaData = (a: { photoIds: unknown; webinarAt: Date | null; extra?:
   infographic: (a.infographic ?? null) as MetaAdData["infographic"],
 });
 
-export async function renderMetaImage(adId: string, format: MetaFormatKey, version: string, fmt: "png" | "jpg" = "png", cache?: { logo?: Image | null; photos: Map<string, Image | null> }) {
+export async function renderMetaImage(adId: string, format: MetaFormatKey, version: string, fmt: "png" | "jpg" = "png", cache?: { logo?: Image | null; logoDark?: Image | null; topic?: string | null; photos: Map<string, Image | null> }) {
   const ad = await prisma.metaAd.findUniqueOrThrow({ where: { id: adId }, include: { project: { include: { theme: { include: { expertPhotos: true } } } } } });
   if (!META_FORMATS.some((f) => f.key === format)) throw new HttpError(400, "Nieznany format");
   const d = metaData(ad);
@@ -33,6 +33,10 @@ export async function renderMetaImage(adId: string, format: MetaFormatKey, versi
   const theme = ad.project.theme ? themeFromRow(ad.project.theme) : DEFAULT_THEME;
   const logo = cache && "logo" in cache ? cache.logo! : await loadAssetImage(ad.project.theme?.logoAssetId);
   if (cache && !("logo" in cache)) cache.logo = logo;
+  const logoDark = cache && "logoDark" in cache ? cache.logoDark! : await loadAssetImage(ad.project.theme?.logoDarkAssetId);
+  if (cache && !("logoDark" in cache)) cache.logoDark = logoDark;
+  const topic = cache && "topic" in cache ? cache.topic! : await topicFor(ad.project);
+  if (cache && !("topic" in cache)) cache.topic = topic;
   const row = version !== "none" && version !== "info" ? ad.project.theme?.expertPhotos.find((p) => p.id === version) : null;
   let img: Image | null = null;
   if (row) {
@@ -42,7 +46,7 @@ export async function renderMetaImage(adId: string, format: MetaFormatKey, versi
   const info = version === "info" ? await loadAssetImage(d.infographic?.[format]) : null;
   const c = metaCreative(d, format, info ? "info" : !!img);
   const canvas = createCanvas(c.width, c.height);
-  const measure: Measure = drawCreative(canvas.getContext("2d") as never, { ...c, theme, logo, photo: info ? { image: info, focalX: 0.5, focalY: 0.5 } : img && row ? { image: img, focalX: row.focalX, focalY: row.focalY } : null });
+  const measure: Measure = drawCreative(canvas.getContext("2d") as never, { ...c, theme, logo, logoDark, topic, photo: info ? { image: info, focalX: 0.5, focalY: 0.5 } : img && row ? { image: img, focalX: row.focalX, focalY: row.focalY } : null });
   const buf = fmt === "png" ? await canvas.encode("png") : await canvas.encode("jpeg", 90);
   const label = row ? metaSlug(row.key) : info ? "infografika" : "bez-eksperta";
   return { buf, measure, width: c.width, height: c.height, mime: fmt === "png" ? "image/png" : "image/jpeg", fileName: `${metaSlug(ad.name)}_${label}_${format}_${c.width}x${c.height}.${fmt}`, versionLabel: row ? row.name : info ? "infografika AI" : "bez eksperta" };
@@ -55,7 +59,7 @@ export async function metaZip(projectId: string, adIds: string[], fmt: "png" | "
   if (!ads.length) throw new HttpError(404, "Brak reklam Meta");
   const files: Record<string, Uint8Array> = {};
   const rows: Parameters<typeof metaCsv>[0] = [];
-  const cache = { photos: new Map<string, Image | null>() } as { logo?: Image | null; photos: Map<string, Image | null> };
+  const cache = { photos: new Map<string, Image | null>() } as { logo?: Image | null; logoDark?: Image | null; topic?: string | null; photos: Map<string, Image | null> };
   for (const ad of ads) {
     const d = metaData(ad);
     for (const v of metaVersions(d)) {

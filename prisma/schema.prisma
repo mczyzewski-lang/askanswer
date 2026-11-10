@@ -142,6 +142,8 @@ model Theme {
   /// top | center | lower
   questionPosition String    @default("top")
   logoAssetId      String?
+  /// the logo for dark backgrounds (e.g. a white version); logoAssetId is the one for light backgrounds
+  logoDarkAssetId  String?
   /// default visual style for AI scenes (Higgsfield); categories can override it
   brollStyle       String?
   createdAt        DateTime  @default(now())

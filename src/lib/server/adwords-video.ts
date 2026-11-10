@@ -50,7 +50,8 @@ export async function renderAdwordsVideo(projectId: string, conceptId: string, v
   });
   registerFonts();
   const theme = project.theme ? themeFromRow(project.theme) : DEFAULT_THEME;
-  const logo = await imageOf(project.theme?.logoAssetId);
+  // the storyboard frames are dark: the dark-background logo when the theme has one
+  const logo = (await imageOf(project.theme?.logoDarkAssetId)) ?? (await imageOf(project.theme?.logoAssetId));
   const photos = new Map<string, Image | null>();
   const photoFor = async (key: string | null, id: string | null) => {
     const p = id ? project.theme?.expertPhotos.find((x) => x.id === id) : key ? project.theme?.expertPhotos.find((x) => x.key === key) : null;

@@ -10,7 +10,8 @@ export const GET = route(async () => {
     await Promise.all(
       themes.map(async (t) => {
         const logo = t.logoAssetId ? await prisma.mediaAsset.findUnique({ where: { id: t.logoAssetId } }) : null;
-        return { ...t, logoUrl: logo ? await signedUrl(logo.storageKey) : null };
+        const dark = t.logoDarkAssetId ? await prisma.mediaAsset.findUnique({ where: { id: t.logoDarkAssetId } }) : null;
+        return { ...t, logoUrl: logo ? await signedUrl(logo.storageKey) : null, logoDarkUrl: dark ? await signedUrl(dark.storageKey) : null };
       }),
     ),
   );

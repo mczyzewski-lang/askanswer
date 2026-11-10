@@ -17,6 +17,7 @@ export const GET = route(async (_req: Request, ctx: { params: Promise<{ projectI
   const { project, assets, photos, campaigns } = await adwordsProject(projectId);
   const theme = project.theme ? themeFromRow(project.theme) : DEFAULT_THEME;
   const logo = project.theme?.logoAssetId ? await prisma.mediaAsset.findUnique({ where: { id: project.theme.logoAssetId } }) : null;
+  const logoDark = project.theme?.logoDarkAssetId ? await prisma.mediaAsset.findUnique({ where: { id: project.theme.logoDarkAssetId } }) : null;
   const evaluation = await evaluateProject(projectId);
   const list = assets.map(toAdAsset);
   const history = await historyOf(projectId);
@@ -35,6 +36,7 @@ export const GET = route(async (_req: Request, ctx: { params: Promise<{ projectI
     canEdit: canEdit(me.role),
     theme,
     logoUrl: logo ? await signedUrl(logo.storageKey, { ttlSec: 6 * 3600 }) : null,
+    logoDarkUrl: logoDark ? await signedUrl(logoDark.storageKey, { ttlSec: 6 * 3600 }) : null,
     campaigns,
     assets: assets.map((a) => ({ ...a, effectiveLayout: a.rowType === "image" || a.rowType === "image_clean" ? layoutOf(a) : null, infographicUrl: infoUrls.get(((a.edit ?? {}) as { infographicAssetId?: string }).infographicAssetId ?? "") ?? null })),
     photos: await Promise.all(photos.map(async (p) => ({ ...p, url: await photoUrl(p.assetId) }))),

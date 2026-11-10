@@ -3,7 +3,7 @@ import { prisma } from "@/lib/server/db";
 import { requireAdmin } from "@/lib/server/auth";
 import { json, route } from "@/lib/server/http";
 import { THEME_PRESETS, FONT_FAMILIES } from "@/lib/themes";
-import { presetLogoAssetId } from "@/lib/server/preset-logo";
+import { presetLogos } from "@/lib/server/preset-logo";
 import { isBasePrompt } from "@/lib/infographic-prompt";
 
 const hex = z.string().regex(/^#[0-9a-fA-F]{6}$/, "Kolor musi mieć format #RRGGBB");
@@ -26,6 +26,9 @@ export const PATCH = route(async (req: Request, ctx: { params: Promise<{ id: str
       subtitleFont: fontName.optional(),
       labelFont: fontName.optional(),
       logoAssetId: z.string().nullable().optional(),
+      logoDarkAssetId: z.string().nullable().optional(),
+      /** put the brand logos of a preset (both versions) without touching the colours */
+      presetLogos: z.string().optional(),
       questionStyle: z.enum(["card", "plain", "outline", "accent", "pill"]).optional(),
       questionPosition: z.enum(["top", "center", "lower"]).optional(),
       brollStyle: z.string().trim().max(4000).nullable().optional().transform((v) => (v === "" ? null : v)),
@@ -36,7 +39,13 @@ export const PATCH = route(async (req: Request, ctx: { params: Promise<{ id: str
     .parse(raw);
   const theme = await prisma.theme.findUniqueOrThrow({ where: { id } });
   if (theme.isPreset) return json({ error: "Motywy wbudowane są tylko do odczytu — edytuj motyw projektu." }, 400);
-  const { applyPreset, ...data } = body;
+  const { applyPreset, presetLogos: logosOf, ...data } = body;
+  if (logosOf) {
+    const project = await prisma.project.findFirst({ where: { themeId: id }, select: { id: true } });
+    const logos = await presetLogos(logosOf, project?.id ?? null);
+    if (!Object.keys(logos).length) return json({ error: "Ten preset nie ma logo" }, 400);
+    Object.assign(data, logos);
+  }
   if (applyPreset) {
     const p = THEME_PRESETS.find((t) => t.key === applyPreset);
     if (!p) return json({ error: "Nieznany preset" }, 400);
@@ -53,10 +62,9 @@ export const PATCH = route(async (req: Request, ctx: { params: Promise<{ id: str
       labelFont: p.labelFont,
     });
     // a preset with its brand logo brings it along; other presets keep the current logo
-    if (p.logoFile) {
+    if (p.logoFile || p.logoDarkFile) {
       const project = await prisma.project.findFirst({ where: { themeId: id }, select: { id: true } });
-      const logoAssetId = await presetLogoAssetId(p.key, project?.id ?? null);
-      if (logoAssetId) Object.assign(data, { logoAssetId });
+      Object.assign(data, await presetLogos(p.key, project?.id ?? null));
     }
   }
   return json(await prisma.theme.update({ where: { id }, data }));
