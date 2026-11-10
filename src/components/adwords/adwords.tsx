@@ -18,6 +18,7 @@ import { ExperimentsTab } from "./experiments";
 import { AssistantTab } from "./assistant";
 import { LandingContentTab } from "./landing-content";
 import { ShareButton } from "./share";
+import { MetaTab } from "./meta";
 import type { AwData, Toast } from "./types";
 
 const TABS = [
@@ -29,6 +30,7 @@ const TABS = [
   ["historia", "Historia PMax"],
   ["asystent", "Asystent kreacji"],
   ["landing", "Treść Landing Page"],
+  ["meta", "Meta (FB/IG)"],
   ["import", "Import CSV"],
   ["raport", "Raport dla agencji"],
   ["eksperci", "Zdjęcia ekspertów"],
@@ -80,7 +82,7 @@ export function AdwordsProject({ projectId }: { projectId: string }) {
           </button>
         ))}
       </nav>
-      {data.assets.length === 0 && !["import", "wytyczne", "eksperci", "historia", "asystent", "landing"].includes(tab) ? (
+      {data.assets.length === 0 && !["import", "wytyczne", "eksperci", "historia", "asystent", "landing", "meta"].includes(tab) ? (
         <EmptyState title="Brak komponentów">
           <button type="button" className="underline" onClick={() => setTab("import")}>
             Zaimportuj plik CSV
@@ -97,6 +99,7 @@ export function AdwordsProject({ projectId }: { projectId: string }) {
       {tab === "historia" ? <HistoryTab data={data} reload={load} toast={toast} /> : null}
       {tab === "asystent" ? <AssistantTab data={data} reload={load} toast={toast} onAdded={(k) => setTab(k === "image" ? "grafiki" : "wideo")} /> : null}
       {tab === "landing" ? <LandingContentTab data={data} reload={load} toast={toast} /> : null}
+      {tab === "meta" ? <MetaTab data={data} toast={toast} /> : null}
       {tab === "raport" && data.assets.length ? <ReportTab data={data} reload={load} toast={toast} /> : null}
       {tab === "eksperci" ? <PhotosTab data={data} reload={load} toast={toast} /> : null}
       {tab === "wytyczne" ? <SpecTab data={data} /> : null}

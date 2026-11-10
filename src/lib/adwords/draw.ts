@@ -81,7 +81,7 @@ export interface CreativeInput {
   width: number;
   height: number;
   layout: LayoutKey;
-  copy: { headline: string; subheadline?: string | null; body?: string | null; cta?: string | null; comparison?: ComparisonCopy | null };
+  copy: { headline: string; subheadline?: string | null; body?: string | null; cta?: string | null; comparison?: ComparisonCopy | null; /** a short pill above the headline (e.g. the webinar date) */ badge?: string | null };
   theme: ThemeTokens;
   logo?: ImageLike | null;
   photo?: PhotoInput | null;
@@ -89,6 +89,8 @@ export interface CreativeInput {
   showSafeArea?: boolean;
   /** draw the sub-line and the proof chip too (off: a feed banner carries the headline + CTA only) */
   showDetails?: boolean;
+  /** text-free margins per side, as parts of the size (e.g. Meta Reels: top 0.14, bottom 0.35, sides 0.06) */
+  safeInsets?: { top: number; bottom: number; left: number; right: number } | null;
   safeMargin?: number;
 }
 
@@ -219,7 +221,8 @@ export function stepsOf(body: string | null | undefined): string[] {
 export function drawCreative(ctx: Ctx2D, input: CreativeInput): Measure {
   const { width: W, height: H, theme } = input;
   const M = input.safeMargin ?? 0.1;
-  const S = { x: W * M, y: H * M, w: W * (1 - 2 * M), h: H * (1 - 2 * M) };
+  const I = input.safeInsets;
+  const S = I ? { x: W * I.left, y: H * I.top, w: W * (1 - I.left - I.right), h: H * (1 - I.top - I.bottom) } : { x: W * M, y: H * M, w: W * (1 - 2 * M), h: H * (1 - 2 * M) };
   const kind = W / H > 1.4 ? "landscape" : W / H < 0.9 ? "portrait" : "square";
   const head = (px: number) => `800 ${px}px "${theme.questionFont}"`;
   const sub = (px: number) => `500 ${px}px "${theme.subtitleFont}"`;
@@ -290,8 +293,10 @@ export function drawCreative(ctx: Ctx2D, input: CreativeInput): Measure {
       region = { x: W * 0.5, y: 0, w: W * 0.5, h: H };
       T = { x: S.x, y: S.y, w: W * 0.5 - S.x - W * 0.035, h: S.h };
     } else {
-      region = { x: 0, y: 0, w: W, h: H * 0.5 };
-      T = { x: S.x, y: H * 0.5, w: S.w, h: S.y + S.h - H * 0.5 };
+      // tall: the photo on top; a 9:16 story keeps the text above its bottom safe zone
+      const ph = W / H < 0.65 ? Math.max(H * 0.3, S.y + S.h * 0.34) : H * 0.5;
+      region = { x: 0, y: 0, w: W, h: ph };
+      T = { x: S.x, y: ph, w: S.w, h: S.y + S.h - ph };
     }
     const f = drawPhoto(ctx, photo, region.x, region.y, region.w, region.h);
     if (f.fx < S.x || f.fx > S.x + S.w || f.fy < S.y || f.fy > S.y + S.h) outsideSafe = true;
@@ -354,11 +359,24 @@ export function drawCreative(ctx: Ctx2D, input: CreativeInput): Measure {
   const proof = layout !== "process_steps" && !cmp && input.showDetails ? (input.copy.body ?? "").trim() : "";
   const room = bottom - y;
   // a narrow text column (next to the photo) starts smaller
+  // a pill above the headline (the webinar date)
+  const badgeText = (input.copy.badge ?? "").trim();
+  // too long for a narrow column: the shorter forms ("WEBINAR · WT., 24 LIS · 19:00" → "24 LIS · 19:00")
+  let bdf: Fitted | null = null;
+  if (badgeText && layout !== "process_steps" && !cmp) {
+    const parts = badgeText.split(" · ");
+    const forms = [badgeText, ...(parts.length > 2 ? [`${parts[0]} · ${parts.slice(1).join(" · ").replace(/^[^,]+,\s*/, "")}`, parts.slice(1).join(" · ").replace(/^[^,]+,\s*/, "")] : [])];
+    for (const f of forms) {
+      bdf = fit(ctx, f.toUpperCase(), label, unit * 0.036, unit * 0.026, T.w - unit * 0.05, 1, 1);
+      if (!bdf.overflow) break;
+    }
+  }
+  const badgeBlock = bdf ? bdf.px * 2 + unit * 0.035 : 0;
   const headStart = unit * (kind === "landscape" ? 0.12 : kind === "portrait" ? 0.115 : 0.11) * Math.min(1, T.w / unit / 0.55);
   let hf = fit(ctx, headline, head, headStart, headStart * 0.45, T.w, kind === "landscape" ? 3 : 4, 1.08);
   // the headline also has to fit the HEIGHT of its room (with the underline), not only the line count
   if (layout !== "process_steps" && !cmp) {
-    for (let hs = headStart * 0.92; hf.lines.length * hf.lineH + unit * 0.06 > room && hs > headStart * 0.45; hs *= 0.92) hf = fit(ctx, headline, head, hs, Math.min(hs, headStart * 0.45), T.w, kind === "landscape" ? 3 : 4, 1.08);
+    for (let hs = headStart * 0.92; hf.lines.length * hf.lineH + unit * 0.06 + badgeBlock > room && hs > headStart * 0.45; hs *= 0.92) hf = fit(ctx, headline, head, hs, Math.min(hs, headStart * 0.45), T.w, kind === "landscape" ? 3 : 4, 1.08);
   }
   overflow ||= hf.overflow;
   fonts.push(hf.px);
@@ -464,9 +482,28 @@ export function drawCreative(ctx: Ctx2D, input: CreativeInput): Measure {
     // the proof chip is optional: left out when the format has no room for it
     if (proofFit && (proofFit.overflow || used + proofFit.lines.length * proofFit.lineH + unit * 0.065 > room)) proofFit = null;
     const proofH = proofFit ? proofFit.lines.length * proofFit.lineH + unit * 0.035 + unit * 0.03 : 0;
-    const block = used + proofH;
+    const block = used + proofH + badgeBlock;
     if (block > room + 1) overflow = true;
     let by = y + Math.max(0, (room - block) / 2);
+    if (bdf) {
+      const bt = bdf.lines[0] ?? badgeText.toUpperCase();
+      ctx.font = label(bdf.px);
+      const bw = Math.min(T.w, ctx.measureText(bt).width + bdf.px * 1.6);
+      const bh = bdf.px * 2;
+      ctx.fillStyle = theme.accent;
+      roundRect(ctx, T.x, by, bw, bh, bh / 2);
+      ctx.fill();
+      const bInk = inkOn(theme.accent, theme.background);
+      contrasts.push(contrast(bInk, theme.accent));
+      ctx.fillStyle = bInk;
+      ctx.textBaseline = "middle";
+      ctx.fillText(bt, T.x + bdf.px * 0.8, by + bh / 2 + bdf.px * 0.04);
+      ctx.textBaseline = "top";
+      fonts.push(bdf.px);
+      overflow ||= bdf.overflow;
+      boxes.push({ x: T.x, y: by, w: bw, h: bh });
+      by += badgeBlock;
+    }
     const hh = drawLines(ctx, hf, head, T.x, by, ink);
     boxes.push({ x: T.x, y: by, w: T.w, h: hh });
     by += hh;

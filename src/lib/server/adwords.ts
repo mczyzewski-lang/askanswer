@@ -200,7 +200,7 @@ export function inlineScenes(assets: ParsedAsset[]): ParsedAsset[] {
 
 // ------------------------------------------------------------------------------------------- render
 
-async function loadAssetImage(assetId: string | null | undefined): Promise<Image | null> {
+export async function loadAssetImage(assetId: string | null | undefined): Promise<Image | null> {
   if (!assetId) return null;
   const a = await prisma.mediaAsset.findUnique({ where: { id: assetId } });
   if (!a) return null;

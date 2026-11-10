@@ -189,6 +189,7 @@ model Project {
   adwordsTopic       String?
   adwordsClaims      AdwordsClaim[]
   adwordsShares      AdwordsShare[]
+  metaAds            MetaAd[]
   adwordsHistory     AdwordsHistoryImport[]
   adFootage          AdFootage[]
   adReels            AdReel[]
@@ -1557,6 +1558,41 @@ model AdwordsShare {
   lastAccessAt DateTime?
   accessCount  Int       @default(0)
   createdAt    DateTime  @default(now())
+
+  @@index([projectId])
+}
+
+/// Meta (Facebook / Instagram) ad of a project: the texts of Ads Manager + the banner (1:1, 4:5, 9:16),
+/// with and / or without the expert's photo; leads to a website or to a webinar page with its date
+model MetaAd {
+  id           String    @id @default(cuid())
+  projectId    String
+  project      Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name         String
+  /// Ads Manager texts
+  primaryText  String    @default("")
+  metaHeadline String    @default("")
+  description  String    @default("")
+  /// Meta CTA button (API enum: LEARN_MORE, SIGN_UP, …)
+  ctaButton    String    @default("LEARN_MORE")
+  /// on the banner
+  headline     String    @default("")
+  ctaImage     String    @default("")
+  /// website | webinar
+  destination  String    @default("website")
+  url          String?
+  webinarTitle String?
+  webinarAt    DateTime?
+  /// typographic | process_steps (the version without a photo); body = steps
+  layout       String    @default("typographic")
+  body         String?
+  /// the version without a photo is rendered too
+  withoutExpert Boolean  @default(true)
+  /// expert photos (ids of AdwordsExpertPhoto) — one version per photo
+  photoIds     Json      @default("[]")
+  order        Int       @default(0)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   @@index([projectId])
 }
