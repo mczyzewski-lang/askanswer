@@ -3,6 +3,7 @@
  * a text-to-video prompt (ElevenLabs / Veo) or the content of an infographic. The user edits it
  * before anything is generated.
  */
+import { NO_LONG_DASH_RULE } from "../dashes";
 import { prisma } from "./db";
 import { env, openaiConfigured } from "./env";
 import { openaiErrorText } from "./reel-review";
@@ -60,13 +61,13 @@ export async function draftVisual(compositionId: string, d: DraftInput) {
   const res = await fetch(`${env.openaiBaseUrl}/chat/completions`, {
     method: "POST",
     headers: { Authorization: `Bearer ${env.openaiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model: env.openaiTextModel, response_format: { type: "json_object" }, messages: [{ role: "system", content: DRAFT_SYSTEM }, { role: "user", content: user }] }),
+    body: JSON.stringify({ model: env.openaiTextModel, response_format: { type: "json_object" }, messages: [{ role: "system", content: `${DRAFT_SYSTEM}\n${NO_LONG_DASH_RULE}` }, { role: "user", content: user }] }),
     signal: AbortSignal.timeout(60_000),
   });
   const data = (await res.json().catch(() => ({}))) as { choices?: Array<{ message?: { content?: string } }>; error?: { message?: string; code?: string } };
   if (!res.ok) return { ...fallback(d, style, theme), engine: "template" as const, warning: openaiErrorText(res.status, data) };
   try {
-    const out = JSON.parse((data.choices?.[0]?.message?.content ?? "{}").replace(/^```(?:json)?\s*|\s*```$/g, "")) as Record<string, unknown>;
+    const out = JSON.parse((data.choices?.[0]?.message?.content ?? "{}").replace(/^```(?:json)?\s*|\s*```$/g, "").replace(/[ \u00A0]*[—–][ \u00A0]*/g, (m: string) => (m.length === 1 ? "-" : " - "))) as Record<string, unknown>;
     if (d.kind === "video" && typeof out.prompt === "string" && out.prompt.trim().length > 20) {
       const prompt = out.prompt.trim();
       const hasPalette = [theme.primary, theme.accent, theme.background].some((h) => prompt.toLowerCase().includes(h.toLowerCase()) || prompt.toLowerCase().includes(colorName(h).toLowerCase()));

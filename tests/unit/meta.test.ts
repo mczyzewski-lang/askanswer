@@ -59,6 +59,6 @@ describe("Meta ads", () => {
     const csv = metaCsv([{ ad, version: "none", versionLabel: "bez eksperta", files: ["meta/a.png"] }]);
     expect(csv).toContain("Primary text;Headline;Description;Call to action");
     expect(csv).toContain("SIGN_UP");
-    expect(csv).toContain("Webinar listopad — bez eksperta");
+    expect(csv).toContain("Webinar listopad - bez eksperta");
   });
 });

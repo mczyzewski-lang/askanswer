@@ -47,6 +47,12 @@ test("Nowy Etap: both logos (preset + SVG upload), 5 comparison templates in the
   await expect(page.getByText("Te porównania są już w galerii")).toBeVisible();
   if (process.env.LP_SHOTS) await page.getByTestId("concept-card").filter({ hasText: "K01" }).screenshot({ path: `${process.env.LP_SHOTS}/cards-k01.png` });
 
+  // content never keeps the long dash: saved as "-"
+  await request.patch(`${base}/assets/${cards[0].id}`, { data: { headline: "Rozwód — najpierw plan", lp: { ...cards[0].lp, comparison_left: "Pozew – odpowiedź" } } });
+  const after = (await (await request.get(base)).json()).assets.find((a: { id: string }) => a.id === cards[0].id);
+  expect(after.headline).toBe("Rozwód - najpierw plan");
+  expect(after.lp.comparison_left).toBe("Pozew - odpowiedź");
+
   // the editor has the card fields
   await page.getByTestId("concept-card").filter({ hasText: "K01" }).click();
   await expect(page.getByLabel("Lewa — mocna linia")).toHaveValue("Najpierw pozew");

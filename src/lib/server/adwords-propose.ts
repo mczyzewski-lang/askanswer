@@ -5,6 +5,7 @@
  * Every proposal is checked (limits, topic, unproven claims, archive texts, duplicates) before a person
  * picks what to add.
  */
+import { NO_LONG_DASH_RULE } from "../dashes";
 import { prisma } from "./db";
 import { env, openaiConfigured } from "./env";
 import { openaiErrorText } from "./reel-review";
@@ -130,7 +131,7 @@ function ruleProposals(a: Analysis): Omit<Proposal, "issues">[] {
   const out: Omit<Proposal, "issues">[] = [
     { kind: "headline", text: `${T} bez walki w sądzie`, angle: "bez_wojny", why: "kąt z największą ekspozycją", limit: 30 },
     { kind: "headline", text: `${T}: najpierw plan`, angle: "plan_pozew", why: "mechanizm", limit: 30 },
-    { kind: "headline", text: `${T} — koszt usługi z góry`, angle: "koszt", why: "przejrzysty koszt", limit: 30 },
+    { kind: "headline", text: `${T} - koszt usługi z góry`, angle: "koszt", why: "przejrzysty koszt", limit: 30 },
     { kind: "headline", text: `${T}? Zacznij od planu`, angle: "plan_pozew", why: "pytanie + krok", limit: 30 },
     { kind: "long_headline", text: `${T} bez walki: najpierw plan i ustalenia, dopiero potem pozew`, angle: "plan_pozew", why: "pełny mechanizm", limit: 90 },
     { kind: "description", text: off ? `Odbierz bezpłatny plan rozwodu i poznaj koszt naszej usługi przed decyzją.` : `Porozmawiaj z nami o planie rozwodu i poznaj koszt naszej usługi przed decyzją.`, angle: "koszt", why: "oferta + koszt", limit: 90 },
@@ -173,14 +174,14 @@ export async function proposeContent(projectId: string): Promise<{ analysis: Ana
   const res = await fetch(`${env.openaiBaseUrl}/chat/completions`, {
     method: "POST",
     headers: { Authorization: `Bearer ${env.openaiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model: env.openaiTextModel, response_format: { type: "json_object" }, messages: [{ role: "system", content: PROPOSE_SYSTEM }, { role: "user", content: user }] }),
+    body: JSON.stringify({ model: env.openaiTextModel, response_format: { type: "json_object" }, messages: [{ role: "system", content: `${PROPOSE_SYSTEM}\n${NO_LONG_DASH_RULE}` }, { role: "user", content: user }] }),
     signal: AbortSignal.timeout(150_000),
   }).catch(() => null);
   const data = res ? ((await res.json().catch(() => ({}))) as { choices?: Array<{ message?: { content?: string } }>; error?: { message?: string } }) : {};
   if (!res?.ok) return { analysis, proposals: finish(ruleProposals(analysis)), summary: analysis.bullets, tests: [], engine: "rule", warning: res ? openaiErrorText(res.status, data) : "Brak połączenia z OpenAI — propozycje z reguł." };
   let o: Record<string, unknown> = {};
   try {
-    o = JSON.parse((data.choices?.[0]?.message?.content ?? "{}").replace(/^```(?:json)?\s*|\s*```$/g, ""));
+    o = JSON.parse((data.choices?.[0]?.message?.content ?? "{}").replace(/^```(?:json)?\s*|\s*```$/g, "").replace(/[ \u00A0]*[—–][ \u00A0]*/g, (m: string) => (m.length === 1 ? "-" : " - ")));
   } catch {
     return { analysis, proposals: finish(ruleProposals(analysis)), summary: analysis.bullets, tests: [], engine: "rule", warning: "OpenAI zwrócił odpowiedź, której nie da się odczytać — propozycje z reguł." };
   }

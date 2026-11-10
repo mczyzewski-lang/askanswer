@@ -172,7 +172,7 @@ export const metaSlug = (s: string) =>
 /** the texts for Ads Manager, one row per ad version (the image files of each format named) */
 export function metaCsv(rows: Array<{ ad: MetaAdData; version: string; versionLabel: string; files: string[] }>): string {
   const data = rows.map(({ ad, versionLabel, files }) => ({
-    "Ad name": `${ad.name}${versionLabel ? ` — ${versionLabel}` : ""}`,
+    "Ad name": `${ad.name}${versionLabel ? ` - ${versionLabel}` : ""}`,
     "Primary text": ad.primaryText,
     Headline: ad.metaHeadline,
     Description: ad.description,

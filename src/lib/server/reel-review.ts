@@ -2,6 +2,7 @@
  * Ads Studio: a reel script scored against the editor's guidelines (hook, tension, retention…) and
  * rewritten into a stronger version to swap in — by an OpenAI text model, as structured JSON.
  */
+import { NO_LONG_DASH_RULE } from "../dashes";
 import { env, openaiConfigured, openaiKeyDiagnostics } from "./env";
 import { foreignKeywords, type LeadMagnet } from "../lead-magnets";
 
@@ -221,7 +222,7 @@ async function chatOnce(model: string, user: string, system: string) {
       model,
       response_format: { type: "json_object" },
       messages: [
-        { role: "system", content: system },
+        { role: "system", content: `${system}\n${NO_LONG_DASH_RULE}` },
         { role: "user", content: user },
       ],
     }),
@@ -256,7 +257,7 @@ export async function reviewReel(p: ReviewInput): Promise<ReelReview & { model: 
   const text = data.choices?.[0]?.message?.content ?? "";
   let parsed: unknown;
   try {
-    parsed = JSON.parse(text.replace(/^```(?:json)?\s*|\s*```$/g, ""));
+    parsed = JSON.parse(text.replace(/^```(?:json)?\s*|\s*```$/g, "").replace(/[ \u00A0]*[—–][ \u00A0]*/g, (m: string) => (m.length === 1 ? "-" : " - ")));
   } catch {
     throw new Error("OpenAI zwrócił odpowiedź, której nie da się odczytać — spróbuj ponownie.");
   }
@@ -283,7 +284,7 @@ export async function suggestHooks(p: ReviewInput, count = 3): Promise<Array<{ m
   if (!res.ok) throw new Error(openaiErrorText(res.status, data));
   let parsed: { altHooks?: Array<{ mechanism?: unknown; text?: unknown }> } = {};
   try {
-    parsed = JSON.parse((data.choices?.[0]?.message?.content ?? "").replace(/^```(?:json)?\s*|\s*```$/g, ""));
+    parsed = JSON.parse((data.choices?.[0]?.message?.content ?? "").replace(/^```(?:json)?\s*|\s*```$/g, "").replace(/[ \u00A0]*[—–][ \u00A0]*/g, (m: string) => (m.length === 1 ? "-" : " - ")));
   } catch {
     throw new Error("OpenAI zwrócił odpowiedź, której nie da się odczytać — spróbuj ponownie.");
   }

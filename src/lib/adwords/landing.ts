@@ -80,7 +80,7 @@ function stepsOf(body: string | null | undefined, goal: string): string[] {
     .map((x) => x.trim())
     .filter(Boolean);
   if (s.length >= 3) return s.slice(0, 4);
-  return goal === "poradnik" ? ["Pobierz poradnik", "Przeczytaj w 10 minut", "Zapisz pytania na konsultację"] : ["Krótka rozmowa — poznajemy sytuację", "Plan i zakres — wiesz, co i kiedy", "Działamy — prowadzimy sprawę krok po kroku"];
+  return goal === "poradnik" ? ["Pobierz poradnik", "Przeczytaj w 10 minut", "Zapisz pytania na konsultację"] : ["Krótka rozmowa - poznajemy sytuację", "Plan i zakres - wiesz, co i kiedy", "Działamy - prowadzimy sprawę krok po kroku"];
 }
 
 export function landingPlan(input: LandingInput): LandingPlan {

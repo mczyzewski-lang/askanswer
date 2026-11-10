@@ -4,6 +4,7 @@
  * recording), following the brand, the PMax rules and the editorial rules. Nothing is saved until the
  * person accepts the draft.
  */
+import { NO_LONG_DASH_RULE } from "../dashes";
 import { prisma } from "./db";
 import { env, openaiConfigured } from "./env";
 import { openaiErrorText } from "./reel-review";
@@ -53,7 +54,7 @@ function templateDraft(prompt: string, kind: "image" | "video", code: string): A
       durationSec: 30,
       scenes: [
         { startS: 0, endS: 3, spokenText: head, screenText: head, visualBrief: "Ekspert patrzy w kamerę, zbliżenie" },
-        { startS: 3, endS: 8, spokenText: sentence[1] ?? "Problem widza — krótko.", screenText: "Problem", visualBrief: "Ekspert, plan średni" },
+        { startS: 3, endS: 8, spokenText: sentence[1] ?? "Problem widza, krótko.", screenText: "Problem", visualBrief: "Ekspert, plan średni" },
         { startS: 8, endS: 18, spokenText: sentence[2] ?? "Jak to działa: 2–3 kroki.", screenText: "Jak to działa", visualBrief: "Ekspert przy stole; plansze kroków" },
         { startS: 18, endS: 24, spokenText: "Kto pomaga i jaki jest zakres usługi.", screenText: "Zakres usługi", visualBrief: "Ekspert do kamery" },
         { startS: 24, endS: 30, spokenText: "Umów konsultację.", screenText: "Umów konsultację", visualBrief: "Plansza: logo i adres" },
@@ -90,14 +91,14 @@ export async function assistantDraft(projectId: string, prompt: string, kind: "i
   const res = await fetch(`${env.openaiBaseUrl}/chat/completions`, {
     method: "POST",
     headers: { Authorization: `Bearer ${env.openaiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model: env.openaiTextModel, response_format: { type: "json_object" }, messages: [{ role: "system", content: ASSISTANT_SYSTEM }, { role: "user", content: user }] }),
+    body: JSON.stringify({ model: env.openaiTextModel, response_format: { type: "json_object" }, messages: [{ role: "system", content: `${ASSISTANT_SYSTEM}\n${NO_LONG_DASH_RULE}` }, { role: "user", content: user }] }),
     signal: AbortSignal.timeout(90_000),
   });
   const data = (await res.json().catch(() => ({}))) as { choices?: Array<{ message?: { content?: string } }>; error?: { message?: string; code?: string } };
   if (!res.ok) return { ...templateDraft(prompt, kind, code), warning: openaiErrorText(res.status, data) };
   let o: Record<string, unknown> = {};
   try {
-    o = JSON.parse((data.choices?.[0]?.message?.content ?? "{}").replace(/^```(?:json)?\s*|\s*```$/g, ""));
+    o = JSON.parse((data.choices?.[0]?.message?.content ?? "{}").replace(/^```(?:json)?\s*|\s*```$/g, "").replace(/[ \u00A0]*[—–][ \u00A0]*/g, (m: string) => (m.length === 1 ? "-" : " - ")));
   } catch {
     return { ...templateDraft(prompt, kind, code), warning: "OpenAI zwrócił odpowiedź, której nie da się odczytać — szkic z Twojego opisu." };
   }

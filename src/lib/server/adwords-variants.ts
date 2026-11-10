@@ -6,6 +6,7 @@
  *   one picture per format, shown full-bleed with the CTA and the gold frame (G03 → G03I). The text in
  *   the picture is AI's: the new concept needs a person's approval before it is published.
  */
+import { NO_LONG_DASH_RULE } from "../dashes";
 import fsp from "node:fs/promises";
 import path from "node:path";
 import { createCanvas, loadImage } from "@napi-rs/canvas";
@@ -205,13 +206,13 @@ async function compareCopy(headline: string, body: string | null, topic: string 
   const res = await fetch(`${env.openaiBaseUrl}/chat/completions`, {
     method: "POST",
     headers: { Authorization: `Bearer ${env.openaiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model: env.openaiTextModel, response_format: { type: "json_object" }, messages: [{ role: "system", content: COMPARE_SYSTEM }, { role: "user", content: `Marka: ${brand}\nTemat: ${topic ?? "—"}\nHasło: ${headline}\nDopisek: ${body ?? "—"}` }] }),
+    body: JSON.stringify({ model: env.openaiTextModel, response_format: { type: "json_object" }, messages: [{ role: "system", content: `${COMPARE_SYSTEM}\n${NO_LONG_DASH_RULE}` }, { role: "user", content: `Marka: ${brand}\nTemat: ${topic ?? "—"}\nHasło: ${headline}\nDopisek: ${body ?? "—"}` }] }),
     signal: AbortSignal.timeout(60_000),
   }).catch(() => null);
   if (!res?.ok) return compareRule(headline, topic);
   try {
     const d = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
-    const o = JSON.parse((d.choices?.[0]?.message?.content ?? "{}").replace(/^```(?:json)?\s*|\s*```$/g, "")) as Partial<CompareCopy>;
+    const o = JSON.parse((d.choices?.[0]?.message?.content ?? "{}").replace(/^```(?:json)?\s*|\s*```$/g, "").replace(/[ \u00A0]*[—–][ \u00A0]*/g, (m: string) => (m.length === 1 ? "-" : " - "))) as Partial<CompareCopy>;
     const cut = (v: unknown, n: number) => String(v ?? "").trim().slice(0, n);
     const out = { title: cut(o.title, 70), left_label: cut(o.left_label, 24), left_title: cut(o.left_title, 40), left: cut(o.left, 90), right_label: cut(o.right_label, 24), right_title: cut(o.right_title, 40), right: cut(o.right, 90) };
     return out.left && out.right ? out : compareRule(headline, topic);

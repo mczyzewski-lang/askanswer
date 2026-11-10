@@ -7,6 +7,7 @@
  */
 import type { ThemeTokens } from "../editor/types";
 import type { Measure } from "./score";
+import { plainDashes, plainDashesDeep } from "../dashes";
 
 export type LayoutKey = "typographic" | "expert_split" | "process_steps" | "comparison" | "infographic" | "clean_photo";
 export const LAYOUTS: Record<Exclude<LayoutKey, "clean_photo">, string> = {
@@ -328,6 +329,8 @@ export function stepsOf(body: string | null | undefined): string[] {
 // --------------------------------------------------------------------------------------- the creative
 
 export function drawCreative(ctx: Ctx2D, input: CreativeInput): Measure {
+  // content never shows the long dash
+  input = { ...input, copy: plainDashesDeep(input.copy) };
   const { width: W, height: H, theme } = input;
   const M = input.safeMargin ?? 0.1;
   const I = input.safeInsets;
@@ -716,6 +719,7 @@ export interface SceneFrameInput {
 
 /** One frame of the storyboard video (animatic): the shot's photo, the on-screen text in the safe area, the brand. */
 export function drawSceneFrame(ctx: Ctx2D, f: SceneFrameInput): Measure {
+  f = { ...f, screenText: plainDashes(f.screenText ?? "") };
   const { width: W, height: H, theme } = f;
   const S = { x: W * 0.1, y: H * 0.1, w: W * 0.8, h: H * 0.8 };
   const unit = Math.min(W, H);

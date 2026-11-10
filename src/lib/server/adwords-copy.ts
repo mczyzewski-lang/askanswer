@@ -3,6 +3,7 @@
  * "rozwód") get a proposal that does — written by OpenAI within the limits and the editorial rules, or
  * by a simple rule when OpenAI is not configured. Nothing is saved until a person accepts a proposal.
  */
+import { NO_LONG_DASH_RULE } from "../dashes";
 import { prisma } from "./db";
 import { env, openaiConfigured } from "./env";
 import { openaiErrorText } from "./reel-review";
@@ -42,7 +43,7 @@ export function ruleFix(text: string, topic: string, limit: number): string {
   const lower = t.charAt(0).toLowerCase() + t.slice(1);
   const pre = `${T}: ${lower}`;
   if ([...pre].length <= limit) return pre;
-  const short = `${T} — ${lower}`;
+  const short = `${T} - ${lower}`;
   return [...short].length <= limit ? short : [...pre].slice(0, limit).join("").replace(/\s+\S*$/, "");
 }
 
@@ -73,7 +74,7 @@ export async function copyFixes(projectId: string): Promise<{ topic: string | nu
   const res = await fetch(`${env.openaiBaseUrl}/chat/completions`, {
     method: "POST",
     headers: { Authorization: `Bearer ${env.openaiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model: env.openaiTextModel, response_format: { type: "json_object" }, messages: [{ role: "system", content: COPYFIX_SYSTEM }, { role: "user", content: user }] }),
+    body: JSON.stringify({ model: env.openaiTextModel, response_format: { type: "json_object" }, messages: [{ role: "system", content: `${COPYFIX_SYSTEM}\n${NO_LONG_DASH_RULE}` }, { role: "user", content: user }] }),
     signal: AbortSignal.timeout(90_000),
   }).catch(() => null);
   const data = res ? ((await res.json().catch(() => ({}))) as { choices?: Array<{ message?: { content?: string } }>; error?: { message?: string } }) : {};
@@ -83,7 +84,7 @@ export async function copyFixes(projectId: string): Promise<{ topic: string | nu
   }
   let got: Array<{ key?: string; text?: string }> = [];
   try {
-    got = (JSON.parse((data.choices?.[0]?.message?.content ?? "{}").replace(/^```(?:json)?\s*|\s*```$/g, "")) as { items?: typeof got }).items ?? [];
+    got = (JSON.parse((data.choices?.[0]?.message?.content ?? "{}").replace(/^```(?:json)?\s*|\s*```$/g, "").replace(/[ \u00A0]*[—–][ \u00A0]*/g, (m: string) => (m.length === 1 ? "-" : " - "))) as { items?: typeof got }).items ?? [];
   } catch {
     /* fall back below */
   }
