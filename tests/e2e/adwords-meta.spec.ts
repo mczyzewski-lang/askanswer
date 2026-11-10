@@ -68,6 +68,25 @@ test("Meta (FB/IG) tab: texts → banners in 3 formats with / without the expert
   expect(csv).toContain("https://nowy-etap.pl/webinar/");
   expect(csv).toContain("Webinar ·");
 
+  // the comparison layout and the AI infographic version
+  await card.getByTestId("meta-edit").click();
+  const ed2 = page.getByTestId("meta-editor");
+  await ed2.getByLabel("Układ Meta").selectOption("comparison");
+  await ed2.getByLabel("Meta Lewa — treść").fill("Najpierw pozew, potem spór");
+  await ed2.getByLabel("Meta Prawa — treść").fill("Najpierw plan, potem pozew");
+  await ed2.getByTestId("meta-save").click();
+  await expect(page.getByTestId("meta-editor")).toHaveCount(0);
+  const cmp = await request.get(`${base}/meta/${id}/render?format=story&version=none`);
+  expect(cmp.headers()["x-render-overflow"]).toBe("false");
+  expect((await (await request.get(`${base}/meta`)).json())[0].extra.comparison_left).toBe("Najpierw pozew, potem spór");
+  await page.getByTestId("meta-card").getByTestId("meta-infographic").click();
+  await expect(page.getByTestId("meta-card").getByTestId("meta-version").filter({ hasText: "Infografika AI" })).toBeVisible({ timeout: 120_000 });
+  const info = await request.get(`${base}/meta/${id}/render?format=feed&version=info`);
+  expect(info.status()).toBe(200);
+  const z2 = unzipSync(new Uint8Array(await (await request.get(`${base}/meta/zip?ads=${id}`)).body()));
+  expect(Object.keys(z2).filter((n) => n.endsWith(".png"))).toHaveLength(9);
+  expect(Object.keys(z2).some((n) => n.includes("infografika"))).toBe(true);
+
   // a webinar in the past blocks the ad
   await request.patch(`${base}/meta/${id}`, { data: { webinarAt: new Date(Date.now() - 86_400_000).toISOString() } });
   await page.reload();

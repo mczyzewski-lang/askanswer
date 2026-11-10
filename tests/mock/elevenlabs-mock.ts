@@ -170,6 +170,11 @@ const server = http.createServer(async (req, res) => {
             : { kind: "image", concept_id: code, rationale: "Jedno hasło o planie i CTA.", image: { layout: "typographic", headline: "Plan przed pozwem", subheadline: "Ustalcie wszystko spokojnie", body: "", cta: "Umów konsultację", visual_brief: "Typografia na tle motywu", use_expert_photo: false }, headline_for_ads: "Plan przed pozwem" };
           return json(200, { id: "chatcmpl-mock", object: "chat.completion", model: body.model, choices: [{ index: 0, message: { role: "assistant", content: JSON.stringify(out) }, finish_reason: "stop" }] });
         }
+        if (String(body.messages?.[0]?.content ?? "").startsWith("ADWORDS_COMPARE")) {
+          const h = /Hasło: (.+)/.exec(user)?.[1] ?? "Plan";
+          const out = { title: "Rozwód: tradycyjnie czy z planem?", left_label: "Tradycyjnie", left: "Najpierw pozew, potem spór", right_label: "Z planem", right: h.slice(0, 45) };
+          return json(200, { id: "chatcmpl-mock", object: "chat.completion", model: body.model, choices: [{ index: 0, message: { role: "assistant", content: JSON.stringify(out) }, finish_reason: "stop" }] });
+        }
         if (String(body.messages?.[0]?.content ?? "").startsWith("ADWORDS_COPYFIX")) {
           // every headline gets the topic: "… pozew" → "… pozew o rozwód", else "Rozwód: …"
           const items = [...user.matchAll(/^(\S+) \| (\d+) \| (.+)$/gm)].map((m) => {

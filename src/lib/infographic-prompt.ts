@@ -71,15 +71,17 @@ export function infographicPrompt(info: InfographicContent, theme: ThemeTokens, 
  * The same infographic, as a display ad banner (Google Ads, Performance Max): the theme's palette and
  * style, the text rules of the reels infographics; room left for the button and the gold frame.
  */
-export function adInfographicPrompt(info: InfographicContent, theme: ThemeTokens, style: string | null, ratio: "1.91:1" | "1:1" | "4:5"): string {
+export function adInfographicPrompt(info: InfographicContent, theme: ThemeTokens, style: string | null, ratio: "1.91:1" | "1:1" | "4:5" | "9:16"): string {
   const c = (hex: string) => `${colorName(hex)} (${hex})`;
   return [
-    `${ratio === "1.91:1" ? "Horizontal 1.91:1" : ratio === "1:1" ? "Square 1:1" : "Vertical 4:5"} infographic banner for a Google Ads display ad (shown small in feeds and on mobile).`,
+    ratio === "9:16" ? "Vertical 9:16 infographic for an Instagram / Facebook Stories and Reels ad." : `${ratio === "1.91:1" ? "Horizontal 1.91:1" : ratio === "1:1" ? "Square 1:1" : "Vertical 4:5"} infographic banner for a display / social feed ad (shown small in feeds and on mobile).`,
     "Language: Polish. Render every text exactly as written below, with correct Polish letters (ą ć ę ł ń ó ś ź ż); add no other words.",
     `Headline (large, the most visible element): «${info.headline}»`,
     info.items.length ? "Points (short, with simple icons, large and legible):" : "",
     ...info.items.map((r, i) => `${i + 1}. «${r.value}»${r.label ? ` — «${r.label}»` : ""}`),
-    "Layout: keep a 7% empty margin on every side (a thin gold frame is drawn there) and keep the bottom 24% calm, without any text (a call-to-action button is placed there). Few elements, generous spacing, very high contrast — it must read at thumbnail size.",
+    ratio === "9:16"
+      ? "Layout: all text strictly between 16% and 60% of the image height (the app's interface covers the top 14% and the bottom 35%); keep 7% side margins (a gold frame is drawn there); the bottom 40% calm, artwork only. Few elements, very high contrast."
+      : "Layout: keep a 7% empty margin on every side (a thin gold frame is drawn there) and keep the bottom 24% calm, without any text (a call-to-action button is placed there). Few elements, generous spacing, very high contrast — it must read at thumbnail size.",
     `Brand colours: background ${c(theme.background)}, cards ${c(theme.primary)}, highlights and icons ${c(theme.accent)} and ${c(theme.highlight)}, text ${c(theme.text)}.`,
     "Clean, modern, premium legal-services design; no logos, no watermarks, no photos of people, no faces.",
     style ? `Visual style of the illustration elements (as a still image): ${style}` : "",

@@ -44,6 +44,16 @@ describe("Meta ads", () => {
     expect(isoToWarsaw("2026-11-24T18:00:00Z")).toBe("2026-11-24T19:00");
     expect(isoToWarsaw("2026-07-10T17:00:00Z")).toBe("2026-07-10T19:00");
   });
+  it("the comparison layout with the webinar pill fits every format (no negative boxes)", () => {
+    registerFonts();
+    const cmp = { ...ad, layout: "comparison", extra: { comparison_left: "Najpierw pozew, potem spór", comparison_right: "Najpierw plan i ustalenia, potem pozew" } };
+    for (const f of META_FORMATS) {
+      const c = metaCreative(cmp, f.key, false);
+      expect(c.layout).toBe("comparison");
+      const m = drawCreative(createCanvas(c.width, c.height).getContext("2d") as never, { ...c, theme: DEFAULT_THEME });
+      expect([f.key, m.overflow, m.outsideSafe]).toEqual([f.key, false, false]);
+    }
+  });
   it("texts CSV for Ads Manager", () => {
     const csv = metaCsv([{ ad, version: "none", versionLabel: "bez eksperta", files: ["meta/a.png"] }]);
     expect(csv).toContain("Primary text;Headline;Description;Call to action");

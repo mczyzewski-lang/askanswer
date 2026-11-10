@@ -6,6 +6,7 @@
  */
 import Papa from "papaparse";
 import { adClaimProblems, urlStatus } from "./landing-content";
+import { comparisonOf } from "./draw";
 
 /** feed 1:1 and 4:5, Stories / Reels 9:16 with Meta's Reels safe zone (top 14%, bottom 35%, sides 6%) */
 export const META_FORMATS = [
@@ -49,6 +50,10 @@ export interface MetaAdData {
   body: string | null;
   withoutExpert: boolean;
   photoIds: string[];
+  /** comparison layout: comparison_title / _left_label / _left / _right_label / _right */
+  extra?: Record<string, string | undefined> | null;
+  /** AI infographic version: format → media asset id */
+  infographic?: Partial<Record<MetaFormatKey, string>> | null;
 }
 
 const WARSAW = "Europe/Warsaw";
@@ -85,16 +90,19 @@ export function isoToWarsaw(at: string | Date | null | undefined): string {
 }
 
 /** the versions of an ad: without the photo (if wanted) + one per chosen photo */
-export const metaVersions = (ad: Pick<MetaAdData, "withoutExpert" | "photoIds">) => [...(ad.withoutExpert || !ad.photoIds.length ? ["none"] : []), ...ad.photoIds];
+export const hasInfographic = (ad: Pick<MetaAdData, "infographic">) => META_FORMATS.every((f) => !!ad.infographic?.[f.key]);
+export const metaVersions = (ad: Pick<MetaAdData, "withoutExpert" | "photoIds" | "infographic">) => [...(ad.withoutExpert || !ad.photoIds.length ? ["none"] : []), ...ad.photoIds, ...(hasInfographic(ad) ? ["info"] : [])];
 
 /** what the banner of one format / version shows (input of drawCreative, without theme / logo / photo) */
-export function metaCreative(ad: MetaAdData, format: MetaFormatKey, withPhoto: boolean) {
+export function metaCreative(ad: MetaAdData, format: MetaFormatKey, mode: boolean | "info") {
   const f = META_FORMATS.find((x) => x.key === format)!;
+  const cmp = comparisonOf(ad.extra);
+  const layout = mode === "info" ? "infographic" : mode ? "expert_split" : ad.layout === "process_steps" && ad.body?.trim() ? "process_steps" : ad.layout === "comparison" && cmp ? "comparison" : "typographic";
   return {
     width: f.width,
     height: f.height,
-    layout: (withPhoto ? "expert_split" : ad.layout === "process_steps" && ad.body?.trim() ? "process_steps" : "typographic") as "expert_split" | "process_steps" | "typographic",
-    copy: { headline: ad.headline || ad.metaHeadline || ad.name, body: ad.body, cta: ad.ctaImage || META_CTAS[ad.ctaButton] || "Dowiedz się więcej", badge: ad.destination === "webinar" ? webinarBadge(ad.webinarAt) : null },
+    layout: layout as "expert_split" | "process_steps" | "typographic" | "comparison" | "infographic",
+    copy: { headline: ad.headline || cmp?.title || ad.metaHeadline || ad.name, body: ad.body, comparison: layout === "comparison" ? cmp : null, cta: ad.ctaImage || META_CTAS[ad.ctaButton] || "Dowiedz się więcej", badge: ad.destination === "webinar" ? webinarBadge(ad.webinarAt) : null },
     safeMargin: 0.1,
     safeInsets: f.insets,
   };
@@ -105,7 +113,9 @@ export type MetaCheck = { level: "blokada" | "do_poprawy" | "ok"; message: strin
 export function metaChecks(ad: MetaAdData, ctx: { photos: Array<{ id: string; consentConfirmed: boolean; name: string }>; lp?: { offerValid: boolean; approvedClaims: string[] } | null; now?: Date }): MetaCheck[] {
   const out: MetaCheck[] = [];
   const len = (s: string) => [...(s ?? "")].length;
-  if (!ad.headline.trim()) out.push({ level: "blokada", message: "Brak hasła na grafice." });
+  if (!ad.headline.trim() && !(ad.layout === "comparison" && comparisonOf(ad.extra))) out.push({ level: "blokada", message: "Brak hasła na grafice." });
+  if (ad.layout === "comparison" && !comparisonOf(ad.extra) && (ad.withoutExpert || !ad.photoIds.length)) out.push({ level: "do_poprawy", message: "Układ porównania bez treści obu kart — uzupełnij lewą i prawą stronę." });
+  if (ad.infographic && hasInfographic(ad)) out.push({ level: "do_poprawy", message: "Wersja z infografiką: tekst na obrazie napisało AI — sprawdź pisownię i liczby przed publikacją." });
   if (!ad.primaryText.trim()) out.push({ level: "do_poprawy", message: "Brak tekstu głównego (nad grafiką)." });
   if (len(ad.primaryText) > META_LIMITS.primaryText) out.push({ level: "do_poprawy", message: `Tekst główny ${len(ad.primaryText)} znaków — Meta pokaże ~${META_LIMITS.primaryText}, resztę po „Więcej”; najważniejsze daj na początek.` });
   if (len(ad.metaHeadline) > META_LIMITS.metaHeadline) out.push({ level: "do_poprawy", message: `Nagłówek ${len(ad.metaHeadline)} znaków — zalecane ≤ ${META_LIMITS.metaHeadline} (dalej ucinany).` });

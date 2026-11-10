@@ -61,6 +61,19 @@ test("Google Adwords: the topic in every headline (fix proposals), versions with
   const png = await request.get(`${base}/render/${g03e[0].id}`);
   expect([png.status(), png.headers()["x-render-overflow"]]).toEqual([200, "false"]);
 
+  // 2b. comparison versions: G03 + G04 (still picked) → G03C, G04C: two cards, texts from OpenAI (mock), no overflow
+  await more.getByTestId("variants-comparison").click();
+  await expect(page.getByTestId("concept-card").filter({ hasText: "G03C" })).toBeVisible();
+  data = await (await request.get(base)).json();
+  const g03c = data.assets.filter((a: { conceptId: string }) => a.conceptId === "G03C");
+  expect(g03c).toHaveLength(3);
+  expect(g03c.every((a: { effectiveLayout: string; lp: Record<string, string> }) => a.effectiveLayout === "comparison" && a.lp.comparison_left === "Najpierw pozew, potem spór" && !!a.lp.comparison_right)).toBe(true);
+  for (const a of g03c) expect((await request.get(`${base}/render/${a.id}`)).headers()["x-render-overflow"]).toBe("false");
+  // the concept chips in the panel select the same concepts as the card checkboxes
+  await expect(more.getByTestId("pick-source").filter({ hasText: /^G03$/ })).toHaveAttribute("aria-pressed", "true");
+  await more.getByTestId("pick-source").filter({ hasText: /^G04$/ }).click();
+  await expect(page.getByTestId("concept-card").filter({ hasText: "G04" }).first().getByTestId("pick-concept")).not.toBeChecked();
+
   // 3. AI infographic version of G03 (background job, OpenAI image mock) → G03I, needs approval
   await more.getByTestId("variants-infographic").click();
   await expect(page.getByTestId("concept-card").filter({ hasText: "G03I" })).toBeVisible({ timeout: 120_000 });

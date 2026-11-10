@@ -65,7 +65,7 @@ export function ImagesTab({ data, reload, toast }: { data: AwData; reload: () =>
   if (!images.length) return <Card className="p-6 text-sm text-muted">Brak grafik — zaimportuj CSV (zakładka „Import CSV”).</Card>;
   return (
     <div className="space-y-4">
-      <MoreCreatives data={data} reload={reload} toast={toast} picked={picked} />
+      <MoreCreatives data={data} reload={reload} toast={toast} picked={picked} setPicked={setPicked} />
       <div className="flex flex-wrap items-center gap-2" data-testid="image-filters">
         <NativeSelect className="h-9 w-44" value={type} onChange={(e) => setType(e.target.value)} aria-label="Typ">
           <option value="all">Wszystkie typy</option>

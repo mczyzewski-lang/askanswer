@@ -1583,9 +1583,13 @@ model MetaAd {
   url          String?
   webinarTitle String?
   webinarAt    DateTime?
-  /// typographic | process_steps (the version without a photo); body = steps
+  /// typographic | process_steps | comparison (the version without a photo); body = steps
   layout       String    @default("typographic")
   body         String?
+  /// comparison layout: comparison_title / _left_label / _left / _right_label / _right
+  extra        Json?
+  /// AI infographic version: { square, feed, story } → media asset ids
+  infographic  Json?
   /// the version without a photo is rendered too
   withoutExpert Boolean  @default(true)
   /// expert photos (ids of AdwordsExpertPhoto) — one version per photo

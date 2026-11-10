@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Copy, Download, Package, Plus, Trash2 } from "lucide-react";
+import { Copy, Download, Loader2, Package, Plus, Sparkles, Trash2 } from "lucide-react";
 import { Button, Card, Input, Label, NativeSelect, Textarea } from "@/components/ui";
 import { api, cn } from "@/lib/utils";
 import { META_CTAS, META_FORMATS, META_LIMITS, metaChecks, metaCreative, metaStatus, metaVersions, webinarBadge, warsawToIso, isoToWarsaw, type MetaAdData, type MetaFormatKey } from "@/lib/adwords/meta";
@@ -8,7 +8,7 @@ import type { Measure } from "@/lib/adwords/score";
 import { CreativeCanvas } from "./canvas";
 import type { AwData, Toast } from "./types";
 
-type Ad = MetaAdData & { id: string };
+type Ad = MetaAdData & { id: string; infographicUrls?: Partial<Record<MetaFormatKey, string | null>> };
 const EMPTY = (data: AwData): MetaAdData => {
   const c = data.assets.find((a) => a.rowType === "image" && a.headline);
   return {
@@ -36,6 +36,18 @@ export function MetaTab({ data, toast }: { data: AwData; toast: Toast }) {
   const base = `/api/admin/adwords/${data.project.id}/meta`;
   const [ads, setAds] = useState<Ad[] | null>(null);
   const [edit, setEdit] = useState<(MetaAdData & { id?: string }) | null>(null);
+  const [gen, setGen] = useState<Record<string, string>>({});
+  // infographic jobs: reload every 5 s until the ad has its new pictures
+  useEffect(() => {
+    if (!Object.keys(gen).length) return;
+    const t = setInterval(async () => {
+      const list = await api<Ad[]>(base).catch(() => null);
+      if (!list) return;
+      setAds(list);
+      setGen((g) => Object.fromEntries(Object.entries(g).filter(([id, before]) => JSON.stringify(list.find((x) => x.id === id)?.infographic ?? null) === before)));
+    }, 5000);
+    return () => clearInterval(t);
+  }, [gen, base]);
   const load = useCallback(async () => setAds(await api<Ad[]>(base)), [base]);
   useEffect(() => {
     load().catch((e: Error) => toast(e.message, "err"));
@@ -81,6 +93,16 @@ export function MetaTab({ data, toast }: { data: AwData; toast: Toast }) {
             data={data}
             base={base}
             onEdit={() => setEdit(a)}
+            generating={!!gen[a.id]}
+            onInfographic={async () => {
+              try {
+                await api(`${base}/${a.id}`, { method: "POST" });
+                setGen((g) => ({ ...g, [a.id]: JSON.stringify(a.infographic ?? null) }));
+                toast("Generuję infografikę w 3 formatach — pojawi się jako wersja „Infografika AI” za 1–3 min");
+              } catch (e) {
+                toast((e as Error).message, "err");
+              }
+            }}
             onCopy={() => setEdit({ ...a, id: undefined, name: `${a.name} (kopia)` })}
             onDelete={async () => {
               if (!confirm(`Usunąć reklamę „${a.name}”?`)) return;
@@ -94,14 +116,18 @@ export function MetaTab({ data, toast }: { data: AwData; toast: Toast }) {
   );
 }
 
-function photoOf(data: AwData, v: string) {
+function photoOf(data: AwData, v: string, ad?: { infographicUrls?: Partial<Record<MetaFormatKey, string | null>> }, f?: MetaFormatKey) {
+  if (v === "info") {
+    const url = f ? ad?.infographicUrls?.[f] : null;
+    return url ? { url, focalX: 0.5, focalY: 0.5 } : null;
+  }
   const p = v === "none" ? null : data.photos.find((x) => x.id === v);
   return p ? { url: p.url, focalX: p.focalX, focalY: p.focalY } : null;
 }
-const versionLabel = (data: AwData, v: string) => (v === "none" ? "Bez eksperta" : (data.photos.find((p) => p.id === v)?.name ?? "zdjęcie"));
+const versionLabel = (data: AwData, v: string) => (v === "none" ? "Bez eksperta" : v === "info" ? "Infografika AI" : (data.photos.find((p) => p.id === v)?.name ?? "zdjęcie"));
 
 /** the versions × formats of one ad (the same drawing as the PNG) */
-function Previews({ ad, data, base, onMeasure, small }: { ad: MetaAdData & { id?: string }; data: AwData; base?: string; onMeasure?: (k: string, m: Measure) => void; small?: boolean }) {
+function Previews({ ad, data, base, onMeasure, small }: { ad: MetaAdData & { id?: string; infographicUrls?: Partial<Record<MetaFormatKey, string | null>> }; data: AwData; base?: string; onMeasure?: (k: string, m: Measure) => void; small?: boolean }) {
   return (
     <div className="space-y-3">
       {metaVersions(ad).map((v) => (
@@ -110,7 +136,7 @@ function Previews({ ad, data, base, onMeasure, small }: { ad: MetaAdData & { id?
           <div className="flex items-end gap-2">
             {META_FORMATS.map((f) => (
               <figure key={f.key} className={cn(small ? (f.key === "story" ? "w-[18%]" : f.key === "feed" ? "w-[24%]" : "w-[30%]") : f.key === "story" ? "w-[22%]" : f.key === "feed" ? "w-[30%]" : "w-[37%]")}>
-                <CreativeCanvas input={{ ...metaCreative(ad as MetaAdData, f.key as MetaFormatKey, v !== "none" && !!photoOf(data, v)), theme: data.theme, logoUrl: data.logoUrl, photo: photoOf(data, v) }} className="w-full rounded border border-line" onMeasure={onMeasure ? (m) => onMeasure(`${v}|${f.key}`, m) : undefined} />
+                <CreativeCanvas input={{ ...metaCreative(ad as MetaAdData, f.key as MetaFormatKey, v === "info" ? "info" : v !== "none" && !!photoOf(data, v)), theme: data.theme, logoUrl: data.logoUrl, photo: photoOf(data, v, ad, f.key as MetaFormatKey) }} className="w-full rounded border border-line" onMeasure={onMeasure ? (m) => onMeasure(`${v}|${f.key}`, m) : undefined} />
                 <figcaption className="mt-0.5 flex justify-between text-[10px] text-muted">
                   <span>{f.label}</span>
                   {base && ad.id ? (
@@ -128,7 +154,7 @@ function Previews({ ad, data, base, onMeasure, small }: { ad: MetaAdData & { id?
   );
 }
 
-function MetaCard({ ad, data, base, onEdit, onCopy, onDelete }: { ad: Ad; data: AwData; base: string; onEdit: () => void; onCopy: () => void; onDelete: () => void }) {
+function MetaCard({ ad, data, base, onEdit, onCopy, onDelete, onInfographic, generating }: { ad: Ad; data: AwData; base: string; onEdit: () => void; onCopy: () => void; onDelete: () => void; onInfographic: () => void; generating: boolean }) {
   const checks = metaChecks(ad, { photos: data.photos, lp: data.gateLp });
   const st = metaStatus(checks);
   return (
@@ -145,6 +171,9 @@ function MetaCard({ ad, data, base, onEdit, onCopy, onDelete }: { ad: Ad; data: 
           <a href={`${base}/zip?ads=${ad.id}`} className="text-xs underline" data-testid="meta-ad-zip">
             zestaw
           </a>
+          <Button size="sm" variant="outline" onClick={onInfographic} disabled={!data.canEdit || generating} data-testid="meta-infographic" title="OpenAI rysuje infografikę w 3 formatach (jak w reelsach) — dodatkowa wersja reklamy">
+            {generating ? <Loader2 className="animate-spin" /> : <Sparkles />} {generating ? "Generuję…" : ad.infographic ? "Nowa infografika AI" : "Wersja z infografiką AI"}
+          </Button>
           <Button size="sm" variant="outline" onClick={onEdit} disabled={!data.canEdit} data-testid="meta-edit">
             Edytuj
           </Button>
@@ -322,8 +351,26 @@ function MetaEditor({ ad, data, onCancel, onSave }: { ad: MetaAdData & { id?: st
                   <NativeSelect value={a.layout} onChange={(e) => set({ layout: e.target.value })} aria-label="Układ Meta">
                     <option value="typographic">Typograficzny</option>
                     <option value="process_steps">Kroki</option>
+                    <option value="comparison">Porównanie (A vs B)</option>
                   </NativeSelect>
                 </div>
+                {a.layout === "comparison" ? (
+                  <div className="col-span-2 grid grid-cols-2 gap-2" data-testid="meta-comparison">
+                    {(
+                      [
+                        ["comparison_left_label", "Lewa — etykieta", "Tradycyjnie"],
+                        ["comparison_right_label", "Prawa — etykieta", "Z planem"],
+                        ["comparison_left", "Lewa — treść", "Najpierw pozew, potem spór"],
+                        ["comparison_right", "Prawa — treść", "Najpierw plan, potem pozew"],
+                      ] as const
+                    ).map(([k, l, ph]) => (
+                      <div key={k} className="space-y-1">
+                        <Label>{l}</Label>
+                        <Input value={a.extra?.[k] ?? ""} placeholder={ph} onChange={(e) => set({ extra: { ...(a.extra ?? {}), [k]: e.target.value } })} aria-label={`Meta ${l}`} />
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
                 {a.layout === "process_steps" ? (
                   <div className="space-y-1">
                     <Label>Kroki (rozdziel |)</Label>

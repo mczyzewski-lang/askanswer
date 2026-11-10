@@ -169,7 +169,10 @@ function drawLines(ctx: Ctx2D, f: Fitted, font: (px: number) => string, x: numbe
 }
 
 function roundRect(ctx: Ctx2D, x: number, y: number, w: number, h: number, r: number) {
-  const rr = Math.min(r, h / 2, w / 2);
+  // a box squeezed to nothing (text overflowing its layout) must not throw — it is reported as overflow
+  w = Math.max(0, w);
+  h = Math.max(0, h);
+  const rr = Math.max(0, Math.min(r, h / 2, w / 2));
   ctx.beginPath();
   ctx.moveTo(x + rr, y);
   ctx.arcTo(x + w, y, x + w, y + h, rr);
@@ -363,7 +366,7 @@ export function drawCreative(ctx: Ctx2D, input: CreativeInput): Measure {
   const badgeText = (input.copy.badge ?? "").trim();
   // too long for a narrow column: the shorter forms ("WEBINAR · WT., 24 LIS · 19:00" → "24 LIS · 19:00")
   let bdf: Fitted | null = null;
-  if (badgeText && layout !== "process_steps" && !cmp) {
+  if (badgeText && layout !== "process_steps") {
     const parts = badgeText.split(" · ");
     const forms = [badgeText, ...(parts.length > 2 ? [`${parts[0]} · ${parts.slice(1).join(" · ").replace(/^[^,]+,\s*/, "")}`, parts.slice(1).join(" · ").replace(/^[^,]+,\s*/, "")] : [])];
     for (const f of forms) {
@@ -390,6 +393,24 @@ export function drawCreative(ctx: Ctx2D, input: CreativeInput): Measure {
 
   if (cmp) {
     // headline on top, then two cards: the usual way (muted) vs ours (accent) — side by side when wide, stacked when tall
+    if (bdf) {
+      const bt = bdf.lines[0] ?? "";
+      ctx.font = label(bdf.px);
+      const bw = Math.min(T.w, ctx.measureText(bt).width + bdf.px * 1.6);
+      const bh = bdf.px * 2;
+      ctx.fillStyle = theme.accent;
+      roundRect(ctx, T.x, y, bw, bh, bh / 2);
+      ctx.fill();
+      ctx.fillStyle = inkOn(theme.accent, theme.background);
+      ctx.textBaseline = "middle";
+      ctx.fillText(bt, T.x + bdf.px * 0.8, y + bh / 2 + bdf.px * 0.04);
+      ctx.textBaseline = "top";
+      boxes.push({ x: T.x, y, w: bw, h: bh });
+      y += bh + unit * 0.025;
+    }
+    // the headline leaves the cards enough room
+    const sideCards = kind !== "portrait";
+    for (let hs = hf.px * 0.92; bottom - y - (hf.lines.length * hf.lineH + unit * 0.035) < unit * (sideCards ? 0.22 : 0.36) && hs > unit * 0.035; hs *= 0.92) hf = fit(ctx, headline, head, hs, Math.min(hs, unit * 0.035), T.w, 3, 1.08);
     y += drawLines(ctx, hf, head, T.x, y, ink);
     boxes.push({ x: T.x, y: y - hf.lines.length * hf.lineH, w: T.w, h: hf.lines.length * hf.lineH });
     y += unit * 0.035;
@@ -426,7 +447,7 @@ export function drawCreative(ctx: Ctx2D, input: CreativeInput): Measure {
         tf = fit(ctx, c.text, head, ts, Math.min(ts, unit * 0.026), cw - pad * 2, side ? 4 : 3, 1.12);
       }
       const blockH = lf.lines.length * lf.lineH + unit * 0.015 + tf.lines.length * tf.lineH;
-      overflow ||= tf.overflow || blockH > ch - pad * 2 + 1;
+      overflow ||= tf.overflow || ch <= 0 || blockH > ch - pad * 2 + 1;
       fonts.push(lf.px, tf.px);
       // label + text centred in the card
       const ty = cy + Math.max(pad, (ch - blockH) / 2);

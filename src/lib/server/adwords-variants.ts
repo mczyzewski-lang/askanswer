@@ -16,7 +16,8 @@ import { enqueue } from "./jobs";
 import { makeTempDir, putFile } from "./storage";
 import { randomToken } from "./crypto";
 import { generateOpenAIImage } from "./openai-images";
-import { openaiConfigured, openaiKeyDiagnostics } from "./env";
+import { env, openaiConfigured, openaiKeyDiagnostics } from "./env";
+import { topicOf } from "../adwords/context";
 import { themeFromRow, DEFAULT_THEME } from "../themes";
 import { adInfographicPrompt } from "../infographic-prompt";
 import { fillStyle } from "../broll-style";
@@ -167,4 +168,93 @@ export async function runAdInfographic(projectId: string, conceptId: string) {
   } finally {
     await fsp.rm(dir, { recursive: true, force: true });
   }
+}
+
+// ------------------------------------------------------------------------------------------ comparison
+
+export const COMPARE_SYSTEM = `ADWORDS_COMPARE
+Tworzysz grafikę porównawczą (dwie karty: „tradycyjnie” vs „z nami”) do reklamy kancelarii w Google Ads / Meta, na podstawie istniejącego hasła.
+Zasady: krótko (każda strona ≤ 45 znaków, etykiety ≤ 18), konkretnie, bez liczb, terminów, cen i obietnic wyniku, których nie ma w źródle; bez „gwarantujemy”; naturalna polszczyzna; prawa strona to mechanizm z hasła.
+Zwróć JSON: {"title":"…","left_label":"…","left":"…","right_label":"…","right":"…"}`;
+
+export interface CompareCopy {
+  title: string;
+  left_label: string;
+  left: string;
+  right_label: string;
+  right: string;
+}
+/** without OpenAI: a plain rule from the headline and the topic */
+export function compareRule(headline: string, topic: string | null): CompareCopy {
+  const div = /rozw/i.test(topic ?? headline);
+  return {
+    title: div ? "Rozwód: tradycyjnie czy z planem?" : "Tradycyjnie czy z nami?",
+    left_label: "Tradycyjnie",
+    left: div ? "Najpierw pozew, potem spór o wszystko" : "Bez planu i bez jasnych kroków",
+    right_label: div ? "Z planem" : "Z nami",
+    right: headline.replace(/\.$/, "").slice(0, 60),
+  };
+}
+
+async function compareCopy(headline: string, body: string | null, topic: string | null, brand: string): Promise<CompareCopy> {
+  if (!openaiConfigured()) return compareRule(headline, topic);
+  const res = await fetch(`${env.openaiBaseUrl}/chat/completions`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${env.openaiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ model: env.openaiTextModel, response_format: { type: "json_object" }, messages: [{ role: "system", content: COMPARE_SYSTEM }, { role: "user", content: `Marka: ${brand}\nTemat: ${topic ?? "—"}\nHasło: ${headline}\nDopisek: ${body ?? "—"}` }] }),
+    signal: AbortSignal.timeout(60_000),
+  }).catch(() => null);
+  if (!res?.ok) return compareRule(headline, topic);
+  try {
+    const d = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
+    const o = JSON.parse((d.choices?.[0]?.message?.content ?? "{}").replace(/^```(?:json)?\s*|\s*```$/g, "")) as Partial<CompareCopy>;
+    const cut = (v: unknown, n: number) => String(v ?? "").trim().slice(0, n);
+    const out = { title: cut(o.title, 70), left_label: cut(o.left_label, 24), left: cut(o.left, 60), right_label: cut(o.right_label, 24), right: cut(o.right, 60) };
+    return out.left && out.right ? out : compareRule(headline, topic);
+  } catch {
+    return compareRule(headline, topic);
+  }
+}
+
+/** a comparison version of each concept (G03 → G03C): two cards, the texts by OpenAI (or a rule), editable after */
+export async function comparisonVariants(projectId: string, conceptIds?: string[]) {
+  const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId } });
+  const all = await prisma.adwordsAsset.findMany({ where: { projectId }, select: { headline: true, adText: true, subheadline: true, body: true } });
+  const topic = topicOf(project.adwordsTopic, all.flatMap((a) => [a.headline ?? "", a.adText ?? "", a.subheadline ?? "", a.body ?? ""]));
+  const used = await taken(projectId);
+  const made: string[] = [];
+  const skipped: string[] = [];
+  let max = (await prisma.adwordsAsset.aggregate({ where: { projectId }, _max: { order: true } }))._max.order ?? 0;
+  for (const [c, rows] of await sourceConcepts(projectId, conceptIds)) {
+    const edit = (rows[0].edit ?? {}) as { variantOf?: string };
+    if (edit.variantOf || rows[0].layout === "comparison" || rows[0].layout === "infographic" || used.has(`${c}C`) || !(rows[0].headline ?? "").trim()) {
+      skipped.push(c);
+      continue;
+    }
+    const cc = await compareCopy(rows[0].headline!, rows[0].body, topic, project.name);
+    for (const r of rows) {
+      const data = Object.fromEntries(Object.entries(r).filter(([key]) => !COPY_SKIP.has(key))) as Record<string, unknown>;
+      await prisma.adwordsAsset.create({
+        data: {
+          ...(data as object),
+          projectId,
+          conceptId: `${c}C`,
+          assetKey: keyFor(r, c, "C"),
+          headline: cc.title || r.headline,
+          layout: "comparison",
+          expertPhotoId: null,
+          expertPhotoKey: null,
+          experimentId: null,
+          variant: null,
+          pairedAssetId: null,
+          lp: { ...((r.lp ?? {}) as object), layout_id: "comparison", comparison_title: cc.title, comparison_left_label: cc.left_label, comparison_left: cc.left, comparison_right_label: cc.right_label, comparison_right: cc.right } as Prisma.InputJsonValue,
+          edit: { variantOf: c } as Prisma.InputJsonValue,
+          extra: (r.extra ?? Prisma.JsonNull) as Prisma.InputJsonValue,
+          order: ++max,
+        } as Prisma.AdwordsAssetUncheckedCreateInput,
+      });
+    }
+    made.push(`${c}C`);
+  }
+  return { made, skipped };
 }

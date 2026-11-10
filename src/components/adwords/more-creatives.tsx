@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { Loader2, Sparkles, UserRound, Wand2 } from "lucide-react";
+import { Columns2, Loader2, Sparkles, UserRound, Wand2 } from "lucide-react";
 import { Button, Card, Input } from "@/components/ui";
 import { api } from "@/lib/utils";
 import { mentionsTopic } from "@/lib/adwords/score";
@@ -17,7 +17,9 @@ interface Fix {
 }
 
 /** Grafiki → more creatives: the topic in every headline, versions with the expert's photo, AI infographic versions */
-export function MoreCreatives({ data, reload, toast, picked }: { data: AwData; reload: () => Promise<void>; toast: Toast; picked: string[] }) {
+export function MoreCreatives({ data, reload, toast, picked, setPicked }: { data: AwData; reload: () => Promise<void>; toast: Toast; picked: string[]; setPicked: (f: (p: string[]) => string[]) => void }) {
+  // the source concepts (not the versions made here) — picked here or with the checkboxes on the cards
+  const sources = [...new Map(data.assets.filter((a) => a.rowType === "image" && a.conceptId && !a.edit?.variantOf).map((a) => [a.conceptId!, a])).values()];
   const base = `/api/admin/adwords/${data.project.id}`;
   const [topic, setTopic] = useState(data.project.topicSet ?? data.project.topic ?? "");
   const [fixes, setFixes] = useState<Array<Fix & { on: boolean }> | null>(null);
@@ -103,6 +105,30 @@ export function MoreCreatives({ data, reload, toast, picked }: { data: AwData; r
           )}
         </p>
       </div>
+      <div className="space-y-1" data-testid="pick-sources">
+        <p className="text-xs text-muted">
+          Koncepty do nowych wersji ({picked.length ? `zaznaczone: ${picked.length}` : "nic nie zaznaczono — ekspert i porównanie: wszystkie, infografika: wybierz"}){" "}
+          {picked.length ? (
+            <button type="button" className="underline" onClick={() => setPicked(() => [])}>
+              wyczyść
+            </button>
+          ) : (
+            <button type="button" className="underline" onClick={() => setPicked(() => sources.map((a) => a.conceptId!))}>
+              zaznacz wszystkie
+            </button>
+          )}
+        </p>
+        <div className="flex flex-wrap gap-1.5">
+          {sources.map((a) => {
+            const on = picked.includes(a.conceptId!);
+            return (
+              <button key={a.conceptId} type="button" title={a.headline ?? ""} onClick={() => setPicked((p) => (on ? p.filter((x) => x !== a.conceptId) : [...p, a.conceptId!]))} className={`rounded-full border px-2.5 py-0.5 text-xs ${on ? "border-ink bg-ink text-white" : "border-line text-muted hover:text-ink"}`} aria-pressed={on} data-testid="pick-source">
+                {a.conceptId}
+              </button>
+            );
+          })}
+        </div>
+      </div>
       <div className="flex flex-wrap gap-2">
         <Button
           disabled={!data.canEdit || !t || busy !== null}
@@ -135,6 +161,20 @@ export function MoreCreatives({ data, reload, toast, picked }: { data: AwData; r
         </Button>
         <Button
           variant="outline"
+          disabled={!data.canEdit || busy !== null}
+          onClick={() =>
+            void run("cmp", async () => {
+              const r = await api<{ made: string[] }>(`${base}/variants`, { method: "POST", json: { kind: "comparison", conceptIds: picked.length ? picked : undefined } });
+              await reload();
+              toast(r.made.length ? `Dodano ${r.made.length} grafiki porównawcze: ${r.made.join(", ")} — teksty kart poprawisz w edytorze` : "Te koncepty mają już wersję porównawczą");
+            })
+          }
+          data-testid="variants-comparison"
+        >
+          {busy === "cmp" ? <Loader2 className="animate-spin" /> : <Columns2 />} Wersje porównawcze {picked.length ? `(${picked.length})` : "(wszystkie)"}
+        </Button>
+        <Button
+          variant="outline"
           disabled={!data.canEdit || busy !== null || !picked.length || running > 0}
           title={picked.length ? "" : "Zaznacz koncepty (pole wyboru na karcie)"}
           onClick={() =>
@@ -148,7 +188,7 @@ export function MoreCreatives({ data, reload, toast, picked }: { data: AwData; r
           }
           data-testid="variants-infographic"
         >
-          {running ? <Loader2 className="animate-spin" /> : <Sparkles />} {running ? `Generuję infografiki (${running})…` : `Wersje z infografiką AI ${picked.length ? `(${picked.length})` : "— zaznacz koncepty"}`}
+          {running ? <Loader2 className="animate-spin" /> : <Sparkles />} {running ? `Generuję infografiki (${running})…` : `Wersje z infografiką AI ${picked.length ? `(${picked.length})` : "— wybierz koncepty powyżej"}`}
         </Button>
       </div>
       {photos ? (
@@ -175,7 +215,7 @@ export function MoreCreatives({ data, reload, toast, picked }: { data: AwData; r
         </div>
       ) : null}
       <p className="text-xs text-muted">
-        Wersje z ekspertem: ta sama treść z każdym zaznaczonym zdjęciem — nowe koncepty G03E, G03E2… (zdjęcie zmienisz też na karcie konceptu przed pobraniem). Infografiki: OpenAI w kolorach motywu, jak w reelsach — nowy koncept z literą I, do zatwierdzenia (tekst na obrazie pisze AI).
+        Wersje z ekspertem: ta sama treść z każdym zaznaczonym zdjęciem — nowe koncepty G03E, G03E2… (zdjęcie zmienisz też na karcie konceptu przed pobraniem). Porównania: dwie karty „tradycyjnie” vs „z planem” (teksty pisze AI, poprawisz w edytorze) — litera C. Infografiki: OpenAI w kolorach motywu, jak w reelsach — litera I, do zatwierdzenia (tekst na obrazie pisze AI).
       </p>
       {fixes ? (
         <div className="space-y-2 rounded-lg border border-line p-3" data-testid="copy-fixes">
