@@ -46,3 +46,4 @@ test("Asystent: analysis of the PMax history + current set → new content propo
   const meta = await (await request.get(`${base}/meta`)).json();
   expect(meta.map((m: { name: string }) => m.name)).toContain("Meta AI — bez walki");
 });
+

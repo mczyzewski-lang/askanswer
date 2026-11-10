@@ -31,6 +31,22 @@ export function useImage(url: string | null | undefined): HTMLImageElement | nul
   return img;
 }
 
+/** a drawing error shown on the canvas itself (and in the console) */
+function drawError(c: HTMLCanvasElement, e: unknown) {
+  console.error("Błąd rysowania kreacji", e);
+  const ctx = c.getContext("2d");
+  if (!ctx) return;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = "#fef2f2";
+  ctx.fillRect(0, 0, c.width, c.height);
+  ctx.fillStyle = "#b91c1c";
+  const px = Math.max(14, Math.round(Math.min(c.width, c.height) * 0.04));
+  ctx.font = `600 ${px}px sans-serif`;
+  ctx.fillText("Błąd rysowania grafiki:", px, px * 2);
+  ctx.font = `${Math.round(px * 0.8)}px sans-serif`;
+  ctx.fillText(String(e instanceof Error ? e.message : e).slice(0, 80), px, px * 3.4);
+}
+
 /**
  * The creative drawn by the same function as the exported PNG, at its real pixel size and scaled by
  * CSS. Reports what the renderer measured (overflow, safe area, smallest text, contrast).
@@ -49,12 +65,17 @@ export function CreativeCanvas({ input, className, onMeasure, testId }: { input:
     if (!c || !fonts) return;
     c.width = input.width;
     c.height = input.height;
-    const m = drawCreative(c.getContext("2d") as never, {
-      ...input,
-      logo: logo ?? null,
-      photo: photo && input.photo ? { ...input.photo, image: photo } : null,
-    });
-    onMeasure?.(m);
+    try {
+      const m = drawCreative(c.getContext("2d") as never, {
+        ...input,
+        logo: logo ?? null,
+        photo: photo && input.photo ? { ...input.photo, image: photo } : null,
+      });
+      onMeasure?.(m);
+    } catch (e) {
+      // one broken creative must not take the whole page down
+      drawError(c, e);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
   return <canvas ref={ref} className={className} style={{ aspectRatio: `${input.width} / ${input.height}` }} data-testid={testId} />;
@@ -74,7 +95,11 @@ export function SceneCanvas({ input, className }: { input: Omit<SceneFrameInput,
     if (!c || !fonts) return;
     c.width = input.width;
     c.height = input.height;
-    drawSceneFrame(c.getContext("2d") as never, { ...input, logo: logo ?? null, photo: photo && input.photo ? { image: photo, focalX: input.photo.focalX, focalY: input.photo.focalY } : null });
+    try {
+      drawSceneFrame(c.getContext("2d") as never, { ...input, logo: logo ?? null, photo: photo && input.photo ? { image: photo, focalX: input.photo.focalX, focalY: input.photo.focalY } : null });
+    } catch (e) {
+      drawError(c, e);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
   return <canvas ref={ref} className={className} style={{ aspectRatio: `${input.width} / ${input.height}` }} />;

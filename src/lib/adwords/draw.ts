@@ -97,7 +97,10 @@ export interface CreativeInput {
 // --------------------------------------------------------------------------------------- colours
 
 function rgb(hex: string): [number, number, number] {
-  const n = parseInt(hex.replace("#", "").slice(0, 6), 16);
+  // "#abc" / "#aabbcc" / "#aabbccdd"; anything else → black, so a bad theme colour never breaks a gradient
+  let h = String(hex ?? "").trim().replace("#", "");
+  if (/^[0-9a-f]{3,4}$/i.test(h)) h = h.slice(0, 3).split("").map((c) => c + c).join("");
+  const n = /^[0-9a-f]{6}/i.test(h) ? parseInt(h.slice(0, 6), 16) : 0;
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
 }
 export function luminance(hex: string) {
