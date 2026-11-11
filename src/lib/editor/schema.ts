@@ -105,7 +105,7 @@ const textStyle = z.object({
   accentBar: z.boolean().optional(),
 });
 
-const overlay = z.discriminatedUnion("kind", [
+export const overlay = z.discriminatedUnion("kind", [
   z.object({ ...overlayBase, kind: z.literal("text"), role: z.enum(["question", "label", "custom"]), text: z.string().max(2000), style: textStyle, themeStyle: z.string().max(40).optional() }),
   z.object({ ...overlayBase, kind: z.enum(["rect", "ellipse", "highlight"]), fill: color.nullable(), stroke: color.nullable(), strokeWidth: num.min(0).max(60), radius: num.min(0).max(500) }),
   z.object({ ...overlayBase, kind: z.enum(["callout", "lowerThird"]), title: z.string().max(300), subtitle: z.string().max(300), fill: color, accent: color, textColor: color, fontFamily: font, titleSize: num.min(8).max(300).optional(), subtitleSize: num.min(6).max(300).optional() }),
@@ -115,6 +115,21 @@ const overlay = z.discriminatedUnion("kind", [
     assetId: z.string().max(64).nullable(),
     fit: z.enum(["contain", "cover"]),
     bubble: z.object({ x: num.min(0).max(1), y: num.min(0).max(1), size: num.min(0.08).max(0.9), zoom: num.min(0.5).max(4).optional(), fy: num.min(0).max(1).optional() }).optional(),
+  }),
+  z.object({
+    ...overlayBase,
+    kind: z.literal("typo"),
+    preset: z.enum(["stairTitle", "stairSteps", "stairWipe", "kinetic", "curtain", "underline", "stamp"]),
+    text: z.string().max(400),
+    sub: z.string().max(200).optional(),
+    size: num.min(12).max(400),
+    align: z.enum(["left", "center"]).optional(),
+    plate: z.boolean().optional(),
+    motif: z.enum(["stairs", "bar", "none"]).optional(),
+    speed: num.min(0.4).max(2.5).optional(),
+    accent: color.optional(),
+    color: color.optional(),
+    plateColor: color.optional(),
   }),
   z.object({ ...overlayBase, kind: z.literal("blur"), shape: z.enum(["rect", "circle"]), strength: num.min(0).max(100), radius: num.min(0).max(500) }),
   z.object({ ...overlayBase, kind: z.literal("video"), assetId: z.string().max(64), fit: z.enum(["contain", "cover"]), sourceIn: num.min(0), loop: z.boolean(), volume: num.min(0).max(2), radius: num.min(0).max(500) }),

@@ -4,6 +4,7 @@ import { Trash2 } from "lucide-react";
 import { DEFAULT_BUBBLE, type AudioClip, type BlurOverlay, type AVClip, type CalloutOverlay, type EditorDocument, type FaceBubble, type ImageOverlay, type Overlay, type ShapeOverlay, type TextOverlay, type VideoOverlay, type ZoomEffect } from "@/lib/editor/types";
 import { NarrationSpeed, NarrationVoiceChanger } from "./narration";
 import { CallStyleSection } from "./call-style";
+import { TypoProps } from "./typo";
 import { VariantPicker } from "./ai-panel";
 import { clipEnd, deleteClip, docDuration } from "@/lib/editor/timeline";
 import { ZOOM_PRESETS } from "@/lib/editor/zoom";
@@ -179,6 +180,7 @@ function OverlayProps({ o, doc }: { o: Overlay; doc: EditorDocument }) {
         {o.kind === "image" || o.kind === "logo" ? <ImageProps o={o} /> : null}
         {o.kind === "video" ? <VideoProps o={o} /> : null}
         {o.kind === "blur" ? <BlurProps o={o} /> : null}
+        {o.kind === "typo" ? <TypoProps o={o} doc={doc} /> : null}
       </Section>
       <Section title="Pozycja i rozmiar">
         <PositionFields o={o} />

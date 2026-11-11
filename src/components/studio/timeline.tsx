@@ -468,6 +468,7 @@ export function Timeline({ engine, ai }: { engine: PlaybackEngine | null; ai?: A
 function overlayLabel(o: Overlay): string {
   if (o.kind === "text") return o.role === "question" ? `Pytanie: ${o.text}` : o.text || o.name;
   if (o.kind === "callout" || o.kind === "lowerThird") return `${o.name}: ${o.title}`;
+  if (o.kind === "typo") return `${o.name}: ${o.text.replace(/[*|\n]+/g, " ").trim()}`;
   return o.name;
 }
 

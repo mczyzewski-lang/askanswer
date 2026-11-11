@@ -335,6 +335,21 @@ test("studio: pauses, cuts, subtitles, zoom, theme, persistence and real MP4 exp
   const outAnim = (await (await request.get(`/api/admin/compositions/${compId}`)).json()).composition.document;
   expect(outAnim.overlays.find((o: { kind: string }) => o.kind === "blur").animationOut).toBe("slideDown");
 
+  // Typo animacje: a motion preset in the theme's colours is added at the playhead, edited, saved
+  await page.getByTestId("tab-typo").click();
+  await expect(page.getByTestId("typo-presets").locator("canvas")).toHaveCount(7);
+  await page.getByTestId("typo-add-stairTitle").click();
+  await page.getByLabel("Tekst typo").fill("Najpierw *plan*\npotem pozew");
+  await page.getByLabel("Druga linia typo").fill("Krok po kroku");
+  await page.locator("label", { hasText: "Motyw marki" }).getByText("Schodki", { exact: true }).click();
+  await waitSaved(page);
+  const withTypo = (await (await request.get(`/api/admin/compositions/${compId}`)).json()).composition.document;
+  expect(withTypo.overlays.find((o: { kind: string }) => o.kind === "typo")).toMatchObject({ preset: "stairTitle", text: "Najpierw *plan*\npotem pozew", sub: "Krok po kroku", motif: "stairs", animation: "none" });
+  if (process.env.LP_SHOTS) await page.screenshot({ path: `${process.env.LP_SHOTS}/studio-typo.png` });
+  // (removed again: the export below is compared against the plain composition)
+  await page.getByTitle("Usuń warstwę").click();
+  await waitSaved(page);
+
   // the question read by a narrator, shown as a phone call: the call bar can be resized / moved;
   // the narrator's question gets subtitles too
   await page.getByTestId("tab-question").click();

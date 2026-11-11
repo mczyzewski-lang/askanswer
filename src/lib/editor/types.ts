@@ -217,7 +217,31 @@ export interface VideoOverlay extends OverlayBase {
   radius: number;
 }
 
-export type Overlay = TextOverlay | ShapeOverlay | CalloutOverlay | ImageOverlay | VideoOverlay | BlurOverlay;
+/**
+ * Typo animation (kinetic typography): a ready motion preset in the theme's colours. The text may
+ * mark accent words with *asterisks*; a new line or "|" starts a new line / step.
+ */
+export interface TypoOverlay extends OverlayBase {
+  kind: "typo";
+  preset: "stairTitle" | "stairSteps" | "stairWipe" | "kinetic" | "curtain" | "underline" | "stamp";
+  text: string;
+  /** a small second line (title presets, the transition) */
+  sub?: string;
+  /** design px on a 1080-wide canvas; shrinks to fit the box */
+  size: number;
+  align?: "left" | "center";
+  /** a plate in the theme's dark colour behind the text (else white text with a shadow, straight on the video) */
+  plate?: boolean;
+  /** the brand shape: the steps of the logo, a bar, or none (absent = by the theme) */
+  motif?: "stairs" | "bar" | "none";
+  /** 1 = normal; the entrance plays faster / slower */
+  speed?: number;
+  accent?: ColorRef;
+  color?: ColorRef;
+  plateColor?: ColorRef;
+}
+
+export type Overlay = TextOverlay | ShapeOverlay | CalloutOverlay | ImageOverlay | VideoOverlay | BlurOverlay | TypoOverlay;
 
 export interface SubWord {
   id: string;

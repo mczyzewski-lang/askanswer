@@ -11,6 +11,7 @@ import type { BlurOverlay, CallStyle, CalloutOverlay, ColorRef, EditorDocument, 
 import { DEFAULT_BUBBLE } from "../editor/types";
 import { clipAt, clipEnd, docDuration, endCardStart, overlayEnd, segmentAt, timedSegments, type TimedSegment } from "../editor/timeline";
 import { zoomAt } from "../editor/zoom";
+import { drawTypo } from "./typo";
 
 // Minimal structural type satisfied by both DOM and @napi-rs/canvas contexts.
 export type Ctx = CanvasRenderingContext2D;
@@ -499,6 +500,9 @@ export function drawOverlay(ctx: Ctx, doc: EditorDocument, o: Overlay, t: number
       break;
     case "video":
       drawVideoOverlay(ctx, doc, o, t, env);
+      break;
+    case "typo":
+      drawTypo(ctx, doc, o, t, duration, env.settled);
       break;
   }
   ctx.restore();
