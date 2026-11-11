@@ -53,6 +53,17 @@ export function ImagesTab({ data, reload, toast }: { data: AwData; reload: () =>
   const [open, setOpen] = useState<string | null>(null);
   const [picked, setPicked] = useState<string[]>([]);
   const toInput = useCreativeInput(data);
+  // what the renderer measured per graphic (overflow, smallest text, contrast): the card's score A counts it, like the export
+  const [measures, setMeasures] = useState<Record<string, Measure>>({});
+  const onMeasure = (id: string) => (m: Measure) => setMeasures((p) => (p[id] && p[id].overflow === m.overflow && p[id].outsideSafe === m.outsideSafe && p[id].minFontPx === m.minFontPx && p[id].contrast === m.contrast ? p : { ...p, [id]: m }));
+  const scoreOf = (r: AwAsset) => {
+    const m = measures[r.id];
+    if (!m || r.rowType !== "image") return null;
+    const camp = data.campaigns.find((c) => c.code === r.campaignCode);
+    const ctx = brandContext({ name: data.project.name, adwordsBrief: data.project.brief }, camp?.landingUrl ?? data.campaigns.find((c) => c.landingUrl)?.landingUrl ?? null, !!data.logoUrl || !!data.logoDarkUrl);
+    const p = r.expertPhotoId ? data.photos.find((x) => x.id === r.expertPhotoId) : r.expertPhotoKey ? data.photos.find((x) => x.key === r.expertPhotoKey) : null;
+    return scoreImageA(r, ctx, m, p ? { id: p.id, consentConfirmed: p.consentConfirmed } : null);
+  };
   const zip = (ids: string[], fmt = "png") => `/api/admin/adwords/${data.project.id}/zip?fmt=${fmt}&concepts=${encodeURIComponent(ids.join(","))}`;
   const evalOf = (id: string) => data.evaluation.images.find((e) => e.id === id);
   const shown = concepts.filter((c) => {
@@ -140,11 +151,16 @@ export function ImagesTab({ data, reload, toast }: { data: AwData; reload: () =>
               </div>
               <div className="flex items-end gap-2">
                 {rows.map((r) => (
-                  <CreativeCanvas key={r.id} input={toInput(r)} className={cn("rounded border border-line bg-white", sizeOf(r).key === "landscape" ? "w-[46%]" : sizeOf(r).key === "square" ? "w-[26%]" : "w-[22%]")} />
+                  <CreativeCanvas key={r.id} input={toInput(r)} lazy scale={0.6} onMeasure={onMeasure(r.id)} className={cn("rounded border border-line bg-white", sizeOf(r).key === "landscape" ? "w-[46%]" : sizeOf(r).key === "square" ? "w-[26%]" : "w-[22%]")} />
                 ))}
               </div>
               <div className="mt-3 flex flex-wrap items-center gap-3" onClick={(e) => e.stopPropagation()}>
-                {ev[0]?.scoreA ? <ScorePair a={ev[0].scoreA} b={ev[0].scoreB} seed={rows[0].scoreSeed} compact /> : null}
+                {(() => {
+                  // the weakest format decides, measured on the drawn graphics when they are on screen
+                  const live = rows.map(scoreOf).filter((x): x is NonNullable<typeof x> => !!x);
+                  const a = live.length === rows.length ? live.reduce((w, x) => (x.total < w.total ? x : w)) : (ev[0]?.scoreA ?? null);
+                  return a ? <ScorePair a={a} b={ev[0]?.scoreB ?? null} seed={rows[0].scoreSeed} compact /> : null;
+                })()}
                 {/* the expert's photo of the concept, changed in place (all formats) before downloading */}
                 {(rows[0].effectiveLayout === "expert_split" || rows[0].expertPhotoId) && data.photos.length ? (
                   <label className="ml-auto flex items-center gap-1.5 text-xs text-muted">
@@ -200,7 +216,7 @@ function ConceptEditor({ conceptId, data, reload, toast, onClose }: { conceptId:
   };
   const cur = view(sel);
   const campaign = data.campaigns.find((c) => c.code === cur.campaignCode);
-  const ctx = brandContext({ name: data.project.name, adwordsBrief: data.project.brief }, campaign?.landingUrl ?? data.campaigns.find((c) => c.landingUrl)?.landingUrl ?? null, !!data.logoUrl);
+  const ctx = brandContext({ name: data.project.name, adwordsBrief: data.project.brief }, campaign?.landingUrl ?? data.campaigns.find((c) => c.landingUrl)?.landingUrl ?? null, !!data.logoUrl || !!data.logoDarkUrl);
   const photoOf = (a: AwAsset) => {
     const p = a.expertPhotoId ? data.photos.find((x) => x.id === a.expertPhotoId) : a.expertPhotoKey ? data.photos.find((x) => x.key === a.expertPhotoKey) : null;
     return p ? { id: p.id, consentConfirmed: p.consentConfirmed } : null;

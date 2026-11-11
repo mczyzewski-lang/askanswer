@@ -138,7 +138,7 @@ function Previews({ ad, data, base, onMeasure, small }: { ad: MetaAdData & { id?
           <div className="flex items-end gap-2">
             {META_FORMATS.map((f) => (
               <figure key={f.key} className={cn(small ? (f.key === "story" ? "w-[18%]" : f.key === "feed" ? "w-[24%]" : "w-[30%]") : f.key === "story" ? "w-[22%]" : f.key === "feed" ? "w-[30%]" : "w-[37%]")}>
-                <CreativeCanvas input={{ ...metaCreative(ad as MetaAdData, f.key as MetaFormatKey, v === "info" ? "info" : v !== "none" && !!photoOf(data, v)), theme: data.theme, logoUrl: data.logoUrl, logoDarkUrl: data.logoDarkUrl ?? null, topic: data.project.topic, photo: photoOf(data, v, ad, f.key as MetaFormatKey) }} className="w-full rounded border border-line" onMeasure={onMeasure ? (m) => onMeasure(`${v}|${f.key}`, m) : undefined} />
+                <CreativeCanvas input={{ ...metaCreative(ad as MetaAdData, f.key as MetaFormatKey, v === "info" ? "info" : v !== "none" && !!photoOf(data, v)), theme: data.theme, logoUrl: data.logoUrl, logoDarkUrl: data.logoDarkUrl ?? null, topic: data.project.topic, photo: photoOf(data, v, ad, f.key as MetaFormatKey) }} scale={0.5} className="w-full rounded border border-line" onMeasure={onMeasure ? (m) => onMeasure(`${v}|${f.key}`, m) : undefined} />
                 <figcaption className="mt-0.5 flex justify-between text-[10px] text-muted">
                   <span>{f.label}</span>
                   {base && ad.id ? (

@@ -19,7 +19,7 @@ export function TextsTab({ data, reload, toast }: { data: AwData; reload: () => 
   const [seed, setSeed] = useState(0);
   const texts = data.assets.filter((a) => KINDS.includes(a.rowType as TextKind) && (a.assetGroup ?? "—") === group);
   const live = texts.map((t) => ({ ...t, adText: drafts[t.id] ?? t.adText }));
-  const ctx = brandContext({ name: data.project.name, adwordsBrief: data.project.brief }, null, !!data.logoUrl);
+  const ctx = brandContext({ name: data.project.name, adwordsBrief: data.project.brief }, null, !!data.logoUrl || !!data.logoDarkUrl);
   const checks = textSetChecks(live);
   const combo = useMemo(() => {
     const pick = (k: TextKind) => {

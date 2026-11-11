@@ -282,7 +282,7 @@ export async function renderAdwordsImage(assetDbId: string, fmt: "png" | "jpg" =
 export async function evaluateProject(projectId: string, measures: Map<string, Measure> = new Map(), sizes: Map<string, number> = new Map()) {
   const { project, assets, photos, campaigns, theme } = await adwordsProject(projectId);
   const landing = campaigns.find((c) => c.landingUrl)?.landingUrl ?? null;
-  const ctxOf = (code: string | null) => brandContext(project, campaigns.find((c) => c.code === code)?.landingUrl ?? landing, !!theme.logoAssetId || !!project.theme?.logoAssetId);
+  const ctxOf = (code: string | null) => brandContext(project, campaigns.find((c) => c.code === code)?.landingUrl ?? landing, !!theme.logoAssetId || !!project.theme?.logoAssetId || !!project.theme?.logoDarkAssetId);
   const list = assets.map(toAdAsset);
   const opts = gateOptionsOf(list, gateLpOf(isV5Project(assets), await landingContext(projectId)), projectTopic(project, assets));
   const photoOf = (a: AdAsset) => {

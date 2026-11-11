@@ -51,8 +51,17 @@ function drawError(c: HTMLCanvasElement, e: unknown) {
  * The creative drawn by the same function as the exported PNG, at its real pixel size and scaled by
  * CSS. Reports what the renderer measured (overflow, safe area, smallest text, contrast).
  */
-export function CreativeCanvas({ input, className, onMeasure, testId }: { input: Omit<CreativeInput, "logo" | "logoDark" | "photo"> & { logoUrl?: string | null; logoDarkUrl?: string | null; photo?: (Omit<NonNullable<CreativeInput["photo"]>, "image"> & { url: string | null }) | null }; className?: string; onMeasure?: (m: Measure) => void; testId?: string }) {
+export function CreativeCanvas({ input, className, onMeasure, testId, lazy, scale }: { input: Omit<CreativeInput, "logo" | "logoDark" | "photo"> & { logoUrl?: string | null; logoDarkUrl?: string | null; photo?: (Omit<NonNullable<CreativeInput["photo"]>, "image"> & { url: string | null }) | null }; className?: string; onMeasure?: (m: Measure) => void; testId?: string; /** draw only when scrolled near (galleries with many creatives) */ lazy?: boolean; /** backing pixels as a part of the real size (thumbnails: less memory; the layout and the measure stay those of the real size) */ scale?: number }) {
   const ref = useRef<HTMLCanvasElement>(null);
+  const [seen, setSeen] = useState(!lazy);
+  useEffect(() => {
+    const c = ref.current;
+    if (seen || !c) return;
+    if (typeof IntersectionObserver === "undefined") return setSeen(true);
+    const io = new IntersectionObserver((es) => es.some((e) => e.isIntersecting) && setSeen(true), { rootMargin: "700px" });
+    io.observe(c);
+    return () => io.disconnect();
+  }, [seen]);
   const logo = useImage(input.logoUrl);
   const logoDark = useImage(input.logoDarkUrl ?? null);
   const photo = useImage(input.photo?.url ?? null);
@@ -60,14 +69,17 @@ export function CreativeCanvas({ input, className, onMeasure, testId }: { input:
   useEffect(() => {
     void ensureFontsLoaded().then(() => setFonts(true));
   }, []);
-  const key = JSON.stringify({ ...input, fonts, logo: !!logo, logoDark: !!logoDark, photo: !!photo });
+  const key = JSON.stringify({ ...input, fonts, seen, scale, logo: !!logo, logoDark: !!logoDark, photo: !!photo });
   useEffect(() => {
     const c = ref.current;
-    if (!c || !fonts) return;
-    c.width = input.width;
-    c.height = input.height;
+    if (!c || !fonts || !seen) return;
+    const k = Math.min(1, Math.max(0.2, scale ?? 1));
+    c.width = Math.round(input.width * k);
+    c.height = Math.round(input.height * k);
     try {
-      const m = drawCreative(c.getContext("2d") as never, {
+      const g = c.getContext("2d")!;
+      g.setTransform(k, 0, 0, k, 0, 0);
+      const m = drawCreative(g as never, {
         ...input,
         logo: logo ?? null,
         logoDark: logoDark ?? null,

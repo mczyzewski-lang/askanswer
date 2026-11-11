@@ -66,7 +66,7 @@ function VideoConceptView({ conceptId, data, reload, toast }: { conceptId: strin
   const variantRow = data.assets.find((a) => a.rowType === "video" && a.conceptId === v.conceptId) ?? null;
   const dur = videoDuration(draftV);
   const campaign = data.campaigns.find((c) => c.code === v.variants[0]?.campaignCode);
-  const ctx = brandContext({ name: data.project.name, adwordsBrief: data.project.brief }, campaign?.landingUrl ?? null, !!data.logoUrl);
+  const ctx = brandContext({ name: data.project.name, adwordsBrief: data.project.brief }, campaign?.landingUrl ?? null, !!data.logoUrl || !!data.logoDarkUrl);
   const dirty = JSON.stringify(scenes) !== JSON.stringify(v.scenes);
   const base = `/api/admin/adwords/${data.project.id}`;
   const loadFiles = async () => setFiles((await api<{ files: typeof files }>(`${base}/videos/${conceptId}`)).files);

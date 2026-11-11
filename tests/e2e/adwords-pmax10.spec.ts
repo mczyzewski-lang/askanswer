@@ -42,5 +42,9 @@ test("10 PMax creatives from the history: each scores > 95/100 (A) and passes th
     const price = /^P0(3|5)-/.test(m.asset_id);
     expect({ k: m.asset_id, status: m.status, warnings: price ? m.warnings.includes("Komunikat o cenie") && !m.warnings.replace(/Komunikat o cenie[^|]*/, "").trim() : m.warnings }).toEqual({ k: m.asset_id, status: price ? "do_poprawy" : "gotowe", warnings: price ? true : "" });
   }
+  // the gallery card shows the same score as the export (measured on the drawn graphics)
+  const card = page.getByTestId("concept-card").filter({ hasText: "P07" }).first();
+  await card.scrollIntoViewIfNeeded();
+  await expect(card).toContainText("A 98", { timeout: 20_000 });
   if (process.env.LP_SHOTS) for (const c of ["P01", "P03", "P07"]) await page.getByTestId("concept-card").filter({ hasText: c }).first().screenshot({ path: `${process.env.LP_SHOTS}/pmax10-${c}.png` });
 });
