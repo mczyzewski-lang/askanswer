@@ -17,7 +17,9 @@ import { probe } from "./ffmpeg";
 import { ensureNarration } from "./narration";
 import { HttpError } from "./errors";
 import { registerFonts } from "../render/server-render";
-import { REEL_FPS, REEL_H, REEL_W, reelById } from "../explainers";
+import { REEL_FPS, REEL_H, REEL_STYLES, REEL_W, reelById, type StyleKey } from "../explainers";
+
+export const styleOf = (v: unknown): StyleKey => (REEL_STYLES.some((s) => s.key === v) ? (v as StyleKey) : "editorial");
 
 /** the white logo: the project's dark-background logo, else the Nowy Etap mark that ships with the app */
 async function logoFor(projectId: string): Promise<Image | null> {
@@ -43,12 +45,12 @@ async function logoFor(projectId: string): Promise<Image | null> {
 }
 
 /** one frame as PNG (thumbnail / first frame / a still of a beat) */
-export async function explainerFrame(projectId: string, reelId: string, t: number): Promise<Buffer> {
+export async function explainerFrame(projectId: string, reelId: string, t: number, style: StyleKey = "editorial"): Promise<Buffer> {
   const reel = reelById(reelId);
   if (!reel?.draw) throw new HttpError(404, "Nie ma takiego reelsa");
   registerFonts();
   const canvas = createCanvas(REEL_W, REEL_H);
-  reel.draw(canvas.getContext("2d") as never, Math.max(0, Math.min(reel.duration - 1 / REEL_FPS, t)), { logo: await logoFor(projectId) });
+  reel.draw(canvas.getContext("2d") as never, Math.max(0, Math.min(reel.duration - 1 / REEL_FPS, t)), { logo: await logoFor(projectId), style });
   return canvas.encode("png");
 }
 
@@ -63,11 +65,12 @@ export interface ExplainerRender {
 }
 
 /** Worker "explainer-render": the reel as an MP4 (optionally with the narration). `vo` overrides the narration text per beat. */
-export async function renderExplainer(projectId: string, reelId: string, opts: { voice?: boolean; vo?: Record<string, string>; onProgress?: (p: number) => void | Promise<void> } = {}): Promise<ExplainerRender> {
+export async function renderExplainer(projectId: string, reelId: string, opts: { voice?: boolean; vo?: Record<string, string>; style?: StyleKey; onProgress?: (p: number) => void | Promise<void> } = {}): Promise<ExplainerRender> {
   const reel = reelById(reelId);
   if (!reel?.draw) throw new Error("Ten reels nie ma jeszcze sceny do wyrenderowania.");
   const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId } });
   registerFonts();
+  const style = styleOf(opts.style);
   const logo = await logoFor(projectId);
   const work = await makeTempDir(`explainer-${reelId}`);
   try {
@@ -117,7 +120,7 @@ export async function renderExplainer(projectId: string, reelId: string, opts: {
     const canvas = createCanvas(REEL_W, REEL_H);
     const ctx = canvas.getContext("2d");
     for (let f = 0; f < total; f++) {
-      reel.draw(ctx as never, f / REEL_FPS, { logo });
+      reel.draw(ctx as never, f / REEL_FPS, { logo, style });
       const px = ctx.getImageData(0, 0, REEL_W, REEL_H).data;
       const ok = ff.stdin.write(Buffer.from(px.buffer, px.byteOffset, px.byteLength));
       if (!ok) await new Promise<void>((r) => ff.stdin.once("drain", () => r()));
@@ -126,11 +129,11 @@ export async function renderExplainer(projectId: string, reelId: string, opts: {
     ff.stdin.end();
     await done;
     const info = await probe(mp4);
-    const key = `projects/${projectId}/explainers/${reelId}-${Date.now().toString(36)}.mp4`;
+    const key = `projects/${projectId}/explainers/${reelId}-${style}-${Date.now().toString(36)}.mp4`;
     const size = await putFile(key, mp4, "video/mp4");
-    const name = `nowy-etap_explainer-${String(reel.n).padStart(2, "0")}_${reelId}_1080x1920.mp4`;
+    const name = `nowy-etap_explainer-${String(reel.n).padStart(2, "0")}_${reelId}_${style}_1080x1920.mp4`;
     const asset = await prisma.mediaAsset.create({
-      data: { kind: "RENDER", projectId, storageKey: key, mimeType: "video/mp4", sizeBytes: size, durationSec: info.duration, width: info.width, height: info.height, hasAudio: true, hasVideo: true, originalName: name, meta: { source: "explainer", reelId, voiced: voiced.length > 0, overruns } },
+      data: { kind: "RENDER", projectId, storageKey: key, mimeType: "video/mp4", sizeBytes: size, durationSec: info.duration, width: info.width, height: info.height, hasAudio: true, hasVideo: true, originalName: name, meta: { source: "explainer", reelId, style, voiced: voiced.length > 0, overruns } },
     });
     return { reelId, assetId: asset.id, url: await signedUrl(key, { download: name }), duration: info.duration, voiced: voiced.length > 0, overruns };
   } finally {
@@ -138,14 +141,15 @@ export async function renderExplainer(projectId: string, reelId: string, opts: {
   }
 }
 
-/** the latest render of every reel of the project */
+/** the latest render of every reel of the project, per style (key "reelId:style") */
 export async function explainerRenders(projectId: string) {
   const rows = await prisma.mediaAsset.findMany({ where: { projectId, kind: "RENDER", meta: { path: ["source"], equals: "explainer" } }, orderBy: { createdAt: "desc" }, take: 60 });
   const out: Record<string, { assetId: string; url: string; createdAt: string; voiced: boolean; duration: number | null; overruns: ExplainerRender["overruns"] }> = {};
   for (const a of rows) {
-    const m = (a.meta ?? {}) as { reelId?: string; voiced?: boolean; overruns?: ExplainerRender["overruns"] };
-    if (!m.reelId || out[m.reelId]) continue;
-    out[m.reelId] = { assetId: a.id, url: await signedUrl(a.storageKey, { download: a.originalName ?? `${m.reelId}.mp4` }), createdAt: a.createdAt.toISOString(), voiced: !!m.voiced, duration: a.durationSec, overruns: m.overruns ?? [] };
+    const m = (a.meta ?? {}) as { reelId?: string; style?: string; voiced?: boolean; overruns?: ExplainerRender["overruns"] };
+    const k = `${m.reelId}:${styleOf(m.style)}`;
+    if (!m.reelId || out[k]) continue;
+    out[k] = { assetId: a.id, url: await signedUrl(a.storageKey, { download: a.originalName ?? `${m.reelId}.mp4` }), createdAt: a.createdAt.toISOString(), voiced: !!m.voiced, duration: a.durationSec, overruns: m.overruns ?? [] };
   }
   return out;
 }

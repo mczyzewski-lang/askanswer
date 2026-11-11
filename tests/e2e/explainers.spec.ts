@@ -43,14 +43,16 @@ test("Performance Ads → AI Video: explainers preview (scrub, beat table, narra
   await expect(page.getByTestId("beat-row")).toHaveCount(5);
   await expect(page.getByTestId("explainer-render")).toBeDisabled();
 
-  // reel 3 (the shortest): MP4 with the narrator (ElevenLabs mock), through the worker
+  // reel 3 (the shortest) in the papercut style: MP4 through the worker
   await page.getByTestId("explainer-3").click();
+  await expect(page.getByTestId("explainer-styles").locator("button")).toHaveCount(4);
+  await page.getByTestId("explainer-style-papercut").click();
   const voice = page.getByTestId("explainer-render-voice");
   if (await voice.isEnabled()) await voice.click();
   else await page.getByTestId("explainer-render").click();
   await expect(page.getByTestId("explainer-done")).toBeVisible({ timeout: 300_000 });
   const state = await (await request.get(base)).json();
-  const done = state.renders["pozew-to-nie-plan"];
+  const done = state.renders["pozew-to-nie-plan:papercut"];
   expect(done.duration).toBeCloseTo(30, 0);
   const res = await request.get(done.url);
   expect(res.ok()).toBeTruthy();
@@ -62,7 +64,7 @@ test("Performance Ads → AI Video: explainers preview (scrub, beat table, narra
   expect([v.codec_name, v.width, v.height, v.r_frame_rate]).toEqual(["h264", 1080, 1920, "30/1"]);
   expect(probe.streams.some((s: { codec_type: string; codec_name: string }) => s.codec_type === "audio" && s.codec_name === "aac")).toBe(true);
   // a frame as PNG (the thumbnail)
-  const png = await request.get(`${base}/pozew-za-wczesnie?t=4.4`);
+  const png = await request.get(`${base}/pozew-za-wczesnie?t=4.4&style=blueprint`);
   expect(png.status()).toBe(200);
   const buf = await png.body();
   expect(buf.subarray(1, 4).toString()).toBe("PNG");

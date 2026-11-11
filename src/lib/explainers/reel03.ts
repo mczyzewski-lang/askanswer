@@ -4,7 +4,7 @@
  * to grow over them and cannot — then the four areas become the plan and the petition takes its
  * place near the end of the road.
  */
-import { at, camAt, camera, clamp, court, ease, finish, flow, hero, label, lerp, lifeArea, lock, mix, NE, outro, pr, rgba, rr, stage, win, type Beat, type C, type Reel } from "./kit";
+import { at, camAt, camera, clamp, court, ease, finish, flow, hero, label, lerp, lifeArea, lock, mix, NE, outro, pr, rgba, rr, stage, useStyle, win, depth, outline, type StyleKey, type Beat, type C, type Reel } from "./kit";
 
 const beats: Beat[] = [
   { id: "pozew", start: 0, end: 4.8, vo: "Pozew o rozwód odpowiada na jedno pytanie: czego żądasz od sądu.", screen: "POZEW O ROZWÓD → CZEGO ŻĄDASZ OD SĄDU?", visual: "Jeden dokument na środku. Kamera wjeżdża w niego; linie tekstu ustępują i zostaje jedno pytanie - tylko tyle mieści ta kartka." },
@@ -30,12 +30,11 @@ function petition(c: C, x: number, y: number, w: number, t: number, open: number
   c.translate(x, y);
   c.globalAlpha *= alpha;
   c.save();
-  c.shadowColor = rgba("#2B2416", 0.22);
-  c.shadowBlur = 70;
-  c.shadowOffsetY = 34;
+  depth(c, 1.8);
   c.fillStyle = NE.paper;
   rr(c, -w / 2, -h / 2, w, h, w * 0.035);
   c.fill();
+  outline(c);
   c.restore();
   c.fillStyle = NE.ink;
   rr(c, -w / 2, -h / 2, w, w * 0.03, w * 0.02);
@@ -48,7 +47,7 @@ function petition(c: C, x: number, y: number, w: number, t: number, open: number
   rows.forEach((f, i) => {
     const a = 1 - ease.inOut(clamp(open * 1.6 - i * 0.08));
     if (a <= 0) return;
-    c.fillStyle = rgba("#D9D0BF", a);
+    c.fillStyle = rgba(NE.line, a);
     rr(c, -w / 2 + w * 0.1, -h / 2 + w * 0.36 + i * w * 0.11, w * 0.8 * f, w * 0.036, w * 0.018);
     c.fill();
   });
@@ -58,7 +57,8 @@ function petition(c: C, x: number, y: number, w: number, t: number, open: number
   c.restore();
 }
 
-function draw(c: C, t: number, env: { logo?: { width: number; height: number } | null }) {
+function draw(c: C, t: number, env: { logo?: { width: number; height: number } | null; style?: StyleKey | null }) {
+  useStyle(env.style);
   const r = reel03;
   const b1 = at(r, "pozew").start;
   const b2 = at(r, "zycie").start;
@@ -66,7 +66,6 @@ function draw(c: C, t: number, env: { logo?: { width: number; height: number } |
   const b4 = at(r, "rownanie").start;
   const b5 = at(r, "droga").start;
   const b6 = at(r, "marka").start;
-  stage(c);
   const cam = camAt(t, [
     [b1, { x: DX, y: 940, s: 1.0 }],
     [b1 + 1.6, { x: DX, y: 960, s: 1.04 }],
@@ -83,6 +82,7 @@ function draw(c: C, t: number, env: { logo?: { width: number; height: number } |
   // the petition: tries to grow (beat 4), then takes its place on the road (beat 5)
   const grow = Math.sin(pr(t, b4 + 0.2, b4 + 1.7) * Math.PI) * 0.34;
   const place = ease.inOut(pr(t, b5 + 0.5, b5 + 1.9));
+  stage(c, { cam });
   camera(c, cam, t, () => {
     // the plan: one gold frame around everything the petition does not describe
     const fr = ease.inOut(pr(t, b4 + 2.9, b4 + 4.2));

@@ -40,8 +40,8 @@ async function handle(job: { id: string; type: string; payload: unknown }) {
     }
     case "explainer-render": {
       const { renderExplainer } = await import("../lib/server/explainers");
-      const x = job.payload as { projectId: string; reelId: string; voice?: boolean; vo?: Record<string, string> };
-      return renderExplainer(x.projectId, x.reelId, { voice: x.voice, vo: x.vo });
+      const x = job.payload as { projectId: string; reelId: string; voice?: boolean; vo?: Record<string, string>; style?: string };
+      return renderExplainer(x.projectId, x.reelId, { voice: x.voice, vo: x.vo, style: x.style as never });
     }
     case "adwords-video": {
       const { renderAdwordsVideo } = await import("../lib/server/adwords-video");

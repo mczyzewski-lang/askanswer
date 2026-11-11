@@ -11,7 +11,7 @@ export const W = 1080;
 export const H = 1920;
 export const FPS = 30;
 
-/** the Nowy Etap reel theme */
+/** the Nowy Etap reel theme (the colours of the style in use — see `useStyle`) */
 export const NE = {
   cream: "#F6F1E8",
   paper: "#FFFDF8",
@@ -25,8 +25,77 @@ export const NE = {
   ok: "#7FB08A",
   okSoft: "#D6E7D6",
   muted: "#7C867F",
+  /** the closing card: its background and the text on it */
+  deep: "#1F3330",
+  onDeep: "#F6F1E8",
   font: "DM Sans",
 };
+type Palette = Omit<typeof NE, "font">;
+const EDITORIAL: Palette = { ...NE };
+
+export type StyleKey = "editorial" | "papercut" | "blueprint" | "riso";
+/**
+ * The same choreography in four looks. A style is a palette plus how the kit draws depth:
+ * editorial — soft shadows on a cream page; papercut — stacked sheets of cut paper with crisp
+ * shadows and parallax layers behind; blueprint — the architect's plan: thin lines on dark green,
+ * a grid, no fills; riso — a two-ink print: flat shapes, a hard gold offset instead of a shadow, grain.
+ */
+export const STYLES: Array<{ key: StyleKey; label: string; hint: string }> = [
+  { key: "editorial", label: "Redakcyjny", hint: "kremowa strona, miękkie cienie" },
+  { key: "papercut", label: "Papercut", hint: "warstwy wyciętego papieru z głębią" },
+  { key: "blueprint", label: "Plan architekta", hint: "cienkie złote linie na ciemnej zieleni, siatka" },
+  { key: "riso", label: "Druk riso", hint: "płaski plakat w dwóch farbach, ziarno" },
+];
+const PALETTES: Record<StyleKey, Palette> = {
+  editorial: EDITORIAL,
+  papercut: { ...EDITORIAL, cream: "#EFE6D6", paper: "#FBF6EC", line: "#DDD0BA", goldSoft: "#E2CFA6", redSoft: "#EBC9C0", okSoft: "#CFE0CC" },
+  blueprint: { cream: "#17302C", paper: "#1E3B36", line: "#3A5A54", ink: "#F3EDE0", green: "#234540", gold: "#D2B274", goldSoft: "#E6D2A6", red: "#E79C8E", redSoft: "#4A2F2B", ok: "#9AD3A9", okSoft: "#1F4A3F", muted: "#9FB0A9", deep: "#0F2320", onDeep: "#F3EDE0" },
+  riso: { ...EDITORIAL, cream: "#F2EBDD", paper: "#FBF7EE", line: "#D9CFBC", ink: "#1B3530", gold: "#C19A4B", goldSoft: "#E3C98F", red: "#D9765F", redSoft: "#F0CFC3", ok: "#5FA57A", okSoft: "#CDE3CF", deep: "#1B3530" },
+};
+let STYLE: StyleKey = "editorial";
+/** choose the look for the frame about to be drawn (every reel calls it first) */
+export function useStyle(key: StyleKey | null | undefined) {
+  STYLE = key && PALETTES[key] ? key : "editorial";
+  Object.assign(NE, PALETTES[STYLE]);
+}
+export const styleNow = () => STYLE;
+
+/** the depth of an object above the page, the way the style shows it (set before a fill) */
+export function depth(c: C, lift = 1) {
+  if (STYLE === "papercut") {
+    // a sheet lying on another sheet: a crisp, close shadow to the lower right
+    c.shadowColor = "rgba(58,44,20,0.34)";
+    c.shadowBlur = 5 + 7 * lift;
+    c.shadowOffsetX = 5 + 5 * lift;
+    c.shadowOffsetY = 9 + 11 * lift;
+  } else if (STYLE === "blueprint") {
+    c.shadowColor = "rgba(210,178,116,0.22)";
+    c.shadowBlur = 22;
+    c.shadowOffsetX = 0;
+    c.shadowOffsetY = 0;
+  } else if (STYLE === "riso") {
+    // no shadow in print: the second ink, slightly off register
+    c.shadowColor = "rgba(193,154,75,0.9)";
+    c.shadowBlur = 0;
+    c.shadowOffsetX = 9 + 3 * lift;
+    c.shadowOffsetY = 9 + 3 * lift;
+  } else {
+    c.shadowColor = "rgba(43,36,22,0.2)";
+    c.shadowBlur = 26 + 30 * lift;
+    c.shadowOffsetX = 0;
+    c.shadowOffsetY = 10 + 22 * lift;
+  }
+}
+/** the outline of a shape in the line-drawing style (call after the fill, same path) */
+export function outline(c: C, color?: string, width = 3) {
+  if (STYLE !== "blueprint") return;
+  c.save();
+  c.shadowColor = "transparent";
+  c.strokeStyle = color ?? rgba(NE.ink, 0.85);
+  c.lineWidth = width;
+  c.stroke();
+  c.restore();
+}
 
 export const clamp = (v: number, a = 0, b = 1) => Math.max(a, Math.min(b, v));
 export const lerp = (a: number, b: number, k: number) => a + (b - a) * k;
@@ -78,26 +147,95 @@ export function rr(c: C, x: number, y: number, w: number, h: number, r: number) 
 
 // ------------------------------------------------------------------------------------------ the stage
 
-/** the cream page with a subtle paper texture; `tint` 0..1 warms it towards the pastel red, `dark` 0..1 turns it into the dark green */
-export function stage(c: C, opts: { tint?: number; dark?: number } = {}) {
-  const base = mix(mix(NE.cream, NE.redSoft, (opts.tint ?? 0) * 0.75), NE.ink, opts.dark ?? 0);
+/** the page of the style; `tint` 0..1 warms it towards the pastel red, `cam` lets the back layers move slower than the scene (parallax) */
+export function stage(c: C, opts: { tint?: number; dark?: number; cam?: Cam } = {}) {
+  const tint = opts.tint ?? 0;
+  const base = mix(mix(NE.cream, NE.redSoft, tint * 0.75), NE.deep, opts.dark ?? 0);
   c.setTransform(1, 0, 0, 1, 0, 0);
   c.globalAlpha = 1;
   c.fillStyle = base;
   c.fillRect(0, 0, W, H);
-  // soft light from the top
-  const g = c.createLinearGradient(0, 0, 0, H);
-  g.addColorStop(0, rgba("#FFFFFF", 0.35 * (1 - (opts.dark ?? 0))));
-  g.addColorStop(0.5, rgba("#FFFFFF", 0));
-  c.fillStyle = g;
-  c.fillRect(0, 0, W, H);
+  const cx = opts.cam?.x ?? W / 2;
+  const cy = opts.cam?.y ?? H / 2;
+  if (STYLE === "blueprint") {
+    // the drawing sheet: a fine grid that scrolls with the camera, heavier every fifth line
+    const step = 60;
+    const ox = -((cx * 0.5) % step);
+    const oy = -((cy * 0.5) % step);
+    for (let i = -1; i < W / step + 2; i++) {
+      c.fillStyle = rgba(NE.gold, Math.round(i + Math.floor((cx * 0.5) / step)) % 5 === 0 ? 0.16 : 0.07);
+      c.fillRect(ox + i * step, 0, 1.5, H);
+    }
+    for (let j = -1; j < H / step + 2; j++) {
+      c.fillStyle = rgba(NE.gold, Math.round(j + Math.floor((cy * 0.5) / step)) % 5 === 0 ? 0.16 : 0.07);
+      c.fillRect(0, oy + j * step, W, 1.5);
+    }
+    // the frame of the sheet and its corner marks
+    c.strokeStyle = rgba(NE.gold, 0.4);
+    c.lineWidth = 2;
+    c.strokeRect(34, 34, W - 68, H - 68);
+    for (const [x, y] of [[34, 34], [W - 34, 34], [34, H - 34], [W - 34, H - 34]]) {
+      c.fillStyle = rgba(NE.gold, 0.8);
+      c.fillRect(x - 14, y - 1, 28, 2);
+      c.fillRect(x - 1, y - 14, 2, 28);
+    }
+    return;
+  }
+  if (STYLE === "papercut") {
+    // sheets of paper stacked behind the scene, each cut along a soft curve and casting a shadow on
+    // the next; the further back, the slower it follows the camera
+    const layers: Array<{ col: string; y: number; amp: number; par: number; seed: number }> = [
+      { col: mix(mix(NE.goldSoft, NE.cream, 0.45), NE.redSoft, tint * 0.3), y: 0.2, amp: 70, par: 0.05, seed: 1 },
+      { col: mix(mix(NE.okSoft, NE.cream, 0.35), NE.redSoft, tint * 0.55), y: 0.44, amp: 90, par: 0.1, seed: 2 },
+      { col: mix(mix(NE.goldSoft, NE.cream, 0.7), NE.redSoft, tint * 0.4), y: 0.66, amp: 80, par: 0.17, seed: 3 },
+      { col: mix(mix(NE.green, NE.cream, 0.78), NE.redSoft, tint * 0.25), y: 0.84, amp: 60, par: 0.26, seed: 4 },
+    ];
+    for (const l of layers) {
+      const dy = -((cy - H / 2) * l.par) % (H * 0.9);
+      const dx = -(cx - W / 2) * l.par;
+      c.save();
+      c.shadowColor = "rgba(58,44,20,0.26)";
+      c.shadowBlur = 22;
+      c.shadowOffsetY = -10;
+      c.fillStyle = l.col;
+      c.beginPath();
+      const y0 = H * l.y + dy;
+      c.moveTo(-200, H + 400);
+      c.lineTo(-200, y0);
+      for (let x = -200; x <= W + 200; x += 40) c.lineTo(x, y0 + Math.sin((x + dx) / 210 + l.seed * 1.7) * l.amp + Math.sin((x + dx) / 97 + l.seed) * l.amp * 0.3);
+      c.lineTo(W + 200, H + 400);
+      c.closePath();
+      c.fill();
+      c.restore();
+    }
+  } else if (STYLE === "riso") {
+    // a halftone fade in two corners (the print screen)
+    for (const [ox, oy, col] of [[W, 0, NE.gold], [0, H, NE.ok]] as const) {
+      for (let i = 0; i < 16; i++)
+        for (let j = 0; j < 16; j++) {
+          const d = Math.hypot(i, j) / 16;
+          if (d >= 1) continue;
+          c.fillStyle = rgba(col, 0.2);
+          c.beginPath();
+          c.arc(ox + (ox ? -1 : 1) * (i * 34 + 17), oy + (oy ? -1 : 1) * (j * 34 + 17), 11 * (1 - d), 0, Math.PI * 2);
+          c.fill();
+        }
+    }
+  } else {
+    // soft light from the top
+    const g = c.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, rgba("#FFFFFF", 0.35 * (1 - (opts.dark ?? 0))));
+    g.addColorStop(0.5, rgba("#FFFFFF", 0));
+    c.fillStyle = g;
+    c.fillRect(0, 0, W, H);
+  }
   // paper fibres: fixed specks (the same on every frame)
   const r = rng(7);
   for (let i = 0; i < 420; i++) {
     const x = r() * W;
     const y = r() * H;
     const l = 6 + r() * 26;
-    c.fillStyle = rgba(r() > 0.5 ? "#FFFFFF" : NE.ink, 0.018 + r() * 0.02);
+    c.fillStyle = rgba(r() > 0.5 ? "#FFFFFF" : "#1F3330", 0.018 + r() * 0.02);
     c.fillRect(x, y, l, 1.4);
   }
 }
@@ -107,8 +245,10 @@ export function finish(c: C, t: number, opts: { dark?: number } = {}) {
   c.setTransform(1, 0, 0, 1, 0, 0);
   c.globalAlpha = 1;
   const r = rng(1000 + Math.round(t * FPS));
-  for (let i = 0; i < 520; i++) {
-    c.fillStyle = rgba(r() > 0.5 ? "#FFFFFF" : "#000000", 0.022 + r() * 0.02);
+  // (the print grain is heavier; the plan has almost none)
+  const n = STYLE === "riso" ? 2600 : STYLE === "blueprint" ? 220 : 520;
+  for (let i = 0; i < n; i++) {
+    c.fillStyle = rgba(r() > 0.5 ? "#FFFFFF" : "#000000", (STYLE === "riso" ? 0.04 : 0.022) + r() * 0.02);
     c.fillRect(r() * W, r() * H, 2.2, 2.2);
   }
   const v = c.createRadialGradient(W / 2, H * 0.48, H * 0.38, W / 2, H * 0.5, H * 0.78);
@@ -196,7 +336,16 @@ export function hero(c: C, lines: HeroLine[], x: number, y: number, size: number
       c.rect(0 - W, top - h * 0.3, W * 3, h * 1.34);
       c.clip();
       c.globalAlpha *= Math.min(1, p * 1.6) * (1 - q);
-      label(c, l.t, x, top + h / 2 + (1 - p) * h * 0.9 - q * h * 0.7, sz, { color: l.color ?? o.color ?? NE.ink, weight: l.weight ?? 800, align: o.align ?? "center", track: -sz * 0.012 });
+      const ty = top + h / 2 + (1 - p) * h * 0.9 - q * h * 0.7;
+      // riso: the second ink printed slightly off; papercut: letters cut out and laid on the page
+      if (STYLE === "riso") label(c, l.t, x + sz * 0.045, ty + sz * 0.045, sz, { color: rgba(NE.gold, 0.55), weight: l.weight ?? 800, align: o.align ?? "center", track: -sz * 0.012 });
+      if (STYLE === "papercut") {
+        c.shadowColor = "rgba(58,44,20,0.3)";
+        c.shadowBlur = 3;
+        c.shadowOffsetX = sz * 0.02;
+        c.shadowOffsetY = sz * 0.045;
+      }
+      label(c, l.t, x, ty, sz, { color: l.color ?? o.color ?? NE.ink, weight: l.weight ?? 800, align: o.align ?? "center", track: -sz * 0.012 });
       c.restore();
     }
     top += h;
@@ -237,12 +386,21 @@ export function doc(c: C, d: DocProps) {
   c.scale(d.s ?? 1, d.s ?? 1);
   c.globalAlpha *= a * (1 - (d.fade ?? 0) * 0.72);
   c.save();
-  c.shadowColor = rgba("#2B2416", 0.2);
-  c.shadowBlur = 26 + 30 * lift;
-  c.shadowOffsetY = 10 + 22 * lift;
+  if (STYLE === "papercut") {
+    // a second sheet under it, a little askew — paper is never one layer
+    c.save();
+    depth(c, lift * 0.6);
+    c.rotate(0.035);
+    c.fillStyle = mix(NE.paper, NE.goldSoft, 0.4);
+    rr(c, -w / 2, -h / 2, w, h, w * 0.02);
+    c.fill();
+    c.restore();
+  }
+  depth(c, lift);
   c.fillStyle = NE.paper;
-  rr(c, -w / 2, -h / 2, w, h, w * 0.035);
+  rr(c, -w / 2, -h / 2, w, h, w * (STYLE === "papercut" || STYLE === "riso" ? 0.015 : 0.035));
   c.fill();
+  outline(c);
   c.restore();
   // the coloured edge on top
   c.fillStyle = col;
@@ -287,13 +445,31 @@ export function court(c: C, o: { x: number; y: number; s?: number; alpha?: numbe
   c.scale(s, s);
   c.globalAlpha *= a;
   c.save();
-  c.shadowColor = rgba("#1B1A12", 0.28);
-  c.shadowBlur = 60;
-  c.shadowOffsetY = 26;
-  c.fillStyle = o.tone === "green" ? NE.green : NE.ink;
-  rr(c, -w / 2, -h / 2, w, h, 34);
+  depth(c, 1.4);
+  const body = STYLE === "blueprint" ? NE.paper : o.tone === "green" ? NE.green : NE.deep;
+  c.fillStyle = body;
+  rr(c, -w / 2, -h / 2, w, h, STYLE === "riso" ? 8 : 34);
   c.fill();
+  outline(c, NE.gold, 4);
   c.restore();
+  if (STYLE === "papercut") {
+    // the portal cut in three layers, each a step deeper
+    for (const [k, col] of [[0.4, mix(body, "#FFFFFF", 0.16)], [0.33, mix(body, "#FFFFFF", 0.08)], [0.26, mix(body, "#000000", 0.18)]] as const) {
+      c.save();
+      c.shadowColor = "rgba(0,0,0,0.35)";
+      c.shadowBlur = 10;
+      c.shadowOffsetY = 6;
+      c.fillStyle = col;
+      c.beginPath();
+      c.moveTo(-w * k, h * 0.5 - 40);
+      c.lineTo(-w * k, -h * 0.08);
+      c.arc(0, -h * 0.08, w * k, Math.PI, 0);
+      c.lineTo(w * k, h * 0.5 - 40);
+      c.closePath();
+      c.fill();
+      c.restore();
+    }
+  }
   // the arch: one thin gold line
   c.strokeStyle = rgba(NE.gold, 0.9);
   c.lineWidth = 5;
@@ -303,9 +479,9 @@ export function court(c: C, o: { x: number; y: number; s?: number; alpha?: numbe
   c.arc(0, -h * 0.08, w * 0.33, Math.PI, 0);
   c.lineTo(w * 0.33, h * 0.5 - 40);
   c.stroke();
-  label(c, o.text ?? "SĄD", 0, -h * 0.02, 74, { color: NE.cream, track: 10 });
+  label(c, o.text ?? "SĄD", 0, -h * 0.02, 74, { color: NE.onDeep, track: 10 });
   // the slot
-  c.fillStyle = mix(NE.ink, "#000000", 0.45);
+  c.fillStyle = mix(NE.deep, "#000000", 0.45);
   rr(c, -w * 0.24, h * 0.5 - 62, w * 0.48, 16, 8);
   c.fill();
   if (o.pulse) {
@@ -398,12 +574,11 @@ export function lifeArea(c: C, kind: "children" | "home" | "finance" | "daily" |
   c.scale(sc * (0.86 + 0.14 * k), sc * (0.86 + 0.14 * k));
   c.globalAlpha *= (o.alpha ?? 1) * Math.min(1, o.k * 2.2);
   c.save();
-  c.shadowColor = rgba("#2B2416", 0.16);
-  c.shadowBlur = 44;
-  c.shadowOffsetY = 18;
+  depth(c, 0.8);
   c.fillStyle = tone === "red" ? mix(NE.paper, NE.redSoft, 0.7) : tone === "green" ? mix(NE.paper, NE.okSoft, 0.75) : NE.paper;
-  rr(c, -w / 2, -h / 2, w, h, 30);
+  rr(c, -w / 2, -h / 2, w, h, STYLE === "riso" ? 6 : 30);
   c.fill();
+  outline(c);
   c.restore();
   const d = ease.out(clamp(o.k * 1.5 - 0.35));
   const ink = NE.ink;
@@ -530,12 +705,11 @@ export function roadmap(c: C, o: { x: number; y: number; k: number; s?: number; 
   c.scale((o.s ?? 1) * (0.9 + 0.1 * k), (o.s ?? 1) * (0.9 + 0.1 * k));
   c.globalAlpha *= (o.alpha ?? 1) * Math.min(1, o.k * 4);
   c.save();
-  c.shadowColor = rgba("#2B2416", 0.18);
-  c.shadowBlur = 46;
-  c.shadowOffsetY = 20;
+  depth(c, 0.8);
   c.fillStyle = NE.paper;
-  rr(c, -250, -125, 500, 250, 28);
+  rr(c, -250, -125, 500, 250, STYLE === "riso" ? 6 : 28);
   c.fill();
+  outline(c);
   c.restore();
   const pts: Array<[number, number]> = [[-190, 55], [-80, -45], [40, 35], [180, -65]];
   flow(c, pts, ease.inOut(clamp(o.k * 1.6 - 0.3)), { color: mix(NE.ok, NE.ink, 0.25), width: 9, head: false });
@@ -559,9 +733,7 @@ export function lock(c: C, o: { x: number; y: number; k: number; s?: number; alp
   c.scale(o.s ?? 1, o.s ?? 1);
   c.globalAlpha *= (o.alpha ?? 1) * Math.min(1, o.k * 4);
   c.save();
-  c.shadowColor = rgba("#2B2416", 0.18);
-  c.shadowBlur = 40;
-  c.shadowOffsetY = 18;
+  depth(c, 0.8);
   for (const sgn of [-1, 1]) {
     c.fillStyle = sgn < 0 ? NE.ink : NE.gold;
     c.beginPath();
@@ -603,15 +775,23 @@ export function outro(c: C, t: number, t0: number, o: { big: HeroLine[]; small?:
   // the bands arrive from the left, the lowest first — a staircase edge
   for (let i = 0; i < 3; i++) {
     const p = ease.inOut(pr(k, (2 - i) * 0.1, 0.55 + (2 - i) * 0.1));
-    c.fillStyle = NE.ink;
-    c.fillRect(0, (H / 3) * i - 1, W * p, H / 3 + 2);
+    c.save();
+    // papercut: three sheets sliding in, each a shade apart and shadowing the scene
+    if (STYLE === "papercut") {
+      c.shadowColor = "rgba(0,0,0,0.4)";
+      c.shadowBlur = 26;
+      c.shadowOffsetX = 12;
+    }
+    c.fillStyle = STYLE === "papercut" ? mix(NE.deep, "#FFFFFF", (2 - i) * 0.045) : NE.deep;
+    c.fillRect(-40, (H / 3) * i - 1, (W + 40) * p, H / 3 + 2);
+    c.restore();
     if (p > 0 && p < 1) {
       c.fillStyle = NE.gold;
       c.fillRect(W * p - 10, (H / 3) * i - 1, 10, H / 3 + 2);
     }
   }
   const size = o.size ?? 118;
-  hero(c, o.big, W / 2, H * 0.43, size, pr(k, 0.6, 1.5), { color: NE.cream });
+  hero(c, o.big, W / 2, H * 0.43, size, pr(k, 0.6, 1.5), { color: NE.onDeep });
   (o.small ?? "").split("\n").filter(Boolean).forEach((ln, i) => label(c, ln, W / 2, H * 0.43 + (o.big.length * size * 1.08) / 2 + 70 + i * 76 + (1 - ease.out(pr(k, 1.25 + i * 0.15, 1.8 + i * 0.15))) * 20, 62, { color: NE.gold, weight: 600, alpha: ease.out(pr(k, 1.25 + i * 0.15, 1.8 + i * 0.15)) }));
   // the mark: three steps drawing themselves, then the logo
   const la = ease.out(pr(k, 1.6, 2.2));
@@ -621,12 +801,12 @@ export function outro(c: C, t: number, t0: number, o: { big: HeroLine[]; small?:
     c.globalAlpha = la;
     c.drawImage(o.logo as never, W / 2 - lw / 2, H * 0.74 - lh / 2, lw, lh);
     c.globalAlpha = 1;
-  } else if (la > 0) label(c, "NOWY ETAP", W / 2, H * 0.74, 54, { color: NE.cream, track: 14, alpha: la });
+  } else if (la > 0) label(c, "NOWY ETAP", W / 2, H * 0.74, 54, { color: NE.onDeep, track: 14, alpha: la });
   // the qualification: small, but still readable on a phone (two lines when long)
   if (o.note) {
     const words = o.note.split(" ");
     const half = o.note.length > 34 ? Math.ceil(words.length / 2) : words.length;
-    [words.slice(0, half).join(" "), words.slice(half).join(" ")].filter(Boolean).forEach((ln, i) => label(c, ln, W / 2, H * 0.84 + i * 50, 38, { color: rgba(NE.cream, 0.78), weight: 500, alpha: ease.out(pr(k, 1.9, 2.5)) }));
+    [words.slice(0, half).join(" "), words.slice(half).join(" ")].filter(Boolean).forEach((ln, i) => label(c, ln, W / 2, H * 0.84 + i * 50, 38, { color: rgba(NE.onDeep, 0.78), weight: 500, alpha: ease.out(pr(k, 1.9, 2.5)) }));
   }
   c.restore();
 }
@@ -653,7 +833,7 @@ export interface Reel {
   duration: number;
   beats: Beat[];
   status: "ready" | "planned";
-  draw?: (c: C, t: number, env: { logo?: ImageLike | null }) => void;
+  draw?: (c: C, t: number, env: { logo?: ImageLike | null; style?: StyleKey | null }) => void;
 }
 /** start of a beat (seconds) by id — scenes are timed off the beat table */
 export const at = (r: Pick<Reel, "beats">, id: string) => r.beats.find((b) => b.id === id)!;

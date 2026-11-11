@@ -4,7 +4,7 @@
  * out), then down the right one (plan first: three areas checked, then documents, then the court),
  * and pulls back to show both histories ending at the same word.
  */
-import { at, bez, camAt, camera, clamp, court, doc, ease, finish, flow, hero, label, lerp, lifeArea, mix, NE, node, outro, pr, rgba, rng, roadmap, rr, stage, type Beat, type C, type Reel } from "./kit";
+import { at, bez, camAt, camera, clamp, court, doc, ease, finish, flow, hero, label, lerp, lifeArea, mix, NE, node, outro, pr, rgba, rng, roadmap, rr, stage, useStyle, depth, outline, type StyleKey, type Beat, type C, type Reel } from "./kit";
 
 const beats: Beat[] = [
   { id: "cel", start: 0, end: 5.4, vo: "Te dwie osoby chcą dokładnie tego samego: rozwodu. Ale zaczynają zupełnie inaczej.", screen: "TEN SAM CEL → DWA POCZĄTKI", visual: "Jedna decyzja u góry. Wychodzą z niej dwie linie: kadr dzieli się na dwie drogi - lewą (czerwień) i prawą (zieleń)." },
@@ -17,10 +17,12 @@ const beats: Beat[] = [
 
 const LX = 270;
 const RX = 810;
-const red = mix(NE.red, NE.ink, 0.25);
-const green = mix(NE.ok, NE.ink, 0.25);
 
-function draw(c: C, t: number, env: { logo?: { width: number; height: number } | null }) {
+function draw(c: C, t: number, env: { logo?: { width: number; height: number } | null; style?: StyleKey | null }) {
+  useStyle(env.style);
+  // (the colours of the style in use)
+  const red = mix(NE.red, NE.ink, 0.25);
+  const green = mix(NE.ok, NE.ink, 0.25);
   const r = reel02;
   const b1 = at(r, "cel").start;
   const b2 = at(r, "pozew").start;
@@ -28,7 +30,6 @@ function draw(c: C, t: number, env: { logo?: { width: number; height: number } |
   const b4 = at(r, "dokumenty").start;
   const b5 = at(r, "razem").start;
   const b6 = at(r, "marka").start;
-  stage(c);
   const cam = camAt(t, [
     [b1, { x: 540, y: 940, s: 1.02 }],
     [b2 - 0.5, { x: 540, y: 960, s: 1.0 }],
@@ -48,6 +49,7 @@ function draw(c: C, t: number, env: { logo?: { width: number; height: number } |
     [b5 + 1.6, { x: 540, y: 1560, s: 0.64 }],
     [b6, { x: 540, y: 1590, s: 0.66 }],
   ]);
+  stage(c, { cam });
   camera(c, cam, t, () => {
     // the two halves: the same page, two temperatures
     const split = ease.inOut(pr(t, b1 + 3.2, b1 + 4.6));
@@ -64,10 +66,11 @@ function draw(c: C, t: number, env: { logo?: { width: number; height: number } |
     if (dk > 0) {
       c.save();
       c.globalAlpha *= Math.min(1, dk * 2);
-      c.fillStyle = NE.ink;
+      c.fillStyle = NE.deep;
       rr(c, 540 - 330 * ease.back(dk), 250, 660 * ease.back(dk), 130, 65);
       c.fill();
-      label(c, "DECYZJA O ROZWODZIE", 540, 317, 46, { color: NE.cream, track: 2, alpha: ease.out(pr(t, b1 + 0.9, b1 + 1.4)) });
+      outline(c, NE.gold, 4);
+      label(c, "DECYZJA O ROZWODZIE", 540, 317, 46, { color: NE.onDeep, track: 2, alpha: ease.out(pr(t, b1 + 0.9, b1 + 1.4)) });
       c.restore();
     }
     flow(c, [[440, 380], [LX, 470], [LX, 560]], ease.inOut(pr(t, b1 + 3.4, b1 + 4.5)), { color: red, width: 9 });
@@ -118,11 +121,10 @@ function draw(c: C, t: number, env: { logo?: { width: number; height: number } |
           c.scale(a, a);
           c.rotate(((i - 1) * 4 * Math.PI) / 180);
           c.fillStyle = NE.paper;
-          c.shadowColor = rgba("#2B2416", 0.16);
-          c.shadowBlur = 26;
-          c.shadowOffsetY = 10;
+          depth(c, 0.5);
           rr(c, -165, -44, 330, 88, 44);
           c.fill();
+          outline(c, rgba(NE.red, 0.9));
           c.shadowColor = "transparent";
           label(c, q, 0, 3, 46, { color: mix(NE.red, NE.ink, 0.45) });
           c.restore();
@@ -176,10 +178,11 @@ function draw(c: C, t: number, env: { logo?: { width: number; height: number } |
     if (end > 0) {
       c.save();
       c.globalAlpha *= Math.min(1, end * 2);
-      c.fillStyle = NE.ink;
+      c.fillStyle = NE.deep;
       rr(c, 540 - 250 * ease.back(end), 2650, 500 * ease.back(end), 170, 85);
       c.fill();
-      label(c, "ROZWÓD", 540, 2738, 86, { color: NE.cream, track: 6, alpha: ease.out(pr(t, b5 + 1.5, b5 + 2.0)) });
+      outline(c, NE.gold, 4);
+      label(c, "ROZWÓD", 540, 2738, 86, { color: NE.onDeep, track: 6, alpha: ease.out(pr(t, b5 + 1.5, b5 + 2.0)) });
       c.restore();
     }
     void node;

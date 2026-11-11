@@ -3,7 +3,7 @@
  * as an answer; positions start crossing between two sides; the camera pulls back, travels down a
  * clean line and follows the other order — plan → agreements → documents → court.
  */
-import { at, bez, camAt, camera, clamp, court, doc, ease, finish, flow, flying, hero, label, lerp, mix, NE, outro, pr, rgba, rng, rr, stage, win, type Beat, type C, type DocProps, type Reel, W } from "./kit";
+import { at, bez, camAt, camera, clamp, court, doc, ease, finish, flow, flying, hero, label, lerp, mix, NE, outro, pr, rgba, rng, rr, stage, useStyle, win, depth, outline, type StyleKey, type Beat, type C, type DocProps, type Reel, W } from "./kit";
 
 const beats: Beat[] = [
   { id: "blad", start: 0, end: 5.2, vo: "Jednym z największych błędów przed rozwodem może być wysłanie pozwu za wcześnie.", screen: "NAJWIĘKSZY BŁĄD? → POZEW ZA WCZEŚNIE", visual: "Na pustym blacie pojawia się pytanie; wsuwa się czysty pozew i to on staje się odpowiedzią - „za wcześnie” ląduje w przygaszonej czerwieni." },
@@ -138,12 +138,11 @@ function drawPath(c: C, t: number, r: Reel) {
       c.scale(0.9 + 0.1 * k, 0.9 + 0.1 * k);
       c.globalAlpha *= Math.min(1, k * 2);
       c.save();
-      c.shadowColor = rgba("#2B2416", 0.18);
-      c.shadowBlur = 46;
-      c.shadowOffsetY = 20;
+      depth(c, 0.8);
       c.fillStyle = NE.paper;
       rr(c, -250, -110, 500, 250, 28);
       c.fill();
+      outline(c);
       c.restore();
       const pts: Array<[number, number]> = [[-190, 70], [-80, -30], [40, 50], [180, -50]];
       flow(c, pts, ease.inOut(pr(t, T[0] + 0.45, T[0] + 1.35)), { color: green, width: 9, head: false });
@@ -166,9 +165,7 @@ function drawPath(c: C, t: number, r: Reel) {
       const gap = (1 - j) * 150;
       c.save();
       c.globalAlpha *= Math.min(1, k * 3);
-      c.shadowColor = rgba("#2B2416", 0.18);
-      c.shadowBlur = 40;
-      c.shadowOffsetY = 18;
+      depth(c, 0.8);
       for (const s of [-1, 1]) {
         c.fillStyle = s < 0 ? NE.ink : NE.gold;
         c.beginPath();
@@ -219,7 +216,8 @@ function drawPath(c: C, t: number, r: Reel) {
   court(c, { x: S[3][0], y: S[3][1] + (1 - ck) * 60, alpha: ck, tone: "green", pulse: pr(t, T[3] + 1.8, T[3] + 2.5) });
 }
 
-function draw(c: C, t: number, env: { logo?: { width: number; height: number } | null }) {
+function draw(c: C, t: number, env: { logo?: { width: number; height: number } | null; style?: StyleKey | null }) {
+  useStyle(env.style);
   const r = reel01;
   const b1 = at(r, "blad").start;
   const b2 = at(r, "sad").start;
@@ -228,7 +226,6 @@ function draw(c: C, t: number, env: { logo?: { width: number; height: number } |
   const b6 = at(r, "droga").start;
   const b7 = at(r, "marka").start;
   const tint = ease.inOut(pr(t, b4 - 1.5, b5)) * (1 - ease.inOut(pr(t, b5 + 0.3, b5 + 1.6)));
-  stage(c, { tint });
   const cam = camAt(t, [
     [b1, { x: 540, y: 960, s: 1.0 }],
     [b2, { x: 540, y: 940, s: 1.05 }],
@@ -246,6 +243,7 @@ function draw(c: C, t: number, env: { logo?: { width: number; height: number } |
     [b6 + 4.9, { x: 540, y: 4600, s: 0.94 }],
     [b7 - 0.1, { x: 540, y: 4630, s: 0.97 }],
   ]);
+  stage(c, { tint, cam });
   camera(c, cam, t, () => {
     drawConflict(c, t, r);
     drawPath(c, t, r);

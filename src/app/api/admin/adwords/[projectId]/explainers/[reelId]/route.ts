@@ -1,6 +1,6 @@
 import { requireAdmin } from "@/lib/server/auth";
 import { route } from "@/lib/server/http";
-import { explainerFrame } from "@/lib/server/explainers";
+import { explainerFrame, styleOf } from "@/lib/server/explainers";
 import { reelById } from "@/lib/explainers";
 
 export const runtime = "nodejs";
@@ -11,7 +11,8 @@ export const GET = route(async (req: Request, ctx: { params: Promise<{ projectId
   const { projectId, reelId } = await ctx.params;
   const u = new URL(req.url);
   const t = Number(u.searchParams.get("t") ?? "1.2");
-  const png = await explainerFrame(projectId, reelId, Number.isFinite(t) ? t : 1.2);
+  const style = styleOf(u.searchParams.get("style"));
+  const png = await explainerFrame(projectId, reelId, Number.isFinite(t) ? t : 1.2, style);
   const n = reelById(reelId)?.n ?? 0;
-  return new Response(new Uint8Array(png), { headers: { "Content-Type": "image/png", "Cache-Control": "no-store", ...(u.searchParams.get("download") ? { "Content-Disposition": `attachment; filename="nowy-etap_explainer-${String(n).padStart(2, "0")}_${reelId}_kadr.png"` } : {}) } });
+  return new Response(new Uint8Array(png), { headers: { "Content-Type": "image/png", "Cache-Control": "no-store", ...(u.searchParams.get("download") ? { "Content-Disposition": `attachment; filename="nowy-etap_explainer-${String(n).padStart(2, "0")}_${reelId}_${style}_kadr.png"` } : {}) } });
 });

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createCanvas } from "@napi-rs/canvas";
-import { REELS, REEL_FPS, REEL_H, REEL_W } from "../../src/lib/explainers";
+import { REELS, REEL_FPS, REEL_H, REEL_STYLES, REEL_W } from "../../src/lib/explainers";
 import { registerFonts } from "../../src/lib/render/server-render";
 
 describe("Nowy Etap explainers", () => {
@@ -29,12 +29,18 @@ describe("Nowy Etap explainers", () => {
     const c = createCanvas(REEL_W, REEL_H);
     const g = c.getContext("2d");
     const px = (x: number, y: number) => Array.from(g.getImageData(x, y, 1, 1).data.slice(0, 3));
+    expect(REEL_STYLES.map((s) => s.key)).toEqual(["editorial", "papercut", "blueprint", "riso"]);
     for (const r of REELS.filter((x) => x.draw)) {
-      for (let t = 0; t < r.duration; t += 0.37) expect(() => r.draw!(g as never, t, {})).not.toThrow();
-      r.draw!(g as never, 0, {});
+      // every style draws the whole reel; the looks really differ (cream page vs the dark plan)
+      for (const s of REEL_STYLES) for (let t = 0; t < r.duration; t += s.key === "editorial" ? 0.37 : 1.3) expect(() => r.draw!(g as never, t, { style: s.key })).not.toThrow();
+      r.draw!(g as never, 1, { style: "blueprint" });
+      expect(px(60, 960)[0]).toBeLessThan(70);
+      r.draw!(g as never, 1, { style: "papercut" });
+      expect(px(60, 960)[0]).toBeGreaterThan(180);
+      r.draw!(g as never, 0, { style: "editorial" });
       const first = px(40, 1880);
       expect(first[0]).toBeGreaterThan(215);
-      r.draw!(g as never, r.duration - 1 / REEL_FPS, {});
+      r.draw!(g as never, r.duration - 1 / REEL_FPS, { style: "editorial" });
       const last = px(40, 1880);
       expect(last[0]).toBeLessThan(60);
       expect(last[1]).toBeGreaterThan(last[0]);

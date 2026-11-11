@@ -3,14 +3,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Download, Film, Loader2, Pause, Play, RotateCcw } from "lucide-react";
 import { Button, Card } from "@/components/ui";
 import { api, cn } from "@/lib/utils";
-import { REELS, REEL_FPS, REEL_H, REEL_W, type Reel } from "@/lib/explainers";
+import { REELS, REEL_FPS, REEL_H, REEL_STYLES, REEL_W, type Reel, type StyleKey } from "@/lib/explainers";
 import { ensureFontsLoaded } from "@/lib/client/fonts";
 import { useImage } from "./canvas";
 import type { AwData, Toast } from "./types";
 
 interface Renders {
   renders: Record<string, { url: string; createdAt: string; voiced: boolean; duration: number | null; overruns: Array<{ beat: string; voice: number; beat_s: number }> }>;
-  jobs: Array<{ id: string; status: string; error: string | null; reelId: string | null }>;
+  jobs: Array<{ id: string; status: string; error: string | null; reelId: string | null; style?: string }>;
   voiceAvailable: boolean;
 }
 const tc = (t: number) => `${String(Math.floor(t / 60)).padStart(2, "0")}:${(t % 60).toFixed(1).padStart(4, "0")}`;
@@ -24,6 +24,7 @@ export function ExplainersTab({ data, toast }: { data: AwData; toast: Toast }) {
   const base = `/api/admin/adwords/${data.project.id}/explainers`;
   const [id, setId] = useState(REELS[0].id);
   const reel = REELS.find((r) => r.id === id) as Reel;
+  const [style, setStyle] = useState<StyleKey>("editorial");
   const [t, setT] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [state, setState] = useState<Renders | null>(null);
@@ -58,7 +59,7 @@ export function ExplainersTab({ data, toast }: { data: AwData; toast: Toast }) {
   useEffect(() => {
     void load().catch(() => null);
   }, [load]);
-  const running = state?.jobs.some((j) => j.reelId === id && (j.status === "QUEUED" || j.status === "RUNNING")) ?? false;
+  const running = state?.jobs.some((j) => j.reelId === id && (j.style ?? "editorial") === style && (j.status === "QUEUED" || j.status === "RUNNING")) ?? false;
   useEffect(() => {
     if (!running) return;
     const h = setInterval(() => void load().catch(() => null), 4000);
@@ -74,11 +75,11 @@ export function ExplainersTab({ data, toast }: { data: AwData; toast: Toast }) {
       c.height = REEL_H;
     }
     try {
-      reel.draw(c.getContext("2d")!, t, { logo });
+      reel.draw(c.getContext("2d")!, t, { logo, style });
     } catch (e) {
       console.error("Explainer", e);
     }
-  }, [t, reel, fonts, logo]);
+  }, [t, reel, fonts, logo, style]);
   // play: real time, snapped to frames
   useEffect(() => {
     if (!playing) return;
@@ -107,7 +108,7 @@ export function ExplainersTab({ data, toast }: { data: AwData; toast: Toast }) {
   const render = async (voice: boolean) => {
     setBusy(true);
     try {
-      await api(base, { method: "POST", json: { reelId: id, voice, vo: Object.fromEntries(Object.entries(vo).filter(([, v]) => v.trim())) } });
+      await api(base, { method: "POST", json: { reelId: id, voice, style, vo: Object.fromEntries(Object.entries(vo).filter(([, v]) => v.trim())) } });
       toast(voice ? "Renderuję MP4 z lektorem - zajmie to 1–2 minuty" : "Renderuję MP4 - zajmie to około minuty");
       await load();
     } catch (e) {
@@ -116,8 +117,8 @@ export function ExplainersTab({ data, toast }: { data: AwData; toast: Toast }) {
       setBusy(false);
     }
   };
-  const done = state?.renders[id];
-  const failed = state?.jobs.find((j) => j.reelId === id && j.status === "FAILED");
+  const done = state?.renders[`${id}:${style}`];
+  const failed = state?.jobs.find((j) => j.reelId === id && (j.style ?? "editorial") === style && j.status === "FAILED");
   const fullVo = reel.beats.map((b) => vo[b.id]?.trim() || b.vo).join("\n\n");
 
   return (
@@ -135,6 +136,16 @@ export function ExplainersTab({ data, toast }: { data: AwData; toast: Toast }) {
             <span className="block text-xs text-muted">{r.status === "ready" ? `${r.duration.toFixed(0)} s · gotowy` : "scenariusz gotowy, scena w przygotowaniu"}</span>
           </button>
         ))}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2" data-testid="explainer-styles">
+        <span className="text-sm text-muted">Styl:</span>
+        {REEL_STYLES.map((s) => (
+          <button key={s.key} type="button" title={s.hint} onClick={() => setStyle(s.key)} className={cn("rounded-full border px-3 py-1 text-sm transition", s.key === style ? "border-ink bg-ink text-white" : "border-line hover:border-black/20")} data-testid={`explainer-style-${s.key}`}>
+            {s.label}
+          </button>
+        ))}
+        <span className="text-xs text-muted">{REEL_STYLES.find((s) => s.key === style)?.hint} · ta sama choreografia i lektor w każdym stylu</span>
       </div>
 
       <div className="grid gap-5 lg:grid-cols-[minmax(260px,360px)_1fr]">
@@ -180,7 +191,7 @@ export function ExplainersTab({ data, toast }: { data: AwData; toast: Toast }) {
                 MP4 z lektorem
               </Button>
               {reel.draw ? (
-                <a className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-line px-3 text-sm hover:bg-black/[.03]" href={`${base}/${id}?t=${t.toFixed(2)}&download=1`} data-testid="explainer-frame">
+                <a className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-line px-3 text-sm hover:bg-black/[.03]" href={`${base}/${id}?t=${t.toFixed(2)}&style=${style}&download=1`} data-testid="explainer-frame">
                   <Download className="h-4 w-4" /> Kadr PNG
                 </a>
               ) : null}

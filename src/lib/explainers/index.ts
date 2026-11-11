@@ -42,4 +42,4 @@ const reel05: Reel = {
 export const REELS: Reel[] = [reel01, reel02, reel03, reel04, reel05];
 export const reelById = (id: string) => REELS.find((r) => r.id === id) ?? null;
 export type { Reel, Beat } from "./kit";
-export { W as REEL_W, H as REEL_H, FPS as REEL_FPS } from "./kit";
+export { W as REEL_W, H as REEL_H, FPS as REEL_FPS, STYLES as REEL_STYLES, type StyleKey } from "./kit";
