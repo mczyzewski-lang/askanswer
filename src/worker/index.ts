@@ -38,6 +38,11 @@ async function handle(job: { id: string; type: string; payload: unknown }) {
       const { runAdInfographic } = await import("../lib/server/adwords-variants");
       return runAdInfographic(p.projectId, p.conceptId);
     }
+    case "explainer-render": {
+      const { renderExplainer } = await import("../lib/server/explainers");
+      const x = job.payload as { projectId: string; reelId: string; voice?: boolean; vo?: Record<string, string> };
+      return renderExplainer(x.projectId, x.reelId, { voice: x.voice, vo: x.vo });
+    }
     case "adwords-video": {
       const { renderAdwordsVideo } = await import("../lib/server/adwords-video");
       return renderAdwordsVideo(p.projectId, p.conceptId, (job.payload as { voice?: boolean }).voice !== false);

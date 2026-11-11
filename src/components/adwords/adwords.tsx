@@ -19,22 +19,24 @@ import { AssistantTab } from "./assistant";
 import { LandingContentTab } from "./landing-content";
 import { ShareButton } from "./share";
 import { MetaTab } from "./meta";
+import { ExplainersTab } from "./explainers";
 import type { AwData, Toast } from "./types";
 
 const TABS = [
-  ["kampanie", "Kampanie"],
-  ["grafiki", "Kreacje graficzne"],
-  ["wideo", "Wideo"],
-  ["teksty", "Teksty reklam"],
-  ["eksperymenty", "Eksperymenty A/B"],
-  ["historia", "Historia PMax"],
+  ["kampanie", "Google: kampanie"],
+  ["grafiki", "Google: kreacje graficzne"],
+  ["wideo", "Google: wideo"],
+  ["teksty", "Google: teksty reklam"],
+  ["eksperymenty", "Google: eksperymenty A/B"],
+  ["historia", "Google: historia PMax"],
   ["asystent", "Asystent kreacji"],
   ["landing", "Treść Landing Page"],
   ["meta", "Meta (FB/IG)"],
+  ["aivideo", "AI Video"],
   ["import", "Import CSV"],
   ["raport", "Raport dla agencji"],
   ["eksperci", "Zdjęcia ekspertów"],
-  ["wytyczne", "Wytyczne PMax"],
+  ["wytyczne", "Google: wytyczne PMax"],
 ] as const;
 type Tab = (typeof TABS)[number][0];
 
@@ -60,10 +62,10 @@ export function AdwordsProject({ projectId }: { projectId: string }) {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <Link href="/admin/adwords" className="text-sm text-muted hover:text-ink">
-            ← Google Adwords
+            ← Performance Ads
           </Link>
           <h1 className="mt-1 font-display text-[28px] font-semibold">{data.project.name}</h1>
-          <p className="text-sm text-muted">Komponenty Performance Max: grafiki, wideo, teksty, ocena i paczka dla agencji. To narzędzie do przygotowania kreacji — nie publikuje reklam.</p>
+          <p className="text-sm text-muted">Kreacje reklamowe projektu: Google (Performance Max: grafiki, wideo, teksty, ocena, paczka dla agencji), Meta (FB/IG) i AI Video. To narzędzie do przygotowania kreacji - nie publikuje reklam.</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <ShareButton projectId={projectId} canEdit={data.canEdit} toast={toast} />
@@ -82,7 +84,7 @@ export function AdwordsProject({ projectId }: { projectId: string }) {
           </button>
         ))}
       </nav>
-      {data.assets.length === 0 && !["import", "wytyczne", "eksperci", "historia", "asystent", "landing", "meta"].includes(tab) ? (
+      {data.assets.length === 0 && !["import", "wytyczne", "eksperci", "historia", "asystent", "landing", "meta", "aivideo"].includes(tab) ? (
         <EmptyState title="Brak komponentów">
           <button type="button" className="underline" onClick={() => setTab("import")}>
             Zaimportuj plik CSV
@@ -100,6 +102,7 @@ export function AdwordsProject({ projectId }: { projectId: string }) {
       {tab === "asystent" ? <AssistantTab data={data} reload={load} toast={toast} onAdded={(k) => setTab(k === "image" ? "grafiki" : "wideo")} /> : null}
       {tab === "landing" ? <LandingContentTab data={data} reload={load} toast={toast} /> : null}
       {tab === "meta" ? <MetaTab data={data} toast={toast} /> : null}
+      {tab === "aivideo" ? <ExplainersTab data={data} toast={toast} /> : null}
       {tab === "raport" && data.assets.length ? <ReportTab data={data} reload={load} toast={toast} /> : null}
       {tab === "eksperci" ? <PhotosTab data={data} reload={load} toast={toast} /> : null}
       {tab === "wytyczne" ? <SpecTab data={data} /> : null}

@@ -181,7 +181,7 @@ export function AdminNav({ vertical = false, projects, current: remembered, role
           : { href: current.href, label: current.kind, icon: KIND_ICON[current.kind], match: (p: string) => p === current.href || p.startsWith(`${current.href}/`) },
         ...(ads ? [{ href: `/admin/projects/${current.id}`, label: "Montaże i eksport", icon: Clapperboard, match: (p: string) => p === `/admin/projects/${current.id}` }] : []),
         { href: `/admin/projects/${current.id}/social`, label: "Harmonogram social", icon: CalendarDays, match: (p: string) => p === `/admin/projects/${current.id}/social` },
-        { href: `/admin/adwords/${current.id}`, label: "Google Adwords", icon: Target, match: (p: string) => p === `/admin/adwords/${current.id}` },
+        { href: `/admin/adwords/${current.id}`, label: "Performance Ads", icon: Target, match: (p: string) => p === `/admin/adwords/${current.id}` },
       ]
     : [];
   // Projekt → Ustawienia: its theme, people (with experts), narrator voices, general

@@ -14,8 +14,8 @@ export default async function AdwordsHome() {
     : [];
   return (
     <div>
-      <h1 className="font-display text-[28px] font-semibold">Google Adwords</h1>
-      <p className="mt-1 max-w-2xl text-sm text-muted">Komponenty kampanii Performance Max dla projektu: grafiki w motywie marki, wideo (scenariusz, storyboard, MP4), teksty, ocena, walidacja i paczka dla agencji. Wybierz projekt.</p>
+      <h1 className="font-display text-[28px] font-semibold">Performance Ads</h1>
+      <p className="mt-1 max-w-2xl text-sm text-muted">Kreacje reklamowe projektu dla Google (Performance Max), Meta i AI Video: grafiki w motywie marki, wideo (scenariusz, storyboard, MP4), teksty, ocena, walidacja i paczka dla agencji. Wybierz projekt.</p>
       <div className="mt-6 grid gap-3 md:grid-cols-2">
         {projects.map((p) => (
           <Link key={p.id} href={`/admin/adwords/${p.id}`}>

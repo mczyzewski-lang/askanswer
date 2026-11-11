@@ -99,7 +99,7 @@ test("Google Adwords UI: import, gallery, editor (preview = export), expert phot
   await page.setViewportSize({ width: 1500, height: 1000 });
   // from the menu: the project's Google Adwords
   await page.goto(`/admin/projects/${project.id}`);
-  await page.getByTestId("nav-project").getByRole("link", { name: "Google Adwords" }).click();
+  await page.getByTestId("nav-project").getByRole("link", { name: "Performance Ads" }).click();
   await expect(page.getByTestId("adwords")).toBeVisible();
   await page.getByTestId("adwords-tabs").getByRole("button", { name: "Import CSV" }).click();
   await page.getByTestId("import-file").setInputFiles({ name: "nowy_etap_google_adwords_pmax.csv", mimeType: "text/csv", buffer: Buffer.from(CSV, "utf-8") });
