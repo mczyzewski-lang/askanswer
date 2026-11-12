@@ -7,6 +7,7 @@ import type { Reel } from "./kit";
 import { reel01 } from "./reel01";
 import { reel02 } from "./reel02";
 import { reel03 } from "./reel03";
+import { reel06 } from "./reel06";
 
 const reel04: Reel = {
   id: "czy-jestescie-uzgodnieni",
@@ -39,7 +40,7 @@ const reel05: Reel = {
   ],
 };
 
-export const REELS: Reel[] = [reel01, reel02, reel03, reel04, reel05];
+export const REELS: Reel[] = [reel01, reel02, reel03, reel04, reel05, reel06];
 export const reelById = (id: string) => REELS.find((r) => r.id === id) ?? null;
 export type { Reel, Beat } from "./kit";
 export { W as REEL_W, H as REEL_H, FPS as REEL_FPS, STYLES as REEL_STYLES, type StyleKey } from "./kit";

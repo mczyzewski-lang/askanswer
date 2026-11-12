@@ -15,7 +15,7 @@ test("Performance Ads → AI Video: explainers preview (scrub, beat table, narra
   await page.getByTestId("nav-project").getByRole("link", { name: "Performance Ads" }).click();
   await expect(page.getByTestId("adwords-tabs")).toContainText("Google: kreacje graficzne");
   await page.getByTestId("adwords-tabs").getByRole("button", { name: "AI Video" }).click();
-  await expect(page.getByTestId("explainer-list").locator("button")).toHaveCount(5);
+  await expect(page.getByTestId("explainer-list").locator("button")).toHaveCount(6);
   await expect(page.getByTestId("beat-row")).toHaveCount(7);
   await expect(page.getByTestId("explainer-canvas")).toBeVisible();
   // a click on a beat jumps there and pauses; the narration of that beat is shown
@@ -45,7 +45,7 @@ test("Performance Ads → AI Video: explainers preview (scrub, beat table, narra
 
   // reel 3 (the shortest) in the papercut style: MP4 through the worker
   await page.getByTestId("explainer-3").click();
-  await expect(page.getByTestId("explainer-styles").locator("button")).toHaveCount(4);
+  await expect(page.getByTestId("explainer-styles").locator("button")).toHaveCount(5);
   await page.getByTestId("explainer-style-papercut").click();
   const voice = page.getByTestId("explainer-render-voice");
   if (await voice.isEnabled()) await voice.click();

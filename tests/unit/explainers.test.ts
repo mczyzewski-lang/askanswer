@@ -5,7 +5,7 @@ import { registerFonts } from "../../src/lib/render/server-render";
 
 describe("Nowy Etap explainers", () => {
   it("beat tables: contiguous, cover the reel, 20-35 s, narration and a visual for every beat", () => {
-    expect(REELS.map((r) => [r.n, r.status])).toEqual([[1, "ready"], [2, "ready"], [3, "ready"], [4, "planned"], [5, "planned"]]);
+    expect(REELS.map((r) => [r.n, r.status])).toEqual([[1, "ready"], [2, "ready"], [3, "ready"], [4, "planned"], [5, "planned"], [6, "ready"]]);
     for (const r of REELS) {
       expect(r.duration).toBeGreaterThanOrEqual(20);
       expect(r.duration).toBeLessThanOrEqual(35);
@@ -29,7 +29,7 @@ describe("Nowy Etap explainers", () => {
     const c = createCanvas(REEL_W, REEL_H);
     const g = c.getContext("2d");
     const px = (x: number, y: number) => Array.from(g.getImageData(x, y, 1, 1).data.slice(0, 3));
-    expect(REEL_STYLES.map((s) => s.key)).toEqual(["editorial", "papercut", "blueprint", "riso"]);
+    expect(REEL_STYLES.map((s) => s.key)).toEqual(["editorial", "papercut", "blueprint", "riso", "campaign"]);
     for (const r of REELS.filter((x) => x.draw)) {
       // every style draws the whole reel; the looks really differ (cream page vs the dark plan)
       for (const s of REEL_STYLES) for (let t = 0; t < r.duration; t += s.key === "editorial" ? 0.37 : 1.3) expect(() => r.draw!(g as never, t, { style: s.key })).not.toThrow();

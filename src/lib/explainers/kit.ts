@@ -33,7 +33,7 @@ export const NE = {
 type Palette = Omit<typeof NE, "font">;
 const EDITORIAL: Palette = { ...NE };
 
-export type StyleKey = "editorial" | "papercut" | "blueprint" | "riso";
+export type StyleKey = "editorial" | "papercut" | "blueprint" | "riso" | "campaign";
 /**
  * The same choreography in four looks. A style is a palette plus how the kit draws depth:
  * editorial — soft shadows on a cream page; papercut — stacked sheets of cut paper with crisp
@@ -45,11 +45,13 @@ export const STYLES: Array<{ key: StyleKey; label: string; hint: string }> = [
   { key: "papercut", label: "Papercut", hint: "warstwy wyciętego papieru z głębią" },
   { key: "blueprint", label: "Plan architekta", hint: "cienkie złote linie na ciemnej zieleni, siatka" },
   { key: "riso", label: "Druk riso", hint: "płaski plakat w dwóch farbach, ziarno" },
+  { key: "campaign", label: "Kampania społeczna", hint: "ciemne tło, światło punktowe, biała typografia, jeden akcent" },
 ];
 const PALETTES: Record<StyleKey, Palette> = {
   editorial: EDITORIAL,
   papercut: { ...EDITORIAL, cream: "#EFE6D6", paper: "#FBF6EC", line: "#DDD0BA", goldSoft: "#E2CFA6", redSoft: "#EBC9C0", okSoft: "#CFE0CC" },
   blueprint: { cream: "#17302C", paper: "#1E3B36", line: "#3A5A54", ink: "#F3EDE0", green: "#234540", gold: "#D2B274", goldSoft: "#E6D2A6", red: "#E79C8E", redSoft: "#4A2F2B", ok: "#9AD3A9", okSoft: "#1F4A3F", muted: "#9FB0A9", deep: "#0F2320", onDeep: "#F3EDE0" },
+  campaign: { cream: "#10201D", paper: "#1B3632", line: "#35544E", ink: "#F5F1E8", green: "#2C5A52", gold: "#D2B274", goldSoft: "#E6D2A6", red: "#E8826F", redSoft: "#3D211D", ok: "#8FD3A3", okSoft: "#173E35", muted: "#93A49D", deep: "#0A1614", onDeep: "#F5F1E8" },
   riso: { ...EDITORIAL, cream: "#F2EBDD", paper: "#FBF7EE", line: "#D9CFBC", ink: "#1B3530", gold: "#C19A4B", goldSoft: "#E3C98F", red: "#D9765F", redSoft: "#F0CFC3", ok: "#5FA57A", okSoft: "#CDE3CF", deep: "#1B3530" },
 };
 let STYLE: StyleKey = "editorial";
@@ -68,6 +70,11 @@ export function depth(c: C, lift = 1) {
     c.shadowBlur = 5 + 7 * lift;
     c.shadowOffsetX = 5 + 5 * lift;
     c.shadowOffsetY = 9 + 11 * lift;
+  } else if (STYLE === "campaign") {
+    c.shadowColor = "rgba(0,0,0,0.5)";
+    c.shadowBlur = 40 + 20 * lift;
+    c.shadowOffsetX = 0;
+    c.shadowOffsetY = 16 + 14 * lift;
   } else if (STYLE === "blueprint") {
     c.shadowColor = "rgba(210,178,116,0.22)";
     c.shadowBlur = 22;
@@ -181,6 +188,15 @@ export function stage(c: C, opts: { tint?: number; dark?: number; cam?: Cam } = 
     }
     return;
   }
+  if (STYLE === "campaign") {
+    // one soft light on a dark stage: the subject is lit, the edges fall away
+    const g = c.createRadialGradient(W / 2, H * 0.42, 60, W / 2, H * 0.45, H * 0.75);
+    g.addColorStop(0, rgba(mix(NE.green, NE.redSoft, tint), 0.55));
+    g.addColorStop(1, rgba(NE.deep, 0));
+    c.fillStyle = g;
+    c.fillRect(0, 0, W, H);
+    return;
+  }
   if (STYLE === "papercut") {
     // sheets of paper stacked behind the scene, each cut along a soft curve and casting a shadow on
     // the next; the further back, the slower it follows the camera
@@ -246,7 +262,7 @@ export function finish(c: C, t: number, opts: { dark?: number } = {}) {
   c.globalAlpha = 1;
   const r = rng(1000 + Math.round(t * FPS));
   // (the print grain is heavier; the plan has almost none)
-  const n = STYLE === "riso" ? 2600 : STYLE === "blueprint" ? 220 : 520;
+  const n = STYLE === "riso" ? 2600 : STYLE === "blueprint" ? 220 : STYLE === "campaign" ? 900 : 520;
   for (let i = 0; i < n; i++) {
     c.fillStyle = rgba(r() > 0.5 ? "#FFFFFF" : "#000000", (STYLE === "riso" ? 0.04 : 0.022) + r() * 0.02);
     c.fillRect(r() * W, r() * H, 2.2, 2.2);
@@ -446,7 +462,7 @@ export function court(c: C, o: { x: number; y: number; s?: number; alpha?: numbe
   c.globalAlpha *= a;
   c.save();
   depth(c, 1.4);
-  const body = STYLE === "blueprint" ? NE.paper : o.tone === "green" ? NE.green : NE.deep;
+  const body = STYLE === "blueprint" ? NE.paper : o.tone === "green" || STYLE === "campaign" ? NE.green : NE.deep;
   c.fillStyle = body;
   rr(c, -w / 2, -h / 2, w, h, STYLE === "riso" ? 8 : 34);
   c.fill();
@@ -833,6 +849,8 @@ export interface Reel {
   duration: number;
   beats: Beat[];
   status: "ready" | "planned";
+  /** the look this reel was designed in (the preview starts with it) */
+  defaultStyle?: StyleKey;
   draw?: (c: C, t: number, env: { logo?: ImageLike | null; style?: StyleKey | null }) => void;
 }
 /** start of a beat (seconds) by id — scenes are timed off the beat table */

@@ -104,6 +104,8 @@ export function ExplainersTab({ data, toast }: { data: AwData; toast: Toast }) {
     setPlaying(false);
     setT(0);
     setId(rid);
+    // a reel designed in its own look opens in it
+    setStyle(REELS.find((r) => r.id === rid)?.defaultStyle ?? "editorial");
   };
   const render = async (voice: boolean) => {
     setBusy(true);
