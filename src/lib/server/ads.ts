@@ -8,7 +8,9 @@ import fsp from "node:fs/promises";
 import path from "node:path";
 import { Prisma } from "@prisma/client";
 import { prisma } from "./db";
-import { decodePcm, extractSpeechAudio, makePreviewProxy, normalizeRecording, probe } from "./ffmpeg";
+import { decodePcm, extractSpeechAudio, makePreviewProxy, normalizeRecording, probe, run } from "./ffmpeg";
+import { env } from "./env";
+import { strToU8, zipSync } from "fflate";
 import { makeTempDir, putFile, toLocalFile } from "./storage";
 import { transcribe } from "./elevenlabs";
 import { elevenLabsConfigured } from "./env";
@@ -457,4 +459,73 @@ export async function applyReview(reelId: string, what: { mode: "all" } | { mode
     await prisma.adReel.update({ where: { id: s.id }, data: { parts: ps as unknown as Prisma.InputJsonValue, matches: Prisma.DbNull, ...mark } });
   }
   return { changed: siblings.length };
+}
+
+/**
+ * The audio of every reel's body alone (no hook, no CTA), cut from the footage: one MP3 per reel -
+ * hook versions of a reel share the body, so they give one file. Several body parts are joined in
+ * the script's order. Reels whose body was not found in the footage are listed in lista.txt.
+ */
+export async function bodyAudioZip(projectId: string): Promise<{ zip: Buffer; name: string; count: number; missing: string[] }> {
+  const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { name: true } });
+  const footageRows = await prisma.adFootage.findMany({ where: { projectId, status: "READY" }, orderBy: [{ order: "asc" }, { createdAt: "asc" }] });
+  const footage: Footage[] = footageRows
+    .filter((f) => f.assetId && Array.isArray(f.words))
+    .map((f) => ({ id: f.id, assetId: f.assetId!, name: f.name, duration: f.durationSec ?? 0, words: f.words as unknown as FootageWord[] }));
+  if (!footage.length) throw new HttpError(409, "Brak przetworzonych nagrań - wgraj pliki wideo i poczekaj na transkrypcję.");
+  const all = await prisma.adReel.findMany({ where: { projectId }, orderBy: { order: "asc" } });
+  const parts = (r: (typeof all)[number]) => r.parts as unknown as Array<{ role: string; text: string }>;
+  const groups = new Map<string, typeof all>();
+  for (const r of all) {
+    const k = groupKey(parts(r), r.code, r.groupCode);
+    groups.set(k, [...(groups.get(k) ?? []), r]);
+  }
+  const bodiesOf = (r: (typeof all)[number]) => parts(r).filter((p) => p.role.startsWith("body") && p.text.trim());
+  // every part of every reel is matched (as when the reels are laid out), so a body stops where the next part starts
+  const found = matchAll(all.flatMap((r) => parts(r).map((p) => p.text)), footage);
+  const work = await makeTempDir("ads-body");
+  const local = new Map<string, { path: string; cleanup: () => Promise<void> }>();
+  const files: Record<string, Uint8Array> = {};
+  const missing: string[] = [];
+  const list: string[] = [];
+  try {
+    for (const group of groups.values()) {
+      const code = (group[0].groupCode ?? group[0].code).replace(/[^\p{L}\p{N}_-]+/gu, "-");
+      const bodies = bodiesOf(group[0]);
+      const cuts: Array<{ f: Footage; a: number; b: number }> = [];
+      for (const p of bodies) {
+        const m = found.get(p.text);
+        const f = m ? footage.find((x) => x.id === m.footageId) : null;
+        if (!m || !f || m.score < MIN_SCORE) break;
+        const [a, b] = cutRange({ role: p.role, text: p.text, start: m.start, end: m.end }, f);
+        cuts.push({ f, a, b });
+      }
+      if (!bodies.length || cuts.length < bodies.length) {
+        missing.push(code);
+        list.push(`${code}\tBRAK (${bodies.length ? "body nie znaleziono w nagraniach" : "scenariusz nie ma body"})`);
+        continue;
+      }
+      const inputs: string[] = [];
+      for (const c of cuts) {
+        if (!local.has(c.f.assetId)) {
+          const asset = await prisma.mediaAsset.findUniqueOrThrow({ where: { id: c.f.assetId }, select: { storageKey: true } });
+          local.set(c.f.assetId, await toLocalFile(asset.storageKey));
+        }
+        inputs.push("-ss", c.a.toFixed(3), "-t", (c.b - c.a).toFixed(3), "-i", local.get(c.f.assetId)!.path);
+      }
+      const out = path.join(work, `${code}.mp3`);
+      await run(env.ffmpeg, ["-hide_banner", "-v", "error", "-y", ...inputs, "-filter_complex", `${cuts.map((_, i) => `[${i}:a]`).join("")}concat=n=${cuts.length}:v=0:a=1[a]`, "-map", "[a]", "-ar", "44100", "-c:a", "libmp3lame", "-b:a", "192k", out]);
+      const file = `${code}_body.mp3`;
+      files[file] = new Uint8Array(await fsp.readFile(out));
+      const sec = cuts.reduce((n, c) => n + c.b - c.a, 0);
+      list.push(`${code}\t${file}\t${sec.toFixed(1)} s\thooków: ${group.length}\t${bodies.map((p) => p.text.trim().replace(/\s+/g, " ")).join(" ")}`);
+    }
+  } finally {
+    for (const f of local.values()) await f.cleanup();
+    await fsp.rm(work, { recursive: true, force: true });
+  }
+  const count = Object.keys(files).length;
+  if (!count) throw new HttpError(409, "Nie znaleziono body żadnego reelsa w nagraniach.");
+  files["lista.txt"] = strToU8(list.join("\r\n") + "\r\n");
+  return { zip: Buffer.from(zipSync(files, { level: 0 })), name: `${project.name.replace(/[^\p{L}\p{N}]+/gu, "-").slice(0, 40)}_body-mp3.zip`, count, missing };
 }

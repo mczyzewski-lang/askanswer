@@ -1035,6 +1035,9 @@ function ScoringBar({ project, reels, reviewing, review, reload, toast }: { proj
           <a href={`/api/admin/ads/${project.id}/script`} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-line px-3 text-xs font-medium hover:bg-black/[.03]" data-testid="ads-script-export">
             <Download className="h-3.5 w-3.5" /> Scenariusze (CSV)
           </a>
+          <a href={`/api/admin/ads/${project.id}/body-audio`} title="Samo audio body każdego reelsa (bez hooków i CTA), wycięte z nagrań. Wersje hooka mają wspólne body, więc dają jeden plik." className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-line px-3 text-xs font-medium hover:bg-black/[.03]" data-testid="ads-body-audio">
+            <Download className="h-3.5 w-3.5" /> Body (MP3)
+          </a>
         </div>
       </div>
       <div className="grid gap-3 sm:grid-cols-[200px_1fr]">

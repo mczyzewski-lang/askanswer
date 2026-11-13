@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import { expect, test } from "@playwright/test";
+import { strFromU8, unzipSync } from "fflate";
 import { adminRequest, login } from "./helpers";
 
 /**
@@ -68,6 +69,20 @@ test("ads studio: script + footage → reels laid out from the transcript", asyn
   expect(title).toMatchObject({ text: "Pierwszy", end: null });
   expect(doc.subtitles.segments.length).toBeGreaterThan(0);
   expect(doc.subtitles.preset).toBe("bold-social");
+
+  // only the audio of the body (no hook, no CTA): the three hook versions share one body → one MP3
+  await expect(page.getByTestId("ads-body-audio")).toHaveAttribute("href", `/api/admin/ads/${projectId}/body-audio`);
+  const zipRes = await request.get(`/api/admin/ads/${projectId}/body-audio`);
+  expect(zipRes.ok()).toBeTruthy();
+  const entries = unzipSync(new Uint8Array(await zipRes.body()));
+  expect(Object.keys(entries).sort()).toEqual(["P01_body.mp3", "lista.txt"]);
+  const mp3 = Buffer.from(entries["P01_body.mp3"]);
+  expect(mp3.length).toBeGreaterThan(2000);
+  expect(mp3.subarray(0, 3).toString("latin1") === "ID3" || (mp3[0] === 0xff && (mp3[1] & 0xe0) === 0xe0)).toBeTruthy();
+  const bodyClip = doc.clips[1];
+  const listed = Number(/\t([\d.]+) s\t/.exec(strFromU8(entries["lista.txt"]))![1]);
+  expect(Math.abs(listed - (bodyClip.sourceOut - bodyClip.sourceIn))).toBeLessThan(0.15);
+  expect(strFromU8(entries["lista.txt"])).toContain("hooków: 3");
 
   // a second file through the page (sliced upload in the browser)
   await page.getByTestId("ads-video-input").setInputFiles({ name: "nagranie-2.mp4", mimeType: "video/mp4", buffer: buf });
