@@ -313,6 +313,14 @@ export function AdsProject({ id }: { id: string }) {
             </div>
             <input ref={scriptRef} type="file" accept=".csv,text/csv" className="hidden" data-testid="ads-script-input" onChange={(e) => (e.target.files?.[0] ? void importScript(e.target.files[0]) : null, (e.target.value = ""))} />
             <p className="text-sm">{data.reels.length ? `${data.reels.length} reelsów w scenariuszu` : "Brak scenariuszy"}</p>
+            {data.reels.length ? (
+              <div className="space-y-1">
+                <a href={`/api/admin/ads/${id}/body-audio`} className="inline-flex h-9 items-center gap-2 rounded-lg border border-line px-3 text-sm font-medium hover:bg-black/[.03]" data-testid="ads-body-audio-top">
+                  <Download className="h-4 w-4" /> Pobierz body (MP3, ZIP)
+                </a>
+                <p className="text-xs text-muted">Samo audio body każdego reelsa, bez hooków i CTA, wycięte z nagrań. Wersje hooka mają wspólne body, więc dają jeden plik. Przygotowanie może potrwać do kilku minut.</p>
+              </div>
+            ) : null}
           </Card>
         </DropZone>
 
