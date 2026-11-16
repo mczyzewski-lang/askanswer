@@ -30,6 +30,7 @@ import {
   WandSparkles,
   ZoomIn,
   Wand2,
+  Video,
 } from "lucide-react";
 import type { AssetInfo, EditorDocument, ThemeTokens } from "@/lib/editor/types";
 import { clipEnd, deleteClip, deleteRange, docDuration, formatTimecode, splitAt, switchHook } from "@/lib/editor/timeline";
@@ -45,6 +46,7 @@ import { Preview } from "./preview";
 import { Timeline } from "./timeline";
 import { Properties } from "./properties";
 import { TypoPanel } from "./typo";
+import { VideoLayerPanel } from "./video-layer";
 import { AudioPanel, GraphicsPanel, PausesPanel, QuestionPanel, SubtitlesPanel, TakesPanel, TemplatesPanel, TextPanel, ZoomPanel, type StudioMeta } from "./panels";
 import { Row, Section, Seg, Select, SButton } from "./controls";
 import { QUESTION_POSITIONS, QUESTION_STYLES, syncTheme } from "@/lib/question-styles";
@@ -79,6 +81,7 @@ const TABS = [
   { key: "audio", label: "Audio", icon: Clapperboard },
   { key: "text", label: "Tekst", icon: Type },
   { key: "graphics", label: "Grafika", icon: Shapes },
+  { key: "video", label: "Wideo", icon: Video },
   { key: "typo", label: "Typo animacje", icon: Wand2 },
   { key: "templates", label: "Szablony", icon: LayoutTemplate },
   { key: "theme", label: "Motyw", icon: Palette },
@@ -499,6 +502,7 @@ export function Studio({ id }: { id: string }) {
           {tab === "audio" ? <AudioPanel meta={meta} onUpload={async (f) => void (await upload(f))} onRegenerate={regenerateNarration} /> : null}
           {tab === "text" ? <TextPanel /> : null}
           {tab === "graphics" ? <GraphicsPanel meta={meta} onUpload={upload} /> : null}
+          {tab === "video" ? <VideoLayerPanel onUpload={upload} /> : null}
           {tab === "typo" ? <TypoPanel /> : null}
           {tab === "templates" ? <TemplatesPanel /> : null}
           {tab === "theme" ? <ThemePanel themeId={payload.project.themeId} toast={toast} /> : null}

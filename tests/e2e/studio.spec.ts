@@ -350,6 +350,31 @@ test("studio: pauses, cuts, subtitles, zoom, theme, persistence and real MP4 exp
   await page.getByTitle("Usuń warstwę").click();
   await waitSaved(page);
 
+  // Wideo: an own video (an explainer) as an extra full-frame layer at the playhead, without its sound by default
+  await page.getByTestId("tab-video").click();
+  const rows = page.getByTestId("video-layer-row");
+  const before = await rows.count(); // video layers added earlier in this test are listed too
+  await page.getByTestId("video-layer-input").setInputFiles("tests/fixtures/generated/sample-take.mp4");
+  await expect(rows).toHaveCount(before + 1, { timeout: 60_000 });
+  const row = rows.filter({ hasText: "sample-take.mp4" }).last();
+  await expect(row).toHaveAttribute("data-muted", "true");
+  await waitSaved(page);
+  const layerOf = async () => (await (await request.get(`/api/admin/compositions/${compId}`)).json()).composition.document.overlays.filter((o: { kind: string; name: string }) => o.kind === "video" && o.name === "sample-take.mp4").pop();
+  expect(await layerOf()).toMatchObject({ fit: "cover", x: 0, y: 0, w: 1, h: 1, volume: 0, loop: false });
+  // its sound can be switched on and off again
+  await row.getByTestId("video-layer-mute").click();
+  await expect(row).toHaveAttribute("data-muted", "false");
+  await waitSaved(page);
+  expect((await layerOf()).volume).toBe(1);
+  await row.getByTestId("video-layer-mute").click();
+  await waitSaved(page);
+  expect((await layerOf()).volume).toBe(0);
+  if (process.env.LP_SHOTS) await page.screenshot({ path: `${process.env.LP_SHOTS}/studio-video-layer.png` });
+  // (removed again: the export below is compared against the plain composition)
+  await row.getByTestId("video-layer-remove").click();
+  await expect(rows).toHaveCount(before);
+  await waitSaved(page);
+
   // the question read by a narrator, shown as a phone call: the call bar can be resized / moved;
   // the narrator's question gets subtitles too
   await page.getByTestId("tab-question").click();
