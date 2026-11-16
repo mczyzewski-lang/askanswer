@@ -132,7 +132,7 @@ export const overlay = z.discriminatedUnion("kind", [
     plateColor: color.optional(),
   }),
   z.object({ ...overlayBase, kind: z.literal("blur"), shape: z.enum(["rect", "circle"]), strength: num.min(0).max(100), radius: num.min(0).max(500) }),
-  z.object({ ...overlayBase, kind: z.literal("video"), assetId: z.string().max(64), fit: z.enum(["contain", "cover"]), sourceIn: num.min(0), loop: z.boolean(), volume: num.min(0).max(2), radius: num.min(0).max(500) }),
+  z.object({ ...overlayBase, kind: z.literal("video"), assetId: z.string().max(64), fit: z.enum(["contain", "cover"]), sourceIn: num.min(0), loop: z.boolean(), volume: num.min(0).max(2), radius: num.min(0).max(500), hideSubtitles: z.boolean().optional() }),
 ]);
 
 const subStyle = z.object({

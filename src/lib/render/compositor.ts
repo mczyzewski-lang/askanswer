@@ -628,8 +628,16 @@ export function layoutSubtitle(ctx: Ctx, doc: EditorDocument, seg: TimedSegment)
   return { lines, font, lineH, spaceW, blockRect: { x: (doc.width - blockW) / 2, y: cy - blockH / 2, w: blockW, h: blockH } };
 }
 
+/** a video layer (an explainer) that asks for no subtitles is on screen at t */
+export function subtitlesHiddenAt(doc: EditorDocument, t: number): boolean {
+  if (!doc.overlays.some((o) => o.kind === "video" && o.hideSubtitles)) return false;
+  const duration = docDuration(doc);
+  return doc.overlays.some((o) => o.kind === "video" && o.hideSubtitles && !o.hidden && t >= o.start && t < overlayEnd(o, duration));
+}
+
 function drawSubtitles(ctx: Ctx, doc: EditorDocument, t: number) {
   if (!doc.subtitles.enabled) return;
+  if (subtitlesHiddenAt(doc, t)) return;
   const seg = segmentAt(cachedSegments(doc), t);
   if (!seg) return;
   const st = doc.subtitles.style;

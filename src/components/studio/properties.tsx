@@ -410,6 +410,7 @@ function VideoProps({ o }: { o: VideoOverlay }) {
         <Seg value={o.fit} onChange={(v) => patchOverlay<VideoOverlay>(o.id, { fit: v })} options={[["contain", "Zmieść"], ["cover", "Wypełnij"]]} />
       </Row>
       <Toggle label="Zapętlaj" checked={o.loop} onChange={(v) => patchOverlay<VideoOverlay>(o.id, { loop: v })} />
+      <Toggle label="Ukryj napisy w trakcie tego wideo" checked={!!o.hideSubtitles} onChange={(v) => patchOverlay<VideoOverlay>(o.id, { hideSubtitles: v })} />
       <Row label="Dźwięk">
         <Slider value={o.volume} min={0} max={1.5} step={0.01} onChange={(v) => patchOverlay<VideoOverlay>(o.id, { volume: v })} format={(v) => (v <= 0 ? "wył." : `${Math.round(v * 100)}%`)} />
       </Row>

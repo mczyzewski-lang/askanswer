@@ -360,7 +360,14 @@ test("studio: pauses, cuts, subtitles, zoom, theme, persistence and real MP4 exp
   await expect(row).toHaveAttribute("data-muted", "true");
   await waitSaved(page);
   const layerOf = async () => (await (await request.get(`/api/admin/compositions/${compId}`)).json()).composition.document.overlays.filter((o: { kind: string; name: string }) => o.kind === "video" && o.name === "sample-take.mp4").pop();
-  expect(await layerOf()).toMatchObject({ fit: "cover", x: 0, y: 0, w: 1, h: 1, volume: 0, loop: false });
+  // no subtitles while the explainer is on screen (the default), switchable per layer
+  expect(await layerOf()).toMatchObject({ fit: "cover", x: 0, y: 0, w: 1, h: 1, volume: 0, loop: false, hideSubtitles: true });
+  await row.getByTestId("video-layer-subs").click();
+  await expect(row).toHaveAttribute("data-nosubs", "false");
+  await waitSaved(page);
+  expect((await layerOf()).hideSubtitles).toBe(false);
+  await row.getByTestId("video-layer-subs").click();
+  await expect(row).toHaveAttribute("data-nosubs", "true");
   // its sound can be switched on and off again
   await row.getByTestId("video-layer-mute").click();
   await expect(row).toHaveAttribute("data-muted", "false");

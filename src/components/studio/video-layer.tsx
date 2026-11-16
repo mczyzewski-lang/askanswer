@@ -1,6 +1,6 @@
 "use client";
 import { useRef, useState } from "react";
-import { Film, Loader2, Trash2, Volume2, VolumeX } from "lucide-react";
+import { Captions, CaptionsOff, Film, Loader2, Trash2, Volume2, VolumeX } from "lucide-react";
 import type { AssetInfo, VideoOverlay } from "@/lib/editor/types";
 import { docDuration } from "@/lib/editor/timeline";
 import { uid } from "@/lib/editor/id";
@@ -24,6 +24,7 @@ export function VideoLayerPanel({ onUpload }: { onUpload: (f: File) => Promise<A
   const [uploading, setUploading] = useState(false);
   const [place, setPlace] = useState<"full" | "window">("full");
   const [sound, setSound] = useState(false);
+  const [noSubs, setNoSubs] = useState(true);
   const layers = doc.overlays.filter((o): o is VideoOverlay => o.kind === "video" && !o.id.startsWith("basket_"));
   const patch = (id: string, p: Partial<VideoOverlay>) => useStudio.getState().apply((d) => ({ ...d, overlays: d.overlays.map((o) => (o.id === id ? ({ ...o, ...p } as typeof o) : o)) }));
 
@@ -43,7 +44,7 @@ export function VideoLayerPanel({ onUpload }: { onUpload: (f: File) => Promise<A
         const h = Math.min(0.6, (w * d.width) / ar / d.height);
         box = { x: (1 - w) / 2, y: 0.4 - h / 2, w, h };
       }
-      const o: VideoOverlay = { id: uid("ovl"), name: f.name, kind: "video", assetId: a.id, start, end, opacity: 1, animation: "fade", fit: place === "full" ? "cover" : "contain", sourceIn: 0, loop: false, volume: sound ? 1 : 0, radius: place === "full" ? 0 : 24, ...box };
+      const o: VideoOverlay = { id: uid("ovl"), name: f.name, kind: "video", assetId: a.id, start, end, opacity: 1, animation: "fade", fit: place === "full" ? "cover" : "contain", sourceIn: 0, loop: false, volume: sound ? 1 : 0, radius: place === "full" ? 0 : 24, ...(noSubs ? { hideSubtitles: true } : {}), ...box };
       useStudio.getState().apply((dd) => ({ ...dd, overlays: [...dd.overlays, o] }));
       useStudio.getState().select({ kind: "overlay", ids: [o.id] });
     } finally {
@@ -61,6 +62,9 @@ export function VideoLayerPanel({ onUpload }: { onUpload: (f: File) => Promise<A
             <Toggle label="Dźwięk z wideo" checked={sound} onChange={setSound} />
           </div>
           <p className="text-[11px] leading-snug text-studio-muted">{sound ? "Dźwięk wideo zagra razem z głosem eksperta." : "Wideo bez dźwięku: słychać tylko eksperta."}</p>
+          <div data-testid="video-layer-nosubs">
+            <Toggle label="Bez napisów w trakcie wideo" checked={noSubs} onChange={setNoSubs} />
+          </div>
           <SButton variant="primary" className="w-full justify-center" disabled={uploading} onClick={() => fileRef.current?.click()} data-testid="video-layer-add">
             {uploading ? <Loader2 className="animate-spin" /> : <Film />} {uploading ? "Wysyłanie…" : "Wgraj wideo (MP4, MOV, WEBM)"}
           </SButton>
@@ -72,15 +76,19 @@ export function VideoLayerPanel({ onUpload }: { onUpload: (f: File) => Promise<A
         {layers.length ? (
           <ul className="space-y-1" data-testid="video-layer-list">
             {layers.map((o) => (
-              <li key={o.id} data-testid="video-layer-row" data-muted={o.volume <= 0} className={cn("flex items-center gap-1 rounded-lg border px-2 py-1.5", selected.includes(o.id) ? "border-white/40 bg-studio-3" : "border-studio-line")}>
+              <li key={o.id} data-testid="video-layer-row" data-muted={o.volume <= 0} data-nosubs={!!o.hideSubtitles} className={cn("flex items-center gap-1 rounded-lg border px-2 py-1.5", selected.includes(o.id) ? "border-white/40 bg-studio-3" : "border-studio-line")}>
                 <button type="button" className="min-w-0 flex-1 text-left" onClick={() => (useStudio.getState().select({ kind: "overlay", ids: [o.id] }), useStudio.getState().setTime(o.start))}>
                   <span className="block truncate text-[12px] text-studio-text">{o.name}</span>
                   <span className="block text-[10.5px] text-studio-muted">
                     {clock(o.start)} - {clock(o.end ?? docDuration(doc))} · {o.volume > 0 ? `dźwięk ${Math.round(o.volume * 100)}%` : "bez dźwięku"}
+                    {o.hideSubtitles ? " · bez napisów" : ""}
                   </span>
                 </button>
                 <button type="button" title={o.volume > 0 ? "Wyłącz dźwięk tego wideo" : "Włącz dźwięk tego wideo"} aria-label={o.volume > 0 ? "Wyłącz dźwięk wideo" : "Włącz dźwięk wideo"} data-testid="video-layer-mute" className="rounded-md p-1.5 text-studio-muted hover:bg-studio-3 hover:text-studio-text" onClick={() => patch(o.id, { volume: o.volume > 0 ? 0 : 1 })}>
                   {o.volume > 0 ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
+                </button>
+                <button type="button" title={o.hideSubtitles ? "Pokaż napisy w trakcie tego wideo" : "Ukryj napisy w trakcie tego wideo"} aria-label={o.hideSubtitles ? "Pokaż napisy w trakcie wideo" : "Ukryj napisy w trakcie wideo"} data-testid="video-layer-subs" className="rounded-md p-1.5 text-studio-muted hover:bg-studio-3 hover:text-studio-text" onClick={() => patch(o.id, { hideSubtitles: !o.hideSubtitles })}>
+                  {o.hideSubtitles ? <CaptionsOff className="h-4 w-4" /> : <Captions className="h-4 w-4" />}
                 </button>
                 <button type="button" title="Usuń to wideo" aria-label="Usuń warstwę wideo" data-testid="video-layer-remove" className="rounded-md p-1.5 text-studio-muted hover:bg-studio-3 hover:text-rose-300" onClick={() => useStudio.getState().apply((d) => ({ ...d, overlays: d.overlays.filter((x) => x.id !== o.id) }))}>
                   <Trash2 className="h-4 w-4" />

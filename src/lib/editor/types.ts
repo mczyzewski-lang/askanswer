@@ -215,6 +215,8 @@ export interface VideoOverlay extends OverlayBase {
   loop: boolean;
   volume: number; // 0 = muted
   radius: number;
+  /** no subtitles while this video is on screen (an explainer has its own texts) */
+  hideSubtitles?: boolean;
 }
 
 /**
