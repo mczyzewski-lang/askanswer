@@ -78,9 +78,12 @@ describe("illustrations of the expert's thoughts", () => {
     expect(p).toContain("«Jeśli czegoś nie wpiszesz, sąd sam tego nie doda.»");
     expect(p).toContain("A judge reading a document");
     expect(p).toMatch(/one short headline \(max 5 words\)/);
+    // the arrow labels must be readable during the reel: bold, sized against the headline, never "thin"
+    expect(p).toMatch(/never smaller than half of it/);
+    expect(p).not.toMatch(/thin arrows/);
     // no text where the captions are
     expect(p).toMatch(/bottom 30% of the image must stay completely free of lettering/);
-    expect(p).toMatch(/up to 3 thin arrows/);
+    expect(p).toMatch(/up to 3 bold arrows/);
     expect(p).toMatch(/no paragraphs/);
     for (const hex of [DEFAULT_THEME.background, DEFAULT_THEME.accent, DEFAULT_THEME.highlight, DEFAULT_THEME.text]) expect(p).toContain(hex);
     expect(p).toContain(DEFAULT_THEME.primary);
