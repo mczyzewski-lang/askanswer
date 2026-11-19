@@ -445,7 +445,7 @@ function ImageProps({ o }: { o: ImageOverlay }) {
       {aiItem ? (
         <div className="space-y-2 rounded-lg border border-studio-line p-2.5" data-testid="ai-layer-props">
           <p className="text-[12.5px]">Grafika AI: {aiItem.title}</p>
-          {aiItem.variants && aiItem.variants.length > 1 ? <VariantPicker item={aiItem} /> : <p className="text-[11px] text-studio-muted">Ta grafika ma jeden wariant. Nowe ilustracje powstają w kilku wariantach do wyboru.</p>}
+          {(aiItem.variants && aiItem.variants.length > 1) || aiItem.kind === "illustration" ? <VariantPicker item={aiItem} /> : <p className="text-[11px] text-studio-muted">Ta grafika ma jeden wariant. Nowe ilustracje powstają w kilku wariantach do wyboru.</p>}
           {aiItem.quote ? <p className="text-[11px] italic leading-snug text-studio-muted">„{aiItem.quote}”</p> : null}
         </div>
       ) : null}

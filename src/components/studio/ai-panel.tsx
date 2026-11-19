@@ -99,7 +99,7 @@ function defaultInfographic(item: AiBrollItem) {
 }
 
 /** Queue the drawing of an illustration item (OpenAI, theme prompt added on the server); returns the job id. */
-async function requestIllustration(compositionId: string, item: AiBrollItem, doc: EditorDocument): Promise<string> {
+async function requestIllustration(compositionId: string, item: AiBrollItem, doc: EditorDocument, nonce?: string): Promise<string> {
   const data = await readJson(
     await fetch(`/api/admin/compositions/${compositionId}/broll/infographic`, {
       method: "POST",
@@ -116,6 +116,7 @@ async function requestIllustration(compositionId: string, item: AiBrollItem, doc
           .slice(0, 8),
         title: item.title,
         start: item.start,
+        ...(nonce ? { nonce } : {}),
       }),
     }),
   );
@@ -713,7 +714,7 @@ function BrollCard({ item, ai, canGenerate, onSeek, onGenerate, onRemove }: { it
           {illu ? <ImageIcon className="h-3.5 w-3.5" /> : info ? <BarChart3 className="h-3.5 w-3.5" /> : <Clapperboard className="h-3.5 w-3.5" />} Wstawiono na osi czasu jako {illu ? "ilustracja (warstwa obrazu pod napisami)" : info ? "infografika (warstwa obrazu)" : "warstwa wideo"}.
         </p>
       ) : null}
-      {item.status === "done" && item.variants && item.variants.length > 1 ? <VariantPicker item={item} /> : null}
+      {item.status === "done" && (illu || (item.variants && item.variants.length > 1)) ? <VariantPicker item={item} /> : null}
       {item.warning ? <p className="text-[11.5px] text-amber-300">{item.warning}</p> : null}
       {item.status === "failed" && item.error ? <p className="text-[11.5px] text-red-300">{item.error}</p> : null}
     </div>
@@ -745,20 +746,74 @@ function AutoStatus({ job }: { job: AutoVisualsJob | null }) {
   );
 }
 
-/** Illustration drawn in several variants: pick the one shown on the timeline. */
+/** how many variants an illustration keeps for choosing (the oldest ones go first) */
+const MAX_VARIANTS = 12;
+
+/** Illustration drawn in several variants: pick the one shown on the timeline, or draw three more. */
 export function VariantPicker({ item }: { item: AiBrollItem }) {
   const assets = useStudio((s) => s.assets);
   const current = useStudio((s) => {
     const o = s.doc?.overlays.find((x) => x.id === item.overlayId);
     return o && o.kind === "image" ? (o.assetId ?? null) : null;
   });
+  const [err, setErr] = useState<string | null>(null);
   const choose = (assetId: string) =>
     useStudio.getState().apply((d) => ({ ...d, overlays: d.overlays.map((o) => (o.id === item.overlayId && o.kind === "image" ? { ...o, assetId } : o)) }), `variant:${item.id}`);
+  const variants = item.variants?.length ? item.variants : current ? [current] : [];
+  const more = async () => {
+    const st = useStudio.getState();
+    if (!st.doc || item.moreJobId) return;
+    setErr(null);
+    try {
+      patchItem(item.id, { moreJobId: await requestIllustration(st.compositionId, item, st.doc, Date.now().toString(36)) });
+    } catch (e) {
+      setErr((e as Error).message);
+    }
+  };
+  // the job drawing further variants: they join the list and the first new one goes on the timeline
+  const moreJobId = item.moreJobId ?? null;
+  useEffect(() => {
+    if (!moreJobId) return;
+    let stopped = false;
+    const tick = async () => {
+      const res = await fetch(`/api/admin/jobs/${moreJobId}`, { cache: "no-store" }).catch(() => null);
+      if (!res?.ok || stopped) return;
+      const job = (await res.json().catch(() => null)) as { status: string; error?: string | null; assets?: AssetInfo[]; result?: { assetId?: string; variantIds?: string[] } | null } | null;
+      if (!job || stopped) return;
+      if (job.status === "FAILED") {
+        setErr((job.error ?? "Generowanie nie powiodło się").slice(0, 400));
+        patchItem(item.id, { moreJobId: null });
+      }
+      if (job.status === "SUCCEEDED") {
+        const fresh = job.result?.variantIds?.length ? job.result.variantIds : job.result?.assetId ? [job.result.assetId] : (job.assets ?? []).map((a) => a.id);
+        const st = useStudio.getState();
+        if (job.assets?.length) st.addAssets(job.assets);
+        st.apply((d) => {
+          const it = items(d).find((i) => i.id === item.id);
+          if (!it || it.moreJobId !== moreJobId) return d;
+          const shown = d.overlays.find((o) => o.id === it.overlayId);
+          const before = it.variants?.length ? it.variants : shown && shown.kind === "image" && shown.assetId ? [shown.assetId] : [];
+          const all = [...before, ...fresh.filter((id) => !before.includes(id))].slice(-MAX_VARIANTS);
+          return {
+            ...d,
+            overlays: fresh[0] ? d.overlays.map((o) => (o.id === it.overlayId && o.kind === "image" ? { ...o, assetId: fresh[0] } : o)) : d.overlays,
+            meta: { ...d.meta, aiBroll: items(d).map((i) => (i.id === it.id ? { ...i, variants: all, moreJobId: null } : i)) },
+          };
+        });
+      }
+    };
+    void tick();
+    const t = setInterval(tick, 4000);
+    return () => {
+      stopped = true;
+      clearInterval(t);
+    };
+  }, [moreJobId, item.id]);
   return (
     <div className="space-y-1" data-testid="ai-variants">
-      <p className="text-[11px] text-studio-muted">Wybierz wariant ({item.variants!.length}):</p>
+      {variants.length > 1 ? <p className="text-[11px] text-studio-muted">Wybierz wariant ({variants.length}):</p> : null}
       <div className="grid grid-cols-3 gap-1.5">
-        {item.variants!.map((id, i) => {
+        {(variants.length > 1 ? variants : []).map((id, i) => {
           const a = assets[id];
           return (
             <button
@@ -780,6 +835,12 @@ export function VariantPicker({ item }: { item: AiBrollItem }) {
           );
         })}
       </div>
+      {item.kind === "illustration" ? (
+        <SButton className="w-full justify-center" disabled={!!moreJobId} onClick={() => void more()} data-testid="ai-variants-more" title="Rysuje trzy nowe warianty tej samej myśli według aktualnych zasad. Dotychczasowe zostają do wyboru.">
+          {moreJobId ? <Loader2 className="animate-spin" /> : <Sparkles />} {moreJobId ? "Rysuję kolejne 3… zwykle do minuty" : "Generuj kolejne 3"}
+        </SButton>
+      ) : null}
+      {err ? <p className="text-[11.5px] text-red-300">{err}</p> : null}
     </div>
   );
 }

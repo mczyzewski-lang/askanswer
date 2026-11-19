@@ -27,6 +27,8 @@ const Body = z.object({
   focus: z.string().trim().max(600).nullable().optional(),
   others: z.array(z.string().trim().max(200)).max(8).nullable().optional(),
   start: z.number().min(0).max(3600),
+  /** illustration: draw further variants of the same thought (a new job instead of the finished one) */
+  nonce: z.string().trim().max(40).optional(),
 });
 
 /** Queue an infographic image (rendered in the theme's fonts and colours); the client polls /api/admin/jobs/[jobId]. */
@@ -42,8 +44,8 @@ export const POST = route(async (req: Request, ctx: { params: Promise<{ id: stri
     if (!openaiConfigured() && !higgsfieldConfigured()) return json({ error: `Ilustracje wymagają klucza OpenAI. ${openaiKeyDiagnostics()}` }, 503);
     if (!b.imagePrompt && !b.passage) return json({ error: "Opisz, co ma przedstawiać ilustracja." }, 400);
     const title = b.title || "Ilustracja";
-    const payload = { compositionId: id, engine: "illustration", infographic: { headline: title, items: [], note: null }, imagePrompt: b.imagePrompt ?? "", passage: b.passage ?? "", focus: b.focus ?? null, others: b.others ?? null, title, width: doc.width, height: doc.height };
-    const key = crypto.createHash("sha256").update(JSON.stringify([payload, b.start.toFixed(1)])).digest("hex").slice(0, 40);
+    const payload = { compositionId: id, engine: "illustration", infographic: { headline: title, items: [], note: null }, imagePrompt: b.imagePrompt ?? "", passage: b.passage ?? "", focus: b.focus ?? null, others: b.others ?? null, title, width: doc.width, height: doc.height, ...(b.nonce ? { variants: 3 } : {}) };
+    const key = crypto.createHash("sha256").update(JSON.stringify([payload, b.start.toFixed(1), b.nonce ?? ""])).digest("hex").slice(0, 40);
     const job = await enqueue("generate-infographic", payload, { idempotencyKey: `infographic:${key}`, maxAttempts: 3 });
     return json({ jobId: job.id, illustrated: true }, 202);
   }

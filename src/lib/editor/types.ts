@@ -403,6 +403,8 @@ export interface AiBrollItem {
   passage?: string;
   /** illustration: image assets of the drawn variants (the layer shows one of them) */
   variants?: string[];
+  /** illustration: the job drawing further variants ("Generuj kolejne 3"), while it runs */
+  moreJobId?: string | null;
   start: number; // timeline seconds
   end: number;
   quote: string;

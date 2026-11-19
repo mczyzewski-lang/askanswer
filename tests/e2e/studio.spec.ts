@@ -138,6 +138,12 @@ test("studio: pauses, cuts, subtitles, zoom, theme, persistence and real MP4 exp
   await expect(layerProps.getByTestId("ai-variant").nth(1)).toHaveAttribute("aria-pressed", "true");
   await layerProps.getByTestId("ai-variant").nth(2).click();
   await expect(layerProps.getByTestId("ai-variant").nth(2)).toHaveAttribute("aria-pressed", "true");
+  // "Generuj kolejne 3": three more variants join the list, the first new one goes on the timeline
+  await picker.getByTestId("ai-variants-more").click();
+  await expect(picker.getByTestId("ai-variant")).toHaveCount(6, { timeout: 90_000 });
+  await expect(picker.getByTestId("ai-variant").nth(3)).toHaveAttribute("aria-pressed", "true");
+  await expect(picker.getByTestId("ai-variants-more")).toBeEnabled();
+  await expect(layerProps.getByTestId("ai-variant")).toHaveCount(6);
   await waitSaved(page);
   await expect(page.getByTestId("auto-visuals-status")).toContainText("ilustracje myśli");
   await page.getByTestId("auto-visuals-run").click();
