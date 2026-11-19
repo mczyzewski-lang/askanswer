@@ -16,6 +16,33 @@ export interface ReviewItem {
 }
 
 const KIND: Record<ReviewItem["kind"], string> = { QUESTION: "Pytanie", PROMPTER: "Prompter", QUESTION_PROMPTER: "Pytanie + prompter", HOOK_PROMPTER: "Hook + prompter" };
+/** what the expert does in each format - shown above the list, so the columns make sense */
+const KIND_INFO: Record<ReviewItem["kind"], string> = {
+  QUESTION: "Lektor czyta pytanie, a Ty odpowiadasz własnymi słowami. Bez promptera - zatwierdzasz tylko pytanie.",
+  PROMPTER: "Czytasz całą treść z promptera. Tytuł wideo jest hookiem: pojawia się jako napis na ekranie, nikt go nie czyta na głos.",
+  QUESTION_PROMPTER: "Lektor czyta pytanie (głos klienta), a Ty czytasz odpowiedź z promptera. Gdy pytanie ma kilka wersji, odpowiedź nagrywasz raz.",
+  HOOK_PROMPTER: "Wszystko czytasz Ty z promptera: najpierw hook, potem treść. Gdy hook ma kilka wersji, czytasz je po kolei, a treść nagrywasz raz.",
+};
+const KIND_ORDER: Array<ReviewItem["kind"]> = ["HOOK_PROMPTER", "QUESTION_PROMPTER", "PROMPTER", "QUESTION"];
+
+function FormatsInfo({ items, open }: { items: ReviewItem[]; open: boolean }) {
+  const kinds = KIND_ORDER.filter((k) => items.some((x) => x.kind === k));
+  if (!kinds.length) return null;
+  return (
+    <details open={open} className="mb-4 rounded-2xl border border-white/10 bg-white/[.03] px-4 py-3" data-testid="review-formats">
+      <summary className="cursor-pointer text-[13px] font-medium text-white/80">Czym różnią się formaty?</summary>
+      <dl className="mt-2 space-y-2">
+        {kinds.map((k) => (
+          <div key={k} data-testid="review-format">
+            <dt className="text-[13px] font-semibold text-white">{KIND[k]}</dt>
+            <dd className="text-[13px] leading-snug text-white/60">{KIND_INFO[k]}</dd>
+          </div>
+        ))}
+      </dl>
+    </details>
+  );
+}
+
 /** has a second text next to the title: the narrator's question, or (hook + prompter) the hook the expert reads */
 const hasNarrator = (k: ReviewItem["kind"]) => k !== "PROMPTER";
 const spokenLabel = (k: ReviewItem["kind"]) => (k === "HOOK_PROMPTER" ? "Hook — czytasz z promptera" : "Lektor przeczyta");
@@ -72,6 +99,7 @@ export function ReviewScreen({ token, items: initial, onClose, onChange }: { tok
           </div>
         </div>
         {err ? <p className="mb-3 rounded-xl bg-red-500/15 px-3 py-2 text-[13px] text-red-200">{err}</p> : null}
+        <FormatsInfo items={items} open={wide} />
         {wide ? <ReviewTable items={items} save={save} /> : <ReviewCards items={items} save={save} />}
       </div>
     </div>

@@ -32,6 +32,14 @@ test("expert reviews and accepts content (phone swipe + desktop table)", async (
   await page.getByTestId("review-button").click();
   const card = page.getByTestId("review-card");
   await expect(card).toContainText("Pierwsze pytanie do akceptacji");
+  // what the formats mean: only the ones on this list, folded on a phone
+  const formats = page.getByTestId("review-formats");
+  await expect(formats).not.toHaveAttribute("open", "");
+  await formats.locator("summary").click();
+  await expect(formats.getByTestId("review-format")).toHaveCount(3);
+  await expect(formats).toContainText("Pytanie + prompter");
+  await expect(formats).not.toContainText("Hook + prompter");
+  await formats.locator("summary").click();
   const swipe = async (dx: number) => {
     const b = (await card.boundingBox())!;
     const y = b.y + b.height / 2;
@@ -98,6 +106,8 @@ test("expert reviews and accepts content (phone swipe + desktop table)", async (
   await desk.goto(url);
   await desk.getByTestId("review-button").click();
   await expect(desk.getByTestId("review-table")).toBeVisible();
+  await expect(desk.getByTestId("review-formats")).toHaveAttribute("open", "");
+  await expect(desk.getByTestId("review-formats")).toContainText("Lektor czyta pytanie (głos klienta), a Ty czytasz odpowiedź z promptera.");
   const row = desk.getByTestId("review-row");
   await expect(row).toHaveCount(1);
   await expect(row).toHaveAttribute("data-approved", "false");
