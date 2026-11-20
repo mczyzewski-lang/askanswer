@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { unzipSync } from "fflate";
 import { adminRequest, demoProject, login, newInvitation, uploadFixtureTake, waitForTakes } from "./helpers";
 
 /** Hooks proposed for an A/B test become versions of one edit (own title + own narration), exported as one MP4 each. */
@@ -57,4 +58,20 @@ test("studio A/B hooks: proposals → 3 versions with their own narration → 3 
   const mp4 = await request.get(href!);
   expect(mp4.status()).toBe(200);
   expect((await mp4.body()).subarray(4, 8).toString()).toBe("ftyp");
+
+  // ...and all of them in one ZIP instead of a link per file
+  const zipHref = await exp.getByTestId("hook-versions-zip").getAttribute("href");
+  expect(zipHref).toMatch(/^\/api\/admin\/render-jobs\/zip\?ids=[\w,]+$/);
+  const zipRes = await request.get(zipHref!);
+  expect(zipRes.status()).toBe(200);
+  expect(zipRes.headers()["content-type"]).toBe("application/zip");
+  const entries = unzipSync(new Uint8Array(await zipRes.body()));
+  const names = Object.keys(entries);
+  expect(names).toHaveLength(3);
+  expect(new Set(names).size).toBe(3);
+  for (const n of names) {
+    expect(n).toMatch(/\.mp4$/);
+    expect(Buffer.from(entries[n]).subarray(4, 8).toString()).toBe("ftyp");
+  }
+  expect(Buffer.from(entries[names[1]]).length).toBe((await mp4.body()).length);
 });

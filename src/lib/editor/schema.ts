@@ -85,6 +85,7 @@ const overlayBase = {
   animation: z.enum(["none", "fade", "pop", "slide", "slideDown", "slideLeft", "zoom"]),
   animationOut: z.enum(["none", "fade", "pop", "slide", "slideDown", "slideLeft", "zoom"]).optional(),
   hidden: z.boolean().optional(),
+  hook: z.string().max(64).optional(),
 };
 
 const textStyle = z.object({

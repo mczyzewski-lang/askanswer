@@ -2,7 +2,7 @@
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { AudioLines, BarChart3, Captions, Film, Flag, ImagePlus, Loader2, Mic2, Music, Type, X, ZoomIn } from "lucide-react";
 import type { AiBrollItem, AVClip, AudioClip, EditorDocument, Overlay, Waveform, ZoomEffect } from "@/lib/editor/types";
-import { clipEnd, docDuration, endCardStart, formatTimecode, moveClip, overlayEnd, retimeSegment, shiftSegment, snapToFrame, sourceRangeToTimeline, trimClip, timedSegments } from "@/lib/editor/timeline";
+import { clipEnd, docDuration, endCardStart, formatTimecode, inHookVersion, moveClip, overlayEnd, retimeSegment, shiftSegment, snapToFrame, sourceRangeToTimeline, trimClip, timedSegments } from "@/lib/editor/timeline";
 import { cn } from "@/lib/utils";
 import { useStudio } from "./store";
 import type { PlaybackEngine } from "./playback";
@@ -59,7 +59,8 @@ export function Timeline({ engine, ai }: { engine: PlaybackEngine | null; ai?: A
   const contentW = Math.max((duration + 4) * pps, 400);
   const x = (t: number) => t * pps;
 
-  const overlayItems = useMemo(() => lanes(doc.overlays.map((o) => ({ ...o, end: overlayEnd(o, duration) }))), [doc.overlays, duration]);
+  // layers tied to another hook version are not part of the version being edited
+  const overlayItems = useMemo(() => lanes(doc.overlays.filter((o) => inHookVersion(doc, o)).map((o) => ({ ...o, end: overlayEnd(o, duration) }))), [doc, duration]);
   const overlayLanes = Math.max(1, ...overlayItems.map((o) => o.lane + 1));
   const segs = useMemo(() => timedSegments(doc), [doc]);
   const zoomItems = useMemo(() => lanes(doc.zooms), [doc.zooms]);

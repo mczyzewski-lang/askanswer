@@ -181,6 +181,15 @@ function OverlayProps({ o, doc }: { o: Overlay; doc: EditorDocument }) {
         {o.kind === "video" ? <VideoProps o={o} /> : null}
         {o.kind === "blur" ? <BlurProps o={o} /> : null}
         {o.kind === "typo" ? <TypoProps o={o} doc={doc} /> : null}
+        {doc.hooks && doc.hooks.variants.length > 1 && !(o.kind === "text" && o.role === "question") ? (
+          <div data-testid="overlay-hook-only">
+            <Toggle
+              label={`Tylko w wersji hooka ${doc.hooks.variants[doc.hooks.active]?.code ?? ""}`}
+              checked={!!o.hook}
+              onChange={(v) => useStudio.getState().apply((d) => ({ ...d, overlays: d.overlays.map((x) => (x.id === o.id ? ({ ...x, hook: v ? d.hooks?.variants[d.hooks.active]?.id : undefined } as typeof x) : x)) }))}
+            />
+          </div>
+        ) : null}
       </Section>
       <Section title="Pozycja i rozmiar">
         <PositionFields o={o} />

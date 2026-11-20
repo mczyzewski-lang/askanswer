@@ -9,7 +9,7 @@
  */
 import type { BlurOverlay, CallStyle, CalloutOverlay, ColorRef, EditorDocument, FaceBubble, FontRef, ImageOverlay, Overlay, ShapeOverlay, TextOverlay, ThemeTokens, VideoOverlay } from "../editor/types";
 import { DEFAULT_BUBBLE } from "../editor/types";
-import { clipAt, clipEnd, docDuration, endCardStart, overlayEnd, segmentAt, timedSegments, type TimedSegment } from "../editor/timeline";
+import { clipAt, clipEnd, docDuration, endCardStart, inHookVersion, overlayEnd, segmentAt, timedSegments, type TimedSegment } from "../editor/timeline";
 import { zoomAt } from "../editor/zoom";
 import { drawTypo } from "./typo";
 
@@ -632,7 +632,7 @@ export function layoutSubtitle(ctx: Ctx, doc: EditorDocument, seg: TimedSegment)
 export function subtitlesHiddenAt(doc: EditorDocument, t: number): boolean {
   if (!doc.overlays.some((o) => o.kind === "video" && o.hideSubtitles)) return false;
   const duration = docDuration(doc);
-  return doc.overlays.some((o) => o.kind === "video" && o.hideSubtitles && !o.hidden && t >= o.start && t < overlayEnd(o, duration));
+  return doc.overlays.some((o) => o.kind === "video" && o.hideSubtitles && !o.hidden && inHookVersion(doc, o) && t >= o.start && t < overlayEnd(o, duration));
 }
 
 function drawSubtitles(ctx: Ctx, doc: EditorDocument, t: number) {
@@ -1073,7 +1073,7 @@ export function drawFrame(ctx: Ctx, doc: EditorDocument, t: number, env: RenderE
   const call = callWindow(doc);
   if (call && doc.callStyle!.mode === "phone" && t >= call.start && t < call.end + CALL_EXIT) drawCallScreen(ctx, doc, doc.callStyle!, t, call, env, main);
   for (const o of doc.overlays) {
-    if (o.hidden || env.hideOverlayIds?.has(o.id)) continue;
+    if (o.hidden || env.hideOverlayIds?.has(o.id) || !inHookVersion(doc, o)) continue;
     if (t < o.start || t >= overlayEnd(o, duration)) continue;
     drawOverlay(ctx, doc, o, t, env, duration, main);
   }

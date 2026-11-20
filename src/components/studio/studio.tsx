@@ -1010,6 +1010,15 @@ function HookVersionsExport({ compositionId, save, format, quality }: { composit
           <p className="text-[12px] text-studio-muted">
             Gotowe {done}/{jobs.length}
           </p>
+          {done > 1 && !jobs.some((j) => j.status === "QUEUED" || j.status === "RUNNING") ? (
+            <a
+              href={`/api/admin/render-jobs/zip?ids=${jobs.filter((j) => j.status === "SUCCEEDED").map((j) => j.id).join(",")}`}
+              className="inline-flex h-9 w-full items-center justify-center gap-2 rounded-lg bg-white text-sm font-medium text-black"
+              data-testid="hook-versions-zip"
+            >
+              <Download className="h-4 w-4" /> Pobierz wszystkie ({done}) w jednej paczce ZIP
+            </a>
+          ) : null}
           <ul className="max-h-48 space-y-1 overflow-y-auto text-[12.5px]">
             {jobs.map((j) => (
               <li key={j.id} className="flex items-center justify-between gap-2">

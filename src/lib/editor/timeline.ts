@@ -37,6 +37,12 @@ export function endCardStart(doc: EditorDocument): number | null {
   return doc.endCard.placement === "overlay" ? Math.max(0, d - doc.endCard.seconds) : d;
 }
 
+/** a layer tied to one hook version is part of the edit only while that version is shown */
+export function inHookVersion(doc: EditorDocument, o: { hook?: string }): boolean {
+  if (!o.hook || !doc.hooks) return true;
+  return doc.hooks.variants[doc.hooks.active]?.id === o.hook;
+}
+
 export function overlayEnd(o: Overlay, duration: number): number {
   return o.end == null ? duration : Math.min(o.end, duration);
 }

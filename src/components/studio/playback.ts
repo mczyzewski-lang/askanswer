@@ -22,7 +22,7 @@ interface MaskEntry {
 }
 
 type FrameCallbackVideo = HTMLVideoElement & { requestVideoFrameCallback?: (cb: (now: number, meta: { mediaTime: number }) => void) => number };
-import { clipAt, clipEnd, docDuration, overlayEnd, sortedClips } from "@/lib/editor/timeline";
+import { clipAt, clipEnd, docDuration, inHookVersion, overlayEnd, sortedClips } from "@/lib/editor/timeline";
 import { drawFrame, overlayVideoTime, type FrameSource } from "@/lib/render/compositor";
 import type { VideoOverlay } from "@/lib/editor/types";
 
@@ -101,7 +101,7 @@ export class PlaybackEngine {
         v.load();
         seekNow = true;
       }
-      const visible = !o.hidden && t >= o.start && t < overlayEnd(o, dur);
+      const visible = !o.hidden && inHookVersion(doc, o) && t >= o.start && t < overlayEnd(o, dur);
       const local = overlayVideoTime(o, t, asset.durationSec);
       v.muted = o.volume <= 0;
       v.volume = Math.max(0, Math.min(1, o.volume));

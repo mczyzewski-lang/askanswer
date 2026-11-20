@@ -529,3 +529,62 @@ export async function bodyAudioZip(projectId: string): Promise<{ zip: Buffer; na
   files["lista.txt"] = strToU8(list.join("\r\n") + "\r\n");
   return { zip: Buffer.from(zipSync(files, { level: 0 })), name: `${project.name.replace(/[^\p{L}\p{N}]+/gu, "-").slice(0, 40)}_body-mp3.zip`, count, missing };
 }
+
+/** "p01-h05_ela-15-minut.mp4" → "p01-h05": the reel's code at the start of the file name (any case, - _ or space between) */
+export function hookCodeOf(fileName: string): string | null {
+  const m = /^\s*([a-z]{1,3}\d{1,4})[\s._;-]*(h\d{1,3})(?![0-9])/i.exec(fileName);
+  return m ? `${m[1]}-${m[2]}`.toLowerCase() : null;
+}
+
+/**
+ * A video for ONE hook version (e.g. the client saying the quote of hook P01-h05): the file is laid
+ * over the start of that reel as a layer tied to this version only - the other hooks of the reel
+ * do not show it. The reel is found by the code at the start of the file name. A new file for the
+ * same hook replaces the earlier one.
+ */
+export async function attachHookVideo(projectId: string, asset: { id: string; durationSec: number | null; width: number | null; height: number | null }, fileName: string, opts: { sound?: boolean; hideSubtitles?: boolean } = {}) {
+  const code = hookCodeOf(fileName);
+  if (!code) throw new HttpError(400, `„${fileName}”: nazwa pliku musi zaczynać się od kodu reelsa i hooka, np. p01-h05_opis.mp4`);
+  const reels = await prisma.adReel.findMany({ where: { projectId }, select: { id: true, code: true, compositionId: true } });
+  const norm = (c: string) => c.toLowerCase().replace(/[\s._;]+/g, "-");
+  const reel = reels.find((r) => norm(r.code) === code);
+  if (!reel) throw new HttpError(404, `„${fileName}”: w scenariuszu nie ma reelsa ${code.toUpperCase()}`);
+  if (!reel.compositionId) throw new HttpError(409, `„${fileName}”: reels ${reel.code} nie jest jeszcze ułożony - najpierw ułóż reelsy`);
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const cur = await prisma.videoComposition.findUnique({ where: { id: reel.compositionId } });
+    if (!cur) throw new HttpError(409, `„${fileName}”: montaż reelsa ${reel.code} nie istnieje - ułóż reelsy ponownie`);
+    const doc = cur.document as unknown as EditorDocument;
+    const variant = doc.hooks?.variants.find((v) => norm(v.code) === code) ?? null;
+    if (doc.hooks && doc.hooks.variants.length > 1 && !variant) throw new HttpError(409, `„${fileName}”: montaż nie ma wersji hooka ${reel.code} - ułóż reelsy ponownie`);
+    const id = `hookvid_${variant?.id ?? "solo"}`;
+    const vertical = !!asset.width && !!asset.height && asset.height > asset.width;
+    // a vertical clip fills the frame; a horizontal one sits across the frame at full width, people visible
+    const h = vertical || !asset.width || !asset.height ? 1 : Math.min(1, (doc.width * asset.height) / asset.width / doc.height);
+    const box = vertical ? { x: 0, y: 0, w: 1, h: 1 } : { x: 0, y: Math.max(0, 0.42 - h / 2), w: 1, h };
+    const layer = {
+      id,
+      name: `${reel.code} - wideo do hooka`,
+      kind: "video" as const,
+      assetId: asset.id,
+      start: 0,
+      end: Math.max(0.5, asset.durationSec ?? 4),
+      opacity: 1,
+      animation: "none" as const,
+      animationOut: "fade" as const,
+      fit: "cover" as const,
+      sourceIn: 0,
+      loop: false,
+      volume: opts.sound ? 1 : 0,
+      radius: 0,
+      ...(opts.hideSubtitles ? { hideSubtitles: true } : {}),
+      ...(variant ? { hook: variant.id } : {}),
+      ...box,
+    };
+    const replaced = doc.overlays.some((o) => o.id === id);
+    const next = { ...doc, overlays: [...doc.overlays.filter((o) => o.id !== id), layer] };
+    const r = await prisma.videoComposition.updateMany({ where: { id: cur.id, version: cur.version }, data: { document: next as unknown as Prisma.InputJsonValue, version: { increment: 1 } } });
+    if (r.count === 1) return { code: reel.code, compositionId: cur.id, replaced, seconds: layer.end, hookOnly: !!variant };
+    await new Promise((res) => setTimeout(res, 300));
+  }
+  throw new HttpError(409, `„${fileName}”: montaż był w tym czasie edytowany - spróbuj ponownie`);
+}

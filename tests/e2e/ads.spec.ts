@@ -84,6 +84,32 @@ test("ads studio: script + footage → reels laid out from the transcript", asyn
   expect(Math.abs(listed - (bodyClip.sourceOut - bodyClip.sourceIn))).toBeLessThan(0.15);
   expect(strFromU8(entries["lista.txt"])).toContain("hooków: 3");
 
+  // a client clip for ONE hook version: found by the file name, laid over the start of the reel, in that version only
+  const clip = fs.readFileSync("tests/fixtures/generated/sample-take.mp4");
+  await page.getByTestId("ads-hook-videos-input").setInputFiles([
+    { name: "p01-h02_klient.mp4", mimeType: "video/mp4", buffer: clip },
+    { name: "wywiad-bez-kodu.mp4", mimeType: "video/mp4", buffer: clip },
+    { name: "p09-h01_nie-ma.mp4", mimeType: "video/mp4", buffer: clip },
+  ]);
+  const res = page.getByTestId("ads-hook-videos-result").locator("li");
+  await expect(res).toHaveCount(3, { timeout: 120_000 });
+  await expect(res.nth(0)).toHaveAttribute("data-ok", "true");
+  await expect(res.nth(0)).toContainText("P01-h02: dodano");
+  await expect(res.nth(1)).toContainText("nazwa pliku musi zaczynać się od kodu");
+  await expect(res.nth(2)).toContainText("nie ma reelsa P09-H01");
+  const withClip = (await (await request.get(`/api/admin/compositions/${r1.compositionId}`)).json()).composition.document;
+  const layer = withClip.overlays.filter((o: { id: string }) => o.id.startsWith("hookvid_"));
+  expect(layer).toHaveLength(1);
+  expect(layer[0]).toMatchObject({ kind: "video", start: 0, volume: 0, hook: withClip.hooks.variants[1].id, w: 1 });
+  expect(withClip.hooks.variants[1].code).toBe("P01-h02");
+  // the same hook again replaces the clip instead of stacking a second one
+  const second = await request.post(`/api/admin/ads/${projectId}/hook-videos`, { multipart: { file: { name: "P01 H02 klient v2.mp4", mimeType: "video/mp4", buffer: clip }, sound: "1", hideSubtitles: "1" } });
+  expect(second.status()).toBe(201);
+  expect((await second.json()).replaced).toBe(true);
+  const replaced = (await (await request.get(`/api/admin/compositions/${r1.compositionId}`)).json()).composition.document.overlays.filter((o: { id: string }) => o.id.startsWith("hookvid_"));
+  expect(replaced).toHaveLength(1);
+  expect(replaced[0]).toMatchObject({ volume: 1, hideSubtitles: true });
+
   // a second file through the page (sliced upload in the browser)
   await page.getByTestId("ads-video-input").setInputFiles({ name: "nagranie-2.mp4", mimeType: "video/mp4", buffer: buf });
   await expect(page.getByTestId("ads-footage-row")).toHaveCount(2, { timeout: 60_000 });

@@ -433,6 +433,8 @@ export function AdsProject({ id }: { id: string }) {
 
       <BrollCard projectId={id} toast={toast} />
 
+      <HookVideosCard projectId={id} toast={toast} />
+
       <Card className="space-y-4 p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -766,6 +768,71 @@ interface BrollItem {
 }
 
 /** B-roll (cutaways): upload clips, pick the ones to use — they are offered in the Studio of every reel. */
+/**
+ * Videos for single hook versions (a client saying the quote of hook P01-h05): each file goes over
+ * the start of the reel named at the beginning of its file name, in that hook version only.
+ */
+function HookVideosCard({ projectId, toast }: { projectId: string; toast: (t: string, tone?: "ok" | "err") => void }) {
+  const ref = useRef<HTMLInputElement>(null);
+  const [sound, setSound] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [rows, setRows] = useState<Array<{ file: string; ok: boolean; text: string }>>([]);
+  const send = async (files: File[]) => {
+    if (!files.length) return;
+    setBusy(true);
+    const out: typeof rows = [];
+    for (const f of files) {
+      const fd = new FormData();
+      fd.set("file", f);
+      if (sound) {
+        fd.set("sound", "1");
+        fd.set("hideSubtitles", "1");
+      }
+      try {
+        const res = await fetch(`/api/admin/ads/${projectId}/hook-videos`, { method: "POST", body: fd });
+        const d = (await res.json().catch(() => ({}))) as { code?: string; replaced?: boolean; seconds?: number; error?: string };
+        out.push(res.ok ? { file: f.name, ok: true, text: `${d.code}: ${d.replaced ? "podmieniono" : "dodano"} (${(d.seconds ?? 0).toFixed(1)} s)` } : { file: f.name, ok: false, text: d.error ?? "Nie udało się dodać" });
+      } catch (e) {
+        out.push({ file: f.name, ok: false, text: (e as Error).message });
+      }
+      setRows([...out]);
+    }
+    setBusy(false);
+    const ok = out.filter((r) => r.ok).length;
+    toast(`Wideo do hooków: dodano ${ok} z ${out.length}`, ok === out.length ? "ok" : "err");
+  };
+  return (
+    <DropZone accept="video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm" multiple={true} label="Upuść klipy - trafią do reelsów według nazw plików" onFiles={(fs) => void send(fs)} className="rounded-2xl" data-testid="ads-hook-videos-drop">
+      <Card className="space-y-3">
+        <h2 className="flex items-center gap-2 text-base font-semibold">
+          <Film className="h-4 w-4" /> Wideo do wersji hooka (np. wywiad z klientem)
+        </h2>
+        <p className="text-sm text-muted">
+          Klip trafia jako warstwa na początek reelsa i jest widoczny tylko w tej jednej wersji hooka. Reels i hook rozpoznaję po początku nazwy pliku, np. <code className="rounded bg-black/5 px-1">p01-h05_ela.mp4</code> → P01-h05. Ponowne wgranie pliku dla tego samego hooka podmienia poprzedni. Reelsy muszą być już ułożone.
+        </p>
+        <label className="flex items-center gap-2 text-sm">
+          <Switch checked={sound} onCheckedChange={setSound} aria-label="Dźwięk z klipu" /> Dźwięk z klipu {sound ? "(słychać klienta, napisy eksperta ukryte na czas klipu)" : "(wyłączony: słychać eksperta, klip jest tylko obrazem)"}
+        </label>
+        <div>
+          <Button onClick={() => ref.current?.click()} disabled={busy} data-testid="ads-hook-videos-add">
+            {busy ? <Loader2 className="animate-spin" /> : <Upload />} {busy ? "Dodaję…" : "Wgraj klipy (można wiele naraz)"}
+          </Button>
+          <input ref={ref} type="file" multiple accept="video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm" className="hidden" data-testid="ads-hook-videos-input" onChange={(e) => (void send([...(e.target.files ?? [])]), (e.target.value = ""))} />
+        </div>
+        {rows.length ? (
+          <ul className="space-y-1 text-sm" data-testid="ads-hook-videos-result">
+            {rows.map((r, i) => (
+              <li key={i} data-ok={r.ok} className={r.ok ? "text-emerald-700" : "text-red-600"}>
+                {r.ok ? "✓" : "✕"} {r.text}
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </Card>
+    </DropZone>
+  );
+}
+
 function BrollCard({ projectId, toast }: { projectId: string; toast: (t: string, tone?: "ok" | "err") => void }) {
   const [items, setItems] = useState<BrollItem[] | null>(null);
   const [pending, setPending] = useState<Array<{ id: string; name: string; status: string; error: string | null; sizeBytes: number }>>([]);

@@ -141,6 +141,8 @@ interface OverlayBase {
   /** how it leaves (absent = the entrance played backwards) */
   animationOut?: OverlayAnimation;
   hidden?: boolean;
+  /** only in this hook version (HookVariant.id) of the edit, e.g. a client clip for one hook; absent = in every version */
+  hook?: string;
 }
 
 export interface TextOverlay extends OverlayBase {

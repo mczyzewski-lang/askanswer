@@ -14,7 +14,7 @@ import { createCanvas, GlobalFonts, ImageData, loadImage, type SKRSContext2D, ty
 import type { EditorDocument } from "../editor/types";
 import { clipAt, clipEnd, docDuration } from "../editor/timeline";
 import { drawFrame, overlayVideoTime, type Ctx, type FrameSource } from "./compositor";
-import { overlayEnd } from "../editor/timeline";
+import { inHookVersion, overlayEnd } from "../editor/timeline";
 import type { VideoOverlay } from "../editor/types";
 import { run } from "../server/ffmpeg";
 import { env } from "../server/env";
@@ -175,7 +175,7 @@ export async function mixAudio(doc: EditorDocument, assets: Map<string, RenderAs
   for (const c of doc.narration) if (!c.muted) addClip(c.assetId, c.sourceIn, c.sourceOut, c.start, c.volume, c.fadeIn, c.fadeOut);
   // video overlays with sound (volume > 0); looping clips are expanded into repeated segments
   for (const o of doc.overlays) {
-    if (o.kind !== "video" || o.hidden || o.volume <= 0) continue;
+    if (o.kind !== "video" || o.hidden || o.volume <= 0 || !inHookVersion(doc, o)) continue;
     const a = assets.get(o.assetId);
     if (!a?.hasAudio) continue;
     const end = Math.min(overlayEnd(o, duration), duration);
@@ -283,7 +283,7 @@ export async function renderVideoSegment(job: SegmentJob, onFrame?: (done: numbe
       const t = i / fps;
       const ovFrames = new Map<string, FrameSource>();
       for (const o of doc.overlays) {
-        if (o.kind !== "video" || o.hidden || t < o.start || t >= overlayEnd(o, durationAll)) continue;
+        if (o.kind !== "video" || o.hidden || !inHookVersion(doc, o) || t < o.start || t >= overlayEnd(o, durationAll)) continue;
         const a = assets.get(o.assetId);
         if (!a || !a.width || !a.height) continue;
         const local = overlayVideoTime(o as VideoOverlay, t, a.durationSec ?? null);
