@@ -193,6 +193,7 @@ export const EditorDocumentSchema = z.object({
               .object({ clip: audioClip.omit({ id: true, start: true }), subs: z.object({ baseAssetId: z.string().max(64), segments: z.array(subSegment).max(200) }).nullable() })
               .nullable()
               .optional(),
+            client: z.boolean().optional(),
           }),
         )
         .max(500),

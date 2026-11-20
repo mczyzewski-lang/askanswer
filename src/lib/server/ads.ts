@@ -17,6 +17,7 @@ import { elevenLabsConfigured } from "./env";
 import { enqueue } from "./jobs";
 import { HttpError } from "./errors";
 import { computeWaveform, detectPauses } from "../editor/silence";
+import { switchHook } from "../editor/timeline";
 import { buildSegments } from "../editor/subtitles";
 import { buildInitialDocument } from "../editor/factory";
 import { themeFromRow, DEFAULT_THEME } from "../themes";
@@ -536,13 +537,61 @@ export function hookCodeOf(fileName: string): string | null {
   return m ? `${m[1]}-${m[2]}`.toLowerCase() : null;
 }
 
+export const CLIENT_PREFIX = "[klient] ";
+
+/** A client clip stored at full size (it becomes the picture of the hook), with a preview proxy and a waveform. */
+export async function ingestHookClip(src: string, projectId: string, originalName: string) {
+  const info = await probe(src).catch(() => null);
+  if (!info?.hasVideo) throw new HttpError(415, `„${originalName}”: plik wideo jest uszkodzony lub ma nieprawidłowy format`);
+  if (info.duration > 300) throw new HttpError(413, `„${originalName}”: klip może mieć maksymalnie 5 minut`);
+  const work = await makeTempDir("hook-clip");
+  try {
+    const out = path.join(work, "clip.mp4");
+    await run(env.ffmpeg, [
+      "-hide_banner", "-v", "error", "-y", "-i", src, "-map", "0:v:0", "-map", "0:a:0?",
+      "-vf", "scale='min(1920,iw)':'min(1920,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2,fps=30,format=yuv420p",
+      "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-g", "30", "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-movflags", "+faststart", out,
+    ]);
+    const n = await probe(out);
+    const key = `projects/${projectId}/ads/hook-clips/${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}.mp4`;
+    const size = await putFile(key, out, "video/mp4");
+    const pcm = n.hasAudio ? await decodePcm(out, 16000) : new Float32Array(0);
+    const waveform = computeWaveform(pcm, 16000, 100);
+    const proxy = path.join(work, "proxy.webm");
+    await makePreviewProxy(out, proxy);
+    const pKey = key.replace(/\.mp4$/, ".proxy.webm");
+    const pSize = await putFile(pKey, proxy, "video/webm");
+    const pa = await prisma.mediaAsset.create({ data: { kind: "PREVIEW_PROXY", projectId, storageKey: pKey, mimeType: "video/webm", sizeBytes: pSize, durationSec: n.duration, hasAudio: n.hasAudio, hasVideo: true } });
+    const asset = await prisma.mediaAsset.create({
+      data: { kind: "RECORDING_NORMALIZED", projectId, storageKey: key, mimeType: "video/mp4", sizeBytes: size, durationSec: n.duration, width: n.width, height: n.height, fps: n.fps, hasAudio: n.hasAudio, hasVideo: true, originalName, waveform: waveform as unknown as Prisma.InputJsonValue, meta: { proxyAssetId: pa.id, source: "hook-clip" } },
+    });
+    // what the client says, for the subtitles of that version (skipped without the key or when it fails)
+    let words: FootageWord[] = [];
+    let warning: string | null = null;
+    if (n.hasAudio && elevenLabsConfigured()) {
+      try {
+        const mp3 = path.join(work, "speech.mp3");
+        await extractSpeechAudio(out, mp3);
+        const r = await transcribe(mp3, { language: "pol" });
+        words = r.words.filter((w) => (w.type ?? "word") === "word" && w.text.trim()).map((w) => ({ text: w.text.trim(), start: w.start, end: w.end }));
+      } catch (e) {
+        warning = `bez napisów (transkrypcja nie powiodła się: ${(e as Error).message.slice(0, 120)})`;
+      }
+    } else if (n.hasAudio) warning = "bez napisów (brak klucza ElevenLabs do transkrypcji)";
+    return { id: asset.id, durationSec: n.duration, width: n.width, height: n.height, words, warning };
+  } finally {
+    await fsp.rm(work, { recursive: true, force: true });
+  }
+}
+
 /**
- * A video for ONE hook version (e.g. the client saying the quote of hook P01-h05): the file is laid
- * over the start of that reel as a layer tied to this version only - the other hooks of the reel
- * do not show it. The reel is found by the code at the start of the file name. A new file for the
- * same hook replaces the earlier one.
+ * A client clip for one hook (the client saying the quote of hook P01-h05): the reel gets a SEPARATE
+ * hook version "[klient] P01-h05" next to the expert's own, found by the code at the start of the
+ * file name. With `sound` (the default) the clip replaces the expert's hook in that version - the
+ * client's picture, voice and subtitles, then the shared body; without it the expert's hook stays
+ * and the clip is only the picture over it. A new file for the same hook replaces the earlier one.
  */
-export async function attachHookVideo(projectId: string, asset: { id: string; durationSec: number | null; width: number | null; height: number | null }, fileName: string, opts: { sound?: boolean; hideSubtitles?: boolean } = {}) {
+export async function attachHookVideo(projectId: string, asset: { id: string; durationSec: number | null; width: number | null; height: number | null; words?: FootageWord[] }, fileName: string, opts: { sound?: boolean } = {}) {
   const code = hookCodeOf(fileName);
   if (!code) throw new HttpError(400, `„${fileName}”: nazwa pliku musi zaczynać się od kodu reelsa i hooka, np. p01-h05_opis.mp4`);
   const reels = await prisma.adReel.findMany({ where: { projectId }, select: { id: true, code: true, compositionId: true } });
@@ -550,40 +599,56 @@ export async function attachHookVideo(projectId: string, asset: { id: string; du
   const reel = reels.find((r) => norm(r.code) === code);
   if (!reel) throw new HttpError(404, `„${fileName}”: w scenariuszu nie ma reelsa ${code.toUpperCase()}`);
   if (!reel.compositionId) throw new HttpError(409, `„${fileName}”: reels ${reel.code} nie jest jeszcze ułożony - najpierw ułóż reelsy`);
+  const sound = opts.sound !== false;
+  const seconds = Math.max(0.5, asset.durationSec ?? 4);
+  const strip = (c: AVClip) => {
+    const { id: _id, start: _start, ...rest } = c;
+    void _id;
+    void _start;
+    return rest;
+  };
   for (let attempt = 0; attempt < 5; attempt++) {
     const cur = await prisma.videoComposition.findUnique({ where: { id: reel.compositionId } });
     if (!cur) throw new HttpError(409, `„${fileName}”: montaż reelsa ${reel.code} nie istnieje - ułóż reelsy ponownie`);
-    const doc = cur.document as unknown as EditorDocument;
-    const variant = doc.hooks?.variants.find((v) => norm(v.code) === code) ?? null;
-    if (doc.hooks && doc.hooks.variants.length > 1 && !variant) throw new HttpError(409, `„${fileName}”: montaż nie ma wersji hooka ${reel.code} - ułóż reelsy ponownie`);
-    const id = `hookvid_${variant?.id ?? "solo"}`;
-    const vertical = !!asset.width && !!asset.height && asset.height > asset.width;
-    // a vertical clip fills the frame; a horizontal one sits across the frame at full width, people visible
-    const h = vertical || !asset.width || !asset.height ? 1 : Math.min(1, (doc.width * asset.height) / asset.width / doc.height);
-    const box = vertical ? { x: 0, y: 0, w: 1, h: 1 } : { x: 0, y: Math.max(0, 0.42 - h / 2), w: 1, h };
-    const layer = {
-      id,
-      name: `${reel.code} - wideo do hooka`,
-      kind: "video" as const,
-      assetId: asset.id,
-      start: 0,
-      end: Math.max(0.5, asset.durationSec ?? 4),
-      opacity: 1,
-      animation: "none" as const,
-      animationOut: "fade" as const,
-      fit: "cover" as const,
-      sourceIn: 0,
-      loop: false,
-      volume: opts.sound ? 1 : 0,
-      radius: 0,
-      ...(opts.hideSubtitles ? { hideSubtitles: true } : {}),
-      ...(variant ? { hook: variant.id } : {}),
-      ...box,
-    };
-    const replaced = doc.overlays.some((o) => o.id === id);
-    const next = { ...doc, overlays: [...doc.overlays.filter((o) => o.id !== id), layer] };
+    let doc = cur.document as unknown as EditorDocument;
+    if (doc.hooks && !doc.hooks.clipId) throw new HttpError(409, `„${fileName}”: ten montaż ma wersje tytułu (test A/B), nie wersje hooka z nagrania`);
+    const hookClip = doc.hooks?.clipId ? doc.clips.find((c) => c.id === doc.hooks!.clipId) : (doc.clips.find((c) => c.label === "HOOK") ?? [...doc.clips].sort((a, b) => a.start - b.start)[0]);
+    if (!hookClip) throw new HttpError(409, `„${fileName}”: w montażu reelsa ${reel.code} nie ma klipu hooka - ułóż reelsy ponownie`);
+    const q = doc.overlays.find((o) => o.kind === "text" && o.role === "question") as { text?: string } | undefined;
+    // a reel with a single hook gets hook versions now: its own hook is version 1
+    if (!doc.hooks) doc = { ...doc, hooks: { clipId: hookClip.id, active: 0, variants: [{ id: "hook_0", code: reel.code, title: q?.text ?? null, clip: strip(hookClip) }] } };
+    const baseIdx = doc.hooks!.variants.findIndex((v) => !v.client && norm(v.code) === code);
+    if (baseIdx < 0) throw new HttpError(409, `„${fileName}”: montaż nie ma wersji hooka ${reel.code} - ułóż reelsy ponownie`);
+    const clientId = `client_${doc.hooks!.variants[baseIdx].id}`.slice(0, 64);
+    // the client version being replaced must not be the one on the timeline
+    if (doc.hooks!.variants.findIndex((v) => v.id === clientId) === doc.hooks!.active) doc = switchHook(doc, baseIdx);
+    const h = doc.hooks!;
+    const base = h.variants[baseIdx];
+    const old = h.variants.find((v) => v.id === clientId);
+    const live = doc.clips.find((c) => c.id === h.clipId)!;
+    // the expert's hook as it is now: from the timeline when it is the version shown
+    const expert = baseIdx === h.active ? { clip: strip(live), pieces: undefined as typeof base.pieces } : { clip: base.clip ?? strip(live), pieces: base.pieces };
+    const title = (baseIdx === h.active ? q?.text : base.title) ?? base.title ?? null;
+    const own: Omit<AVClip, "id" | "start"> = { assetId: asset.id, sourceIn: 0, sourceOut: seconds, volume: 1, muted: false, framing: { scale: 1, cx: 0.5, cy: 0.5 }, label: live.label };
+    const variant = { id: clientId, code: `${CLIENT_PREFIX}${base.code}`, title, client: true, ...(sound ? { clip: own } : expert) };
+    const variants = old ? h.variants.map((v) => (v.id === clientId ? variant : v)) : [...h.variants, variant];
+    // layers of the earlier way (a clip laid over the expert's hook) give way to the version
+    const layerId = `hookvid_${clientId}`.slice(0, 64);
+    const stale = new Set([layerId, `hookvid_${base.id}`, "hookvid_solo"]);
+    let overlays = doc.overlays.filter((o) => !stale.has(o.id));
+    if (!sound) {
+      const vertical = !!asset.width && !!asset.height && asset.height > asset.width;
+      const hh = vertical || !asset.width || !asset.height ? 1 : Math.min(1, (doc.width * asset.height) / asset.width / doc.height);
+      const box = vertical ? { x: 0, y: 0, w: 1, h: 1 } : { x: 0, y: Math.max(0, 0.42 - hh / 2), w: 1, h: hh };
+      // at the bottom of the layers: over the recording, under the title and the graphics
+      overlays = [{ id: layerId, name: `${base.code} - klient`, kind: "video" as const, assetId: asset.id, start: 0, end: seconds, opacity: 1, animation: "none" as const, animationOut: "fade" as const, fit: "cover" as const, sourceIn: 0, loop: false, volume: 0, radius: 0, hook: clientId, ...box }, ...overlays];
+    }
+    // the client's words as subtitles of that clip (they show only while the clip is on the timeline)
+    const gone = new Set([asset.id, ...(old?.client && old.clip && old.clip.assetId !== live.assetId && !h.variants.some((v) => !v.client && v.clip?.assetId === old.clip!.assetId) ? [old.clip.assetId] : [])]);
+    const segments = [...doc.subtitles.segments.filter((s) => !gone.has(s.assetId)), ...(sound && asset.words?.length ? buildSegments(asset.id, asset.words) : [])];
+    const next: EditorDocument = { ...doc, hooks: { ...h, variants }, overlays, subtitles: { ...doc.subtitles, segments } };
     const r = await prisma.videoComposition.updateMany({ where: { id: cur.id, version: cur.version }, data: { document: next as unknown as Prisma.InputJsonValue, version: { increment: 1 } } });
-    if (r.count === 1) return { code: reel.code, compositionId: cur.id, replaced, seconds: layer.end, hookOnly: !!variant };
+    if (r.count === 1) return { code: variant.code, compositionId: cur.id, replaced: !!old, seconds, sound, subtitles: sound && !!asset.words?.length, hookIndex: variants.findIndex((v) => v.id === clientId) };
     await new Promise((res) => setTimeout(res, 300));
   }
   throw new HttpError(409, `„${fileName}”: montaż był w tym czasie edytowany - spróbuj ponownie`);

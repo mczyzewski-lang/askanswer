@@ -3,6 +3,8 @@ import { expect, test } from "@playwright/test";
 import { strFromU8, unzipSync } from "fflate";
 import { adminRequest, login } from "./helpers";
 
+const waitSavedOrIdle = async (page: import("@playwright/test").Page) => expect(page.getByTestId("save-status")).toHaveText("Zapisano", { timeout: 30_000 });
+
 /**
  * Ads Studio: a script file + raw footage → reels cut from the transcript. The mock transcription
  * names the words słowo1, słowo2… along the fixture's voiced parts, so the script uses those words.
@@ -84,7 +86,7 @@ test("ads studio: script + footage → reels laid out from the transcript", asyn
   expect(Math.abs(listed - (bodyClip.sourceOut - bodyClip.sourceIn))).toBeLessThan(0.15);
   expect(strFromU8(entries["lista.txt"])).toContain("hooków: 3");
 
-  // a client clip for ONE hook version: found by the file name, laid over the start of the reel, in that version only
+  // a client clip for one hook: the reel gets a SEPARATE version "[klient] P01-h02" next to the expert's own
   const clip = fs.readFileSync("tests/fixtures/generated/sample-take.mp4");
   await page.getByTestId("ads-hook-videos-input").setInputFiles([
     { name: "p01-h02_klient.mp4", mimeType: "video/mp4", buffer: clip },
@@ -92,23 +94,60 @@ test("ads studio: script + footage → reels laid out from the transcript", asyn
     { name: "p09-h01_nie-ma.mp4", mimeType: "video/mp4", buffer: clip },
   ]);
   const res = page.getByTestId("ads-hook-videos-result").locator("li");
-  await expect(res).toHaveCount(3, { timeout: 120_000 });
+  await expect(res).toHaveCount(3, { timeout: 180_000 });
   await expect(res.nth(0)).toHaveAttribute("data-ok", "true");
-  await expect(res.nth(0)).toContainText("P01-h02: dodano");
+  await expect(res.nth(0)).toContainText("[klient] P01-h02: dodano wersję");
   await expect(res.nth(1)).toContainText("nazwa pliku musi zaczynać się od kodu");
   await expect(res.nth(2)).toContainText("nie ma reelsa P09-H01");
-  const withClip = (await (await request.get(`/api/admin/compositions/${r1.compositionId}`)).json()).composition.document;
-  const layer = withClip.overlays.filter((o: { id: string }) => o.id.startsWith("hookvid_"));
-  expect(layer).toHaveLength(1);
-  expect(layer[0]).toMatchObject({ kind: "video", start: 0, volume: 0, hook: withClip.hooks.variants[1].id, w: 1 });
-  expect(withClip.hooks.variants[1].code).toBe("P01-h02");
-  // the same hook again replaces the clip instead of stacking a second one
-  const second = await request.post(`/api/admin/ads/${projectId}/hook-videos`, { multipart: { file: { name: "P01 H02 klient v2.mp4", mimeType: "video/mp4", buffer: clip }, sound: "1", hideSubtitles: "1" } });
+  const docOf = async () => (await (await request.get(`/api/admin/compositions/${r1.compositionId}`)).json()).composition.document;
+  const withClip = await docOf();
+  // the expert's versions are untouched and keep their places; the client version is added after them
+  expect(withClip.hooks.variants.map((v: { code: string }) => v.code)).toEqual(["P01-h01", "P01-h02", "[klient] P01-h02"]);
+  const cv = withClip.hooks.variants[2];
+  expect(cv).toMatchObject({ client: true, title: withClip.hooks.variants[1].title });
+  // the client clip IS the hook of that version: its own file, with its sound - nothing laid over the expert
+  expect(cv.clip.assetId).not.toBe(withClip.hooks.variants[1].clip.assetId);
+  expect(cv.clip).toMatchObject({ sourceIn: 0, volume: 1, muted: false, label: "HOOK" });
+  expect(withClip.overlays.filter((o: { id: string }) => o.id.startsWith("hookvid_"))).toHaveLength(0);
+  // ...and its words are subtitles of that clip (the mock transcription)
+  expect(withClip.subtitles.segments.some((sg: { assetId: string }) => sg.assetId === cv.clip.assetId)).toBe(true);
+  // in the Studio it is a version of its own: the client's clip in place of the hook, the title still on top, the rest moved
+  await page.goto(`/studio/${r1.compositionId}?hook=2`);
+  await expect(page.getByTestId("hook-version")).toContainText("[klient] P01-h02");
+  await expect(page.getByTestId("hook-version")).toHaveValue("2");
+  await waitSavedOrIdle(page);
+  if (process.env.LP_SHOTS) await page.screenshot({ path: `${process.env.LP_SHOTS}/ads-client-hook.png` });
+  await page.goto(`/admin/ads/${projectId}`);
+  await expect(page.getByTestId("ads-studio")).toBeVisible();
+  await page.waitForLoadState("networkidle");
+  // the same hook again replaces the clip; "only as the picture" keeps the expert's hook and lays the clip under the title
+  const second = await request.post(`/api/admin/ads/${projectId}/hook-videos`, { multipart: { file: { name: "P01 H02 klient v2.mp4", mimeType: "video/mp4", buffer: clip }, sound: "0" } });
   expect(second.status()).toBe(201);
-  expect((await second.json()).replaced).toBe(true);
-  const replaced = (await (await request.get(`/api/admin/compositions/${r1.compositionId}`)).json()).composition.document.overlays.filter((o: { id: string }) => o.id.startsWith("hookvid_"));
-  expect(replaced).toHaveLength(1);
-  expect(replaced[0]).toMatchObject({ volume: 1, hideSubtitles: true });
+  expect(await second.json()).toMatchObject({ replaced: true, sound: false, code: "[klient] P01-h02" });
+  const pic = await docOf();
+  expect(pic.hooks.variants).toHaveLength(3);
+  expect(pic.hooks.variants[2].clip.assetId).toBe(pic.hooks.variants[1].clip.assetId);
+  const layers = pic.overlays.filter((o: { id: string }) => o.id.startsWith("hookvid_"));
+  expect(layers).toHaveLength(1);
+  expect(layers[0]).toMatchObject({ kind: "video", start: 0, volume: 0, hook: pic.hooks.variants[2].id });
+  expect(pic.overlays[0].id).toBe(layers[0].id);
+  // back to "the client says the hook" for the rest of the test
+  expect((await request.post(`/api/admin/ads/${projectId}/hook-videos`, { multipart: { file: { name: "p01-h02.mp4", mimeType: "video/mp4", buffer: clip } } })).status()).toBe(201);
+  // the client version exports like any other hook version: a real MP4 as long as that version's edit
+  const clientDoc = await docOf();
+  const clientRender = await (await request.post(`/api/admin/compositions/${r1.compositionId}/render`, { data: { format: "720x1280", quality: "draft", hook: 2 } })).json();
+  let done: { status: string; downloadUrl?: string; duration?: number; error?: string } = { status: "QUEUED" };
+  await expect
+    .poll(async () => (done = await (await request.get(`/api/admin/render-jobs/${clientRender.id}`)).json()).status, { timeout: 240_000, intervals: [2000] })
+    .toMatch(/SUCCEEDED|FAILED/);
+  expect(done.error ?? "").toBe("");
+  expect(done.status).toBe("SUCCEEDED");
+  const clientHookLen = clientDoc.hooks.variants[2].clip.sourceOut - clientDoc.hooks.variants[2].clip.sourceIn;
+  const expertLen = clientDoc.clips.find((c: { id: string }) => c.id === clientDoc.hooks.clipId);
+  const clientTotal = Math.max(...clientDoc.clips.map((c: { start: number; sourceIn: number; sourceOut: number }) => c.start + c.sourceOut - c.sourceIn));
+  // the active version is the expert's, so the client version is longer or shorter by the hooks' difference
+  expect(Math.abs((done.duration ?? 0) - (clientTotal + clientHookLen - (expertLen.sourceOut - expertLen.sourceIn)))).toBeLessThan(0.6);
+  expect((await (await request.get(done.downloadUrl!)).body()).subarray(4, 8).toString()).toBe("ftyp");
 
   // a second file through the page (sliced upload in the browser)
   await page.getByTestId("ads-video-input").setInputFiles({ name: "nagranie-2.mp4", mimeType: "video/mp4", buffer: buf });

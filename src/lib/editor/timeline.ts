@@ -727,7 +727,7 @@ export function switchHook(doc: EditorDocument, index: number): EditorDocument {
   const others = { ...doc, hooks: { ...h, active: index, variants }, clips: doc.clips.filter((c) => !drop.has(c.id) || c.id === cur.id) };
   let out = shiftFrom(others, regionEnd - 0.04, d, h.clipId);
   // the finishing set on the edit (background, picture, enhanced voice of that file) carries over
-  const finish = (p: Omit<AVClip, "id" | "start">) => ({
+  const finish = (p: Omit<AVClip, "id" | "start">) => p.assetId !== cur.assetId && (next.client || h.variants[h.active]?.client) ? { background: p.background, look: p.look, audioAssetId: p.audioAssetId } : ({
     background: cur.background ?? p.background,
     look: cur.look ?? p.look,
     audioAssetId: p.assetId === cur.assetId ? (cur.audioAssetId ?? p.audioAssetId) : (doc.clips.find((x) => x.assetId === p.assetId && x.audioAssetId)?.audioAssetId ?? p.audioAssetId),

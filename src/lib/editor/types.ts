@@ -321,6 +321,8 @@ export interface HookVariant {
   pieces?: Array<Omit<AVClip, "id" | "start"> & { offset: number }>;
   /** A/B test with a narrator: this version's question narration and its subtitles */
   narration?: { clip: Omit<AudioClip, "id" | "start">; subs: { baseAssetId: string; segments: SubtitleSegment[] } | null } | null;
+  /** a version with a client clip ("[klient] P01-h05"), next to the expert's own version of the same hook */
+  client?: boolean;
 }
 
 export interface HookVariants {
