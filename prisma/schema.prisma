@@ -195,6 +195,8 @@ model Project {
   adwordsHistory     AdwordsHistoryImport[]
   adFootage          AdFootage[]
   adReels            AdReel[]
+  sequenceClips      SequenceClip[]
+  sequenceFilms      SequenceFilm[]
   name               String
   description        String?
   themeId            String?
@@ -569,6 +571,49 @@ model AdFootage {
   updatedAt       DateTime @updatedAt
 
   @@index([projectId])
+}
+
+/// Sekwencja: one ready-cut fragment (the expert, a client, a title card) uploaded for the sequence films
+model SequenceClip {
+  id          String   @id @default(cuid())
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// the file name: the films' parts refer to it
+  name        String
+  assetId     String
+  durationSec Float
+  /// [{ text, start, end }] for the subtitles (from the package's manifest)
+  words       Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([projectId, name])
+}
+
+/// Sekwencja: one film of an e-mail / thank-you-page sequence in one version, an edit made of clips
+model SequenceFilm {
+  id            String   @id @default(cuid())
+  projectId     String
+  project       Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// "0" (thank-you page), "1"… "7"
+  code          String
+  /// "A", "B"… - the same film with other takes
+  version       String   @default("A")
+  title         String
+  /// the e-mail's subject
+  subject       String?
+  /// what differs in this version / what to check
+  note          String?
+  /// [{ clip, label }] in order (clip = SequenceClip.name)
+  parts         Json
+  compositionId String?
+  order         Int      @default(0)
+  /// review: TODO | OK | FIX
+  review        String   @default("TODO")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([projectId, code, version])
 }
 
 /// Ads Studio: one reel of the script and where its parts were found in the footage

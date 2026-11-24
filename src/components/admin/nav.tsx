@@ -19,6 +19,7 @@ import {
   SlidersHorizontal,
   Sparkles,
   Target,
+  ListVideo,
   UserCog,
   Users,
   type LucideIcon,
@@ -182,6 +183,7 @@ export function AdminNav({ vertical = false, projects, current: remembered, role
         ...(ads ? [{ href: `/admin/projects/${current.id}`, label: "Montaże i eksport", icon: Clapperboard, match: (p: string) => p === `/admin/projects/${current.id}` }] : []),
         { href: `/admin/projects/${current.id}/social`, label: "Harmonogram social", icon: CalendarDays, match: (p: string) => p === `/admin/projects/${current.id}/social` },
         { href: `/admin/adwords/${current.id}`, label: "Performance Ads", icon: Target, match: (p: string) => p === `/admin/adwords/${current.id}` },
+        { href: `/admin/sekwencja/${current.id}`, label: "Sekwencja", icon: ListVideo, match: (p: string) => p === `/admin/sekwencja/${current.id}` },
       ]
     : [];
   // Projekt → Ustawienia: its theme, people (with experts), narrator voices, general

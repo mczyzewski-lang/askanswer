@@ -1,0 +1,102 @@
+import { execFileSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { expect, test } from "@playwright/test";
+import { unzipSync } from "fflate";
+import { adminRequest, demoProject, login } from "./helpers";
+
+/**
+ * Sekwencja: a package of ready-cut clips + manifest.json becomes films (in versions), each an
+ * ordinary 1:1 Studio edit that can be reviewed and exported; all exports come as one ZIP.
+ */
+test("sequence: a package of clips → films in versions → review → 1:1 exports in one ZIP", async ({ page, request }) => {
+  test.setTimeout(420_000);
+  await adminRequest(request);
+  const { project } = await demoProject(request);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "seq-"));
+  // three square clips cut from the fixture; the card has no sound
+  const cut = (name: string, ss: number, t: number, audio = true) =>
+    execFileSync("ffmpeg", ["-v", "error", "-y", "-ss", String(ss), "-t", String(t), "-i", "tests/fixtures/generated/sample-take.mp4", "-vf", "crop=min(iw\\,ih):min(iw\\,ih),scale=540:540,fps=30", ...(audio ? ["-c:a", "aac"] : ["-an"]), "-c:v", "libx264", "-preset", "ultrafast", path.join(dir, name)]);
+  cut("k1_kamil-otwarcie.mp4", 0, 2);
+  cut("k1_kamil-otwarcie_v2.mp4", 2, 2.5);
+  cut("c1_klient.mp4", 5, 1.5);
+  cut("p1_plansza.mp4", 7, 1, false);
+  const manifest = {
+    films: [
+      {
+        code: "1",
+        title: "Ile kosztuje rozwód?",
+        subject: "[1 z 7] Ile kosztuje rozwód?",
+        versions: [
+          { version: "A", note: "Pierwsze ujęcie otwarcia", parts: [{ clip: "p1_plansza.mp4", label: "PLANSZA" }, { clip: "k1_kamil-otwarcie.mp4", label: "KAMIL" }, { clip: "c1_klient.mp4", label: "KLIENT" }] },
+          { version: "B", note: "Drugie ujęcie otwarcia", parts: [{ clip: "p1_plansza.mp4", label: "PLANSZA" }, { clip: "k1_kamil-otwarcie_v2.mp4", label: "KAMIL" }, { clip: "c1_klient.mp4", label: "KLIENT" }] },
+        ],
+      },
+      { code: "2", title: "Największy błąd", versions: [{ version: "A", parts: [{ clip: "k1_kamil-otwarcie.mp4", label: "KAMIL" }, { clip: "brak.mp4", label: "KLIENT" }] }] },
+    ],
+    words: { "k1_kamil-otwarcie.mp4": [{ text: "Najdroższy", start: 0.2, end: 0.7 }, { text: "rozwód.", start: 0.8, end: 1.4 }], "c1_klient.mp4": [{ text: "Byłam", start: 0.1, end: 0.5 }, { text: "przerażona.", start: 0.6, end: 1.2 }] },
+  };
+  fs.writeFileSync(path.join(dir, "manifest.json"), JSON.stringify(manifest));
+
+  await login(page);
+  await page.goto(`/admin/projects/${project.id}`);
+  await page.getByRole("link", { name: "Sekwencja" }).click();
+  await expect(page.getByTestId("sequence")).toBeVisible();
+  await page.getByTestId("sequence-input").setInputFiles(fs.readdirSync(dir).map((f) => path.join(dir, f)));
+  const status = page.getByTestId("sequence-upload-status");
+  await expect(status).toContainText("Filmy: 3 wersji - 2 nowych", { timeout: 180_000 });
+  await expect(status).toContainText("Film 2A: brakuje klipów brak.mp4");
+
+  // two films; film 1 in two versions with their lengths, film 2 waits for its missing clip
+  await expect(page.getByTestId("sequence-film")).toHaveCount(2);
+  const v = page.getByTestId("sequence-film").first().getByTestId("sequence-version");
+  await expect(v).toHaveCount(2);
+  await expect(v.nth(0)).toContainText("PLANSZA ×1, KAMIL ×1, KLIENT ×1");
+  await expect(v.nth(0)).toContainText("0:05");
+  await expect(v.nth(1)).toContainText("Drugie ujęcie otwarcia");
+  await expect(page.getByTestId("sequence-film").nth(1)).toContainText("Brakuje klipów: brak.mp4");
+  await expect(page.getByTestId("sequence-film").nth(1).getByTestId("sequence-open")).toHaveCount(0);
+
+  // each version is a 1:1 Studio edit: the clips in order, subtitles from the manifest's words, no question card
+  const data = await (await request.get(`/api/admin/sequence/${project.id}`)).json();
+  const a = data.films.find((f: { code: string; version: string }) => f.code === "1" && f.version === "A");
+  const doc = (await (await request.get(`/api/admin/compositions/${a.compositionId}`)).json()).composition.document;
+  expect([doc.width, doc.height]).toEqual([1080, 1080]);
+  expect(doc.clips.map((c: { label: string }) => c.label)).toEqual(["PLANSZA", "KAMIL", "KLIENT"]);
+  expect(doc.clips[1].start).toBeCloseTo(1, 1);
+  expect(doc.clips[2].start).toBeCloseTo(3, 1);
+  expect(doc.subtitles.segments.flatMap((s: { words: Array<{ text: string }> }) => s.words.map((w) => w.text)).join(" ")).toBe("Najdroższy rozwód. Byłam przerażona.");
+  expect(doc.overlays.some((o: { role?: string }) => o.role === "question")).toBe(false);
+
+  // review marks, then the Studio opens the edit
+  await page.getByLabel("Ocena wersji 1B").selectOption("OK");
+  await expect(v.nth(1)).toHaveAttribute("data-review", "OK");
+  if (process.env.LP_SHOTS) await page.screenshot({ path: `${process.env.LP_SHOTS}/sequence.png`, fullPage: true });
+
+  // the same package again changes nothing; a version edited in the Studio is not laid out again
+  const again = await (await request.post(`/api/admin/sequence/${project.id}/manifest`, { data: manifest })).json();
+  expect(again).toMatchObject({ created: 0, updated: 0, kept: 2 });
+
+  // export all: one 1:1 MP4 per version, then one ZIP
+  await page.getByTestId("sequence-render-all").click();
+  await expect(page.getByTestId("sequence-zip")).toBeVisible({ timeout: 300_000 });
+  const zip = await request.get((await page.getByTestId("sequence-zip").getAttribute("href"))!);
+  expect(zip.status()).toBe(200);
+  const entries = unzipSync(new Uint8Array(await zip.body()));
+  const names = Object.keys(entries);
+  expect(names).toHaveLength(2);
+  const out = path.join(dir, "out.mp4");
+  fs.writeFileSync(out, Buffer.from(entries[names[0]]));
+  const probe = JSON.parse(execFileSync("ffprobe", ["-v", "error", "-print_format", "json", "-show_streams", "-show_format", out]).toString());
+  const vs = probe.streams.find((s: { codec_type: string }) => s.codec_type === "video");
+  expect([vs.width, vs.height]).toEqual([1080, 1080]);
+  expect(Math.abs(Number(probe.format.duration) - 4.5)).toBeLessThan(0.5);
+  expect(probe.streams.some((s: { codec_type: string }) => s.codec_type === "audio")).toBe(true);
+
+  await page.getByTestId("sequence-film").first().getByTestId("sequence-open").first().click();
+  await page.waitForURL(`**/studio/${a.compositionId}`);
+  await expect(page.getByTestId("save-status")).toBeVisible();
+  if (process.env.LP_SHOTS) await page.screenshot({ path: `${process.env.LP_SHOTS}/sequence-studio.png` });
+  fs.rmSync(dir, { recursive: true, force: true });
+});
