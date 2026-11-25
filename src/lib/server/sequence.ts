@@ -115,6 +115,8 @@ export function sequenceDocument(title: string, parts: Array<{ clip: string; lab
     return words.length ? buildSegments(c.assetId, words) : [];
   });
   doc.pauses = [];
+  // a square frame: the subtitles sit low, under the speaker's face and hands
+  doc.subtitles = { ...doc.subtitles, style: { ...doc.subtitles.style, y: 0.86 } };
   doc.meta.questionText = title;
   return doc;
 }

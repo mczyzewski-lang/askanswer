@@ -68,6 +68,7 @@ test("sequence: a package of clips → films in versions → review → 1:1 expo
   expect(doc.clips[2].start).toBeCloseTo(3, 1);
   expect(doc.subtitles.segments.flatMap((s: { words: Array<{ text: string }> }) => s.words.map((w) => w.text)).join(" ")).toBe("Najdroższy rozwód. Byłam przerażona.");
   expect(doc.overlays.some((o: { role?: string }) => o.role === "question")).toBe(false);
+  expect(doc.subtitles.style.y).toBeCloseTo(0.86, 2);
 
   // review marks, then the Studio opens the edit
   await page.getByLabel("Ocena wersji 1B").selectOption("OK");

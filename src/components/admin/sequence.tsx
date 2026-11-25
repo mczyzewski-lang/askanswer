@@ -5,6 +5,7 @@ import { ArrowUpRight, Download, Film, Loader2, Trash2, Upload } from "lucide-re
 import { Badge, Button, Card, EmptyState, NativeSelect, Progress, useToast } from "@/components/ui";
 import { api, cn } from "@/lib/utils";
 import { DropZone } from "@/components/drop-zone";
+import { sendChunks } from "@/lib/client/chunked-upload";
 
 interface FilmRow {
   id: string;
@@ -65,10 +66,11 @@ export function SequenceView({ id }: { id: string }) {
     const worker = async () => {
       while (next < clips.length) {
         const f = clips[next++];
-        const fd = new FormData();
-        fd.set("file", f);
         try {
-          const res = await fetch(`/api/admin/sequence/${id}/clips`, { method: "POST", body: fd });
+          // in slices: one request carries a few MB at most
+          const upload = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
+          const totalChunks = await sendChunks(f, (i) => `/api/admin/sequence/${id}/clips/${upload}/${i}`, () => {}, { parallel: 2 });
+          const res = await fetch(`/api/admin/sequence/${id}/clips/${upload}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: f.name, totalChunks }) });
           const d = (await res.json().catch(() => ({}))) as { error?: string };
           if (!res.ok) log.push({ ok: false, text: d.error ?? `${f.name}: błąd ${res.status}` });
         } catch (e) {
