@@ -301,7 +301,8 @@ export function drawTypo(ctx: Ctx, doc: EditorDocument, o: TypoOverlay, t: numbe
     case "stairWipe": {
       // real time (not `settled`): cover in 0.5 s, hold with the title, uncover in the last 0.5 s
       const local = Math.max(0, t - o.start);
-      const total = Math.max(1.2, end - o.start);
+      // with a title it needs time to be read; without one it is a quick wipe
+      const total = Math.max(o.text.trim() ? 1.2 : 0.4, end - o.start);
       const inLen = Math.min(0.5, total / 3) / speed;
       const outLen = inLen;
       const cover = clamp(local / inLen); // bands arriving from the left

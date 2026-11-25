@@ -365,6 +365,8 @@ export interface EditorDocument {
   pauses: PauseSuggestion[];
   /** CTA end card after the last frame (project setting, synced on load / export) */
   endCard?: EndCard;
+  /** this video goes without the project's CTA end card */
+  noEndCard?: boolean;
   /** the question shown as a phone call while the narrator reads it */
   callStyle?: CallStyle;
   /** Ads Studio: reels that differ only in the hook — one edit, the hook clip swapped per version */

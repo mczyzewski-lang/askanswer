@@ -71,6 +71,19 @@ function EndCardProps() {
       <Row label={`Czas: ${card.seconds} s`}>
         <Slider value={card.seconds} min={1} max={10} step={0.5} onChange={(v) => set({ seconds: v })} format={(v) => `${v} s`} />
       </Row>
+      <SButton
+        variant="danger"
+        data-testid="endcard-remove"
+        onClick={() => {
+          apply((d) => {
+            const { endCard: _gone, ...rest } = d;
+            return { ...rest, noEndCard: true };
+          });
+          useStudio.getState().select(null);
+        }}
+      >
+        <Trash2 /> Usuń planszę CTA z tego filmu
+      </SButton>
       {card.custom ? (
         <SButton variant="ghost" onClick={() => apply((d) => (d.endCard ? { ...d, endCard: { ...d.endCard, custom: false } } : d))}>
           Jak w ustawieniach projektu (po zapisie i odświeżeniu)
@@ -806,6 +819,14 @@ function CompositionProps() {
         </Row>
         <p className="text-[11.5px] text-studio-muted">Strefy pokazują, gdzie aplikacje nakładają swoje przyciski. Nie pojawiają się w eksporcie.</p>
       </Section>
+      {doc.noEndCard ? (
+        <Section title="Plansza CTA">
+          <p className="text-[12px] text-studio-muted">Ten film nie ma planszy CTA z ustawień projektu.</p>
+          <SButton variant="ghost" data-testid="endcard-restore" onClick={() => apply((d) => ({ ...d, noEndCard: false }))}>
+            Przywróć planszę CTA (pojawi się po zapisie i odświeżeniu)
+          </SButton>
+        </Section>
+      ) : null}
       <Section title="Motyw">
         <div className="flex flex-wrap gap-1.5">
           {(["primary", "accent", "highlight", "secondary", "text", "background"] as const).map((k) => (

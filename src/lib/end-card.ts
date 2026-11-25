@@ -8,7 +8,8 @@ type CtaProject = { ctaEnabled: boolean; ctaUrl: string | null; ctaText: string 
  */
 export function applyEndCard(doc: EditorDocument, p: CtaProject) {
   const on = p.ctaEnabled && !!(p.ctaUrl?.trim() || p.ctaText?.trim());
-  if (!on) {
+  // switched off for this one video in the Studio
+  if (!on || doc.noEndCard) {
     delete doc.endCard;
     return;
   }

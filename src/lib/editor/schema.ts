@@ -211,6 +211,7 @@ export const EditorDocumentSchema = z.object({
     })
     .optional(),
   endCard: z.object({ seconds: num.min(1).max(10), url: z.string().max(200), text: z.string().max(200).nullable(), placement: z.enum(["append", "overlay"]).optional(), custom: z.boolean().optional() }).optional(),
+  noEndCard: z.boolean().optional(),
   meta: z.object({
     questionText: z.string().max(2000),
     mode: z.enum(["CONTINUOUS", "ANSWER_ONLY"]),

@@ -14,6 +14,8 @@ test("sequence: a package of clips → films in versions → review → 1:1 expo
   test.setTimeout(420_000);
   await adminRequest(request);
   const { project } = await demoProject(request);
+  // the project has its own CTA end card: the films of a sequence go without it
+  expect((await request.patch(`/api/admin/projects/${project.id}`, { data: { ctaEnabled: true, ctaUrl: "kancelaria.pl", ctaText: "Umów konsultację", ctaSeconds: 3 } })).ok()).toBe(true);
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "seq-"));
   // three square clips cut from the fixture; the card has no sound
   const cut = (name: string, ss: number, t: number, audio = true) =>
@@ -69,6 +71,14 @@ test("sequence: a package of clips → films in versions → review → 1:1 expo
   expect(doc.subtitles.segments.flatMap((s: { words: Array<{ text: string }> }) => s.words.map((w) => w.text)).join(" ")).toBe("Najdroższy rozwód. Byłam przerażona.");
   expect(doc.overlays.some((o: { role?: string }) => o.role === "question")).toBe(false);
   expect(doc.subtitles.style.y).toBeCloseTo(0.86, 2);
+  expect(doc.noEndCard).toBe(true);
+  expect(doc.endCard).toBeUndefined();
+  // the cut to the client's words gets the quick stair wipe without a title, its middle on the cut; card → expert stays a plain cut
+  const wipes = doc.overlays.filter((o: { kind: string; preset?: string }) => o.kind === "typo" && o.preset === "stairWipe");
+  expect(wipes).toHaveLength(1);
+  expect(wipes[0].text).toBe("");
+  expect((wipes[0].start + wipes[0].end) / 2).toBeCloseTo(3, 1);
+  expect(wipes[0].end - wipes[0].start).toBeLessThan(0.9);
 
   // review marks, then the Studio opens the edit
   await page.getByLabel("Ocena wersji 1B").selectOption("OK");
@@ -81,7 +91,7 @@ test("sequence: a package of clips → films in versions → review → 1:1 expo
 
   // explainers: sent later with a manifest that says where they go - they become layers, switched on and off per version
   cut("E1a.mp4", 8, 2, false);
-  const withExpl = { ...manifest, films: manifest.films.map((f) => ({ ...f, versions: f.versions.map((vv) => (f.code === "1" ? { ...vv, overlays: [{ clip: "E1a.mp4", at: 1.5, until: 2.8 }, { clip: "E9z.mp4", at: 3.2, until: 4 }] } : vv)) })) };
+  const withExpl = { ...manifest, films: manifest.films.map((f) => ({ ...f, versions: f.versions.map((vv) => (f.code === "1" ? { ...vv, overlays: [{ clip: "E1a.mp4", at: 1.5, until: 2.8 }, { clip: "E9z.mp4", at: 3.2, until: 4.3 }] } : vv)) })) };
   fs.writeFileSync(path.join(dir, "manifest.json"), JSON.stringify(withExpl));
   await page.getByTestId("sequence-input").setInputFiles([path.join(dir, "E1a.mp4"), path.join(dir, "manifest.json")]);
   await expect(status).toContainText("Explainery: dodano 2 warstw do filmów", { timeout: 120_000 });
@@ -99,6 +109,38 @@ test("sequence: a package of clips → films in versions → review → 1:1 expo
   await expect(ex).toContainText("1 z 1 włączonych");
   // sending the same again adds nothing
   expect((await (await request.post(`/api/admin/sequence/${project.id}/explainers`)).json()).added).toBe(0);
+
+  await expect(page.getByTestId("sequence-explainer-files")).toContainText("Explainery w bibliotece: 1 z 2 (E1a)");
+  // an explainer sent under another spelling of its name ("e9z final.MP4") is still found
+  cut("e9z final.mp4", 8, 1.2, false);
+  await page.getByTestId("sequence-input").setInputFiles([path.join(dir, "e9z final.mp4")]);
+  await expect(status).toContainText("Explainery: dodano 2 warstw do filmów.", { timeout: 120_000 });
+  await expect(ex).toContainText("2 z 2 włączonych");
+
+  // outro: a ready clip uploaded once, added to every film as its last clip (or to one), and taken out again
+  cut("moje-outro.mp4", 6, 1);
+  await page.getByTestId("sequence-outro-input").setInputFiles([path.join(dir, "moje-outro.mp4")]);
+  await expect(page.getByTestId("sequence-outro-file")).toContainText("moje-outro.mp4", { timeout: 120_000 });
+  await page.getByTestId("sequence-outro-all").click();
+  await expect(v.nth(0)).toContainText("Outro: jest na końcu");
+  await expect(v.nth(1)).toContainText("Outro: jest na końcu");
+  const clipsOf = async () => (await (await request.get(`/api/admin/compositions/${a.compositionId}`)).json()).composition.document.clips as Array<{ label: string; start: number; assetId: string }>;
+  expect((await clipsOf()).map((c) => c.label)).toEqual(["PLANSZA", "KAMIL", "KLIENT", "OUTRO"]);
+  expect((await clipsOf())[3].start).toBeCloseTo(4.5, 1);
+
+  // a clip uploaded again under the same name is a new file: the edits that use it are laid out again - with their explainers and outro
+  const before = (await clipsOf())[2].assetId;
+  cut("c1_klient.mp4", 5.2, 1.5);
+  await page.getByTestId("sequence-input").setInputFiles([path.join(dir, "c1_klient.mp4"), path.join(dir, "manifest.json")]);
+  await expect(status).toContainText("2 zaktualizowanych", { timeout: 120_000 });
+  expect((await clipsOf())[2].assetId).not.toBe(before);
+  expect((await clipsOf()).map((c) => c.label)).toEqual(["PLANSZA", "KAMIL", "KLIENT", "OUTRO"]);
+  expect(await layersOf()).toHaveLength(2);
+  await v.nth(0).getByTestId("sequence-outro-toggle").click();
+  await expect(v.nth(0)).toContainText("Outro: brak");
+  await v.nth(1).getByTestId("sequence-outro-toggle").click();
+  await expect(v.nth(1)).toContainText("Outro: brak");
+  expect((await clipsOf()).map((c) => c.label)).toEqual(["PLANSZA", "KAMIL", "KLIENT"]);
 
   // export all: one 1:1 MP4 per version, then one ZIP
   await page.getByTestId("sequence-render-all").click();
@@ -162,7 +204,9 @@ test("testimonials: films with client captions and a downloadable cover", async 
   // every client is signed when the clip starts: the name as the title, "klient Nowego Etapu" under it
   const caps = doc.overlays.filter((o: { kind: string }) => o.kind === "lowerThird");
   expect(caps.map((o: { title: string; subtitle: string }) => [o.title, o.subtitle])).toEqual([["Agnieszka", "klientka Nowego Etapu"], ["Mariusz", "klient Nowego Etapu"]]);
-  expect(caps[1].start).toBeCloseTo(3.2, 1);
+  // (after the quick wipe that covers the cut between the two clients)
+  expect(caps[1].start).toBeCloseTo(3.45, 1);
+  expect(doc.overlays.filter((o: { preset?: string }) => o.preset === "stairWipe")).toHaveLength(1);
   expect(caps[0].titleSize).toBeGreaterThan(caps[0].subtitleSize * 1.5);
   if (process.env.LP_SHOTS) await page.screenshot({ path: `${process.env.LP_SHOTS}/testimoniale.png`, fullPage: true });
   fs.rmSync(dir, { recursive: true, force: true });

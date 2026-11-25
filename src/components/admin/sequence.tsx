@@ -24,10 +24,13 @@ interface FilmRow {
   exported: boolean;
   updatedAt: string;
   explainers: { planned: number; inEdit: number; on: number; waiting: string[] };
+  outro: boolean;
 }
 interface Data {
   project: { id: string; name: string };
   clips: number;
+  outros: Array<{ name: string; durationSec: number; width: number | null; height: number | null }>;
+  explainers: { planned: number; uploaded: string[] };
   films: FilmRow[];
 }
 type Job = { id: string; filmId: string; code: string; status: string; progress: number; downloadUrl: string | null };
@@ -42,6 +45,8 @@ export function SequenceView({ id, kind = "sequence" }: { id: string; kind?: "se
   const [err, setErr] = useState<string | null>(null);
   const { toast, toastNode } = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
+  const outroRef = useRef<HTMLInputElement>(null);
+  const [outroBusy, setOutroBusy] = useState(false);
   const [up, setUp] = useState<{ done: number; total: number; current: string; log: Array<{ ok: boolean; text: string }> } | null>(null);
   const [busy, setBusy] = useState(false);
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -108,11 +113,40 @@ export function SequenceView({ id, kind = "sequence" }: { id: string; kind?: "se
     } else {
       // clips alone (e.g. the explainers sent later): the ones the films wait for go into them now
       const r = await api<{ added: number }>(`/api/admin/sequence/${id}/explainers`, { method: "POST" }).catch(() => ({ added: 0 }));
-      log.push({ ok: true, text: `Wgrano ${clips.length} klipów.${r.added ? ` Explainery: dodano ${r.added} warstw do filmów.` : " Filmy powstają po wgraniu manifest.json."}` });
+      log.push({ ok: true, text: `Wgrano ${clips.length} klipów.${r.added ? ` Explainery: dodano ${r.added} warstw do filmów.` : data?.films.length ? " Żaden z nich nie jest explainerem, na który czekają filmy (sprawdź nazwy plików, np. E0a.mp4, i czy wgrany jest aktualny manifest.json)." : " Filmy powstają po wgraniu manifest.json."}` });
     }
     setUp({ done, total, current: "", log: [...log] });
     setBusy(false);
     toast(log.some((l) => !l.ok) ? "Paczka wgrana z uwagami - zobacz listę" : "Paczka wgrana", log.some((l) => !l.ok) ? "err" : "ok");
+    await load();
+  };
+
+  // the outro: one ready clip per format (1:1, 9:16...), kept in the library under its own prefix
+  const sendOutro = async (files: File[]) => {
+    setOutroBusy(true);
+    try {
+      for (const f of files) {
+        const upload = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
+        const totalChunks = await sendChunks(f, (i) => `/api/admin/sequence/${id}/clips/${upload}/${i}`, () => {}, { parallel: 2 });
+        const res = await fetch(`/api/admin/sequence/${id}/clips/${upload}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: `outro__${f.name}`, totalChunks }) });
+        if (!res.ok) throw new Error(((await res.json().catch(() => ({}))) as { error?: string }).error ?? `${f.name}: błąd ${res.status}`);
+      }
+      toast("Outro wgrane - włącz je przy filmach albo we wszystkich naraz");
+    } catch (e) {
+      toast((e as Error).message, "err");
+    }
+    setOutroBusy(false);
+    await load();
+  };
+  const outroAll = async (on: boolean) => {
+    setOutroBusy(true);
+    try {
+      const r = await api<{ changed: number }>(`/api/admin/sequence/${id}/outro`, { method: "POST", json: { on, kind } });
+      toast(on ? `Outro dodane do ${r.changed} filmów` : `Outro usunięte z ${r.changed} filmów`);
+    } catch (e) {
+      toast((e as Error).message, "err");
+    }
+    setOutroBusy(false);
     await load();
   };
 
@@ -170,6 +204,28 @@ export function SequenceView({ id, kind = "sequence" }: { id: string; kind?: "se
           <p className={testi ? "hidden" : "text-sm text-muted"}>
             <b>Explainery</b> (pliki <code className="rounded bg-black/5 px-1">E0a.mp4</code>, <code className="rounded bg-black/5 px-1">E1b.mp4</code>…) wgrywasz tym samym przyciskiem, także później. Każdy trafia jako warstwa w miejsce, w którym Kamil mówi dany fragment. Włączasz i wyłączasz je przy wersji filmu albo pojedynczo w Studiu.
           </p>
+          {!testi && data.explainers.planned ? (
+            <p className="flex flex-wrap items-center gap-2 text-sm" data-testid="sequence-explainer-files">
+              <span className={data.explainers.uploaded.length ? "text-emerald-700" : "text-muted"}>
+                Explainery w bibliotece: {data.explainers.uploaded.length} z {data.explainers.planned}
+                {data.explainers.uploaded.length ? ` (${data.explainers.uploaded.join(", ")})` : " - wgraj pliki o nazwach jak E0a.mp4"}
+              </span>
+              {data.explainers.uploaded.length ? (
+                <button
+                  type="button"
+                  className="rounded-md border border-line px-2 py-0.5 text-xs font-medium hover:bg-black/[.04]"
+                  data-testid="sequence-explainers-apply"
+                  onClick={async () => {
+                    const r = await api<{ added: number }>(`/api/admin/sequence/${id}/explainers`, { method: "POST" }).catch(() => ({ added: 0 }));
+                    toast(r.added ? `Dodano ${r.added} warstw z explainerami` : "Wszystkie wgrane explainery są już w filmach");
+                    await load();
+                  }}
+                >
+                  Nałóż na filmy
+                </button>
+              ) : null}
+            </p>
+          ) : null}
           <div>
             <Button onClick={() => fileRef.current?.click()} disabled={busy} data-testid="sequence-upload">
               {busy ? <Loader2 className="animate-spin" /> : <Upload />} {busy ? "Wgrywam…" : "Wgraj paczkę"}
@@ -193,6 +249,53 @@ export function SequenceView({ id, kind = "sequence" }: { id: string; kind?: "se
           ) : null}
         </Card>
       </DropZone>
+
+      <Card className="space-y-3" data-testid="sequence-outro">
+        <h2 className="flex items-center gap-2 text-base font-semibold">
+          <Film className="h-4 w-4" /> Outro
+        </h2>
+        <p className="text-sm text-muted">Gotowy klip na koniec filmu. Możesz wgrać kilka formatów (1:1, 9:16, 16:9) - do każdego filmu trafi ten najbliższy jego formatowi. Outro jest zwykłym klipem na końcu montażu: w Studiu można je przesunąć, skrócić albo usunąć.</p>
+        {data.outros.length ? (
+          <ul className="space-y-1 text-sm">
+            {data.outros.map((o) => (
+              <li key={o.name} className="flex items-center gap-2" data-testid="sequence-outro-file">
+                <span className="font-medium">{o.name}</span>
+                <span className="text-xs text-muted tabular">
+                  {o.width && o.height ? `${o.width}×${o.height} · ` : ""}
+                  {o.durationSec.toFixed(1)} s
+                </span>
+                <button
+                  type="button"
+                  aria-label={`Usuń outro ${o.name}`}
+                  className="rounded p-1 text-muted hover:bg-black/5 hover:text-red-600"
+                  onClick={async () => {
+                    await fetch(`/api/admin/sequence/${id}/outro?name=${encodeURIComponent(o.name)}`, { method: "DELETE" });
+                    await load();
+                  }}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+        <div className="flex flex-wrap gap-2">
+          <Button size="sm" variant="outline" onClick={() => outroRef.current?.click()} disabled={outroBusy} data-testid="sequence-outro-upload">
+            {outroBusy ? <Loader2 className="animate-spin" /> : <Upload />} Wgraj outro
+          </Button>
+          <input ref={outroRef} type="file" multiple accept="video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm" className="hidden" data-testid="sequence-outro-input" onChange={(e) => (void sendOutro([...(e.target.files ?? [])]), (e.target.value = ""))} />
+          {data.outros.length && data.films.length ? (
+            <>
+              <Button size="sm" onClick={() => void outroAll(true)} disabled={outroBusy} data-testid="sequence-outro-all">
+                Dodaj do wszystkich filmów
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => void outroAll(false)} disabled={outroBusy || !data.films.some((f) => f.outro)}>
+                Usuń ze wszystkich
+              </Button>
+            </>
+          ) : null}
+        </div>
+      </Card>
 
       {data.films.length ? (
         <Card className="space-y-3">
@@ -283,6 +386,26 @@ export function SequenceView({ id, kind = "sequence" }: { id: string; kind?: "se
                                   {f.explainers.on === 0 ? "Włącz wszystkie" : "Wyłącz wszystkie"}
                                 </button>
                               ) : null}
+                            </p>
+                          ) : null}
+                          {data.outros.length || f.outro ? (
+                            <p className="flex flex-wrap items-center gap-2 text-xs text-muted">
+                              <span>Outro: {f.outro ? "jest na końcu" : "brak"}</span>
+                              <button
+                                type="button"
+                                className="rounded-md border border-line px-2 py-0.5 font-medium text-ink hover:bg-black/[.04]"
+                                data-testid="sequence-outro-toggle"
+                                onClick={async () => {
+                                  try {
+                                    await api(`/api/admin/sequence/films/${f.id}`, { method: "PATCH", json: { outro: !f.outro } });
+                                  } catch (e) {
+                                    toast((e as Error).message, "err");
+                                  }
+                                  await load();
+                                }}
+                              >
+                                {f.outro ? "Usuń outro" : "Dodaj outro"}
+                              </button>
                             </p>
                           ) : null}
                           {f.exported ? <Badge tone="green">wyeksportowany</Badge> : null}

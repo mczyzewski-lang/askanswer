@@ -22,6 +22,8 @@ import { themeFromRow, DEFAULT_THEME } from "../themes";
 import type { AVClip, EditorDocument } from "../editor/types";
 
 export const SEQ_SIZE = 1080;
+/** length of the quick stair wipe between speakers */
+const WIPE = 0.7;
 type Word = { text: string; start: number; end: number };
 
 const word = z.object({ text: z.string().max(80), start: z.number().min(0), end: z.number().min(0) });
@@ -120,17 +122,29 @@ export function sequenceDocument(title: string, parts: Part[], clips: Map<string
   const out: AVClip[] = [];
   let t = 0;
   const captions: EditorDocument["overlays"] = [];
+  const wipes: EditorDocument["overlays"] = [];
+  const isClient = (x?: Part) => !!x && (x.label.toUpperCase() === "KLIENT" || !!x.caption);
   used.forEach(({ p, c }, k) => {
+    const prev = used[k - 1]?.p;
+    // a cut to or from a client's words: the quick stair wipe (no text), its middle on the cut
+    const wipe = k > 0 && (isClient(p) || isClient(prev)) && prev.clip !== p.clip;
+    if (wipe) {
+      const cut = Math.round(t * 30) / 30;
+      wipes.push({ id: `wipe_${k}_${Math.random().toString(36).slice(2, 8)}`, name: "Przejście schodkowe", kind: "typo", preset: "stairWipe", text: "", size: 150, start: Math.max(0, cut - WIPE / 2), end: cut + WIPE / 2, x: 0, y: 0, w: 1, h: 1, opacity: 1, animation: "none" });
+    }
     if (p.caption) {
       // top left, clear of the subtitles at the bottom: the name large, "klient Nowego Etapu" small under it
-      const start = Math.round(t * 30) / 30;
+      const start = Math.round(t * 30) / 30 + (wipe ? WIPE / 2 - 0.1 : 0);
       captions.push({ id: `cap_${k}_${Math.random().toString(36).slice(2, 8)}`, name: `Podpis: ${p.caption.title}`, kind: "lowerThird", start: start + 0.2, end: start + Math.min(c.durationSec - 0.1, 4.5), x: 0.045, y: 0.05, w: 0.5, h: 0.105, opacity: 1, animation: "slide", title: p.caption.title, subtitle: p.caption.subtitle, fill: "$primary", accent: "$accent", textColor: "$text", fontFamily: "$label", titleSize: 46, subtitleSize: 25 });
     }
     out.push({ id: `seq_${k}_${Math.random().toString(36).slice(2, 8)}`, assetId: c.assetId, sourceIn: 0, sourceOut: c.durationSec, start: Math.round(t * 30) / 30, volume: 1, muted: false, framing: { scale: 1, cx: 0.5, cy: 0.5 }, label: p.label.toUpperCase() });
     t = Math.round((t + c.durationSec) * 30) / 30;
   });
   doc.clips = out;
-  doc.overlays = [...doc.overlays, ...captions];
+  doc.overlays = [...doc.overlays, ...captions, ...wipes];
+  // these films end their own way: the project's CTA card is off (it can be brought back in the Studio)
+  doc.noEndCard = true;
+  delete doc.endCard;
   const seen = new Set<string>();
   doc.subtitles.segments = used.flatMap(({ c }) => {
     if (seen.has(c.assetId)) return [];
@@ -163,8 +177,13 @@ export async function importManifest(projectId: string, m: SequenceManifest, opt
       order++;
       const missing = [...new Set(v.parts.filter((p) => !clips.has(p.clip)).map((p) => p.clip))];
       const existing = await prisma.sequenceFilm.findUnique({ where: { projectId_code_version: { projectId, code: f.code, version: v.version } } });
-      const comp = existing?.compositionId ? await prisma.videoComposition.findUnique({ where: { id: existing.compositionId }, select: { id: true } }) : null;
-      const same = !!existing && JSON.stringify(existing.parts) === JSON.stringify(v.parts);
+      const comp = existing?.compositionId ? await prisma.videoComposition.findUnique({ where: { id: existing.compositionId }, select: { id: true, document: true } }) : null;
+      const old = comp ? (comp.document as unknown as EditorDocument) : null;
+      // a clip uploaded again is a new file: the edit still shows the old one until it is laid out again
+      const inEdit = new Set((old?.clips ?? []).map((c) => c.assetId));
+      const fresh = v.parts.every((p) => !clips.get(p.clip) || inEdit.has(clips.get(p.clip)!.assetId));
+      const hadOutro = !!old?.clips.some((c) => c.id.startsWith("outro_"));
+      const same = !!existing && JSON.stringify(existing.parts) === JSON.stringify(v.parts) && fresh;
       let compositionId = comp?.id ?? null;
       let status: (typeof report)[number]["status"] = missing.length ? "missing" : "kept";
       if (!missing.length && (!comp || !same || opts.rebuild)) {
@@ -185,12 +204,22 @@ export async function importManifest(projectId: string, m: SequenceManifest, opt
         // an edit laid out again starts without the explainer layers
         ...(status === "created" || status === "updated" ? { placed: [] } : {}),
       };
-      if (existing) await prisma.sequenceFilm.update({ where: { id: existing.id }, data });
-      else await prisma.sequenceFilm.create({ data: { projectId, code: f.code, version: v.version, ...data } });
+      const film = existing ? await prisma.sequenceFilm.update({ where: { id: existing.id }, data }) : await prisma.sequenceFilm.create({ data: { projectId, code: f.code, version: v.version, ...data } });
+      if (hadOutro && status === "updated") await setOutro(film.id, true).catch(() => null);
       report.push({ film: `${f.code}${v.version}`, status, missing });
     }
   const explainers = await applyExplainers(projectId);
   return { explainers, films: report.length, created: report.filter((r) => r.status === "created").length, updated: report.filter((r) => r.status === "updated").length, kept: report.filter((r) => r.status === "kept").length, missing: report.filter((r) => r.status === "missing") };
+}
+
+const stem = (name: string) => name.replace(/\.[a-z0-9]+$/i, "").toLowerCase();
+/** A clip by the name the manifest uses: the exact file, else the same name in another case / format, else a file that starts with it ("E0a final.mp4"). */
+export function findClip<T extends { name: string }>(clips: Map<string, T>, name: string): T | undefined {
+  const exact = clips.get(name);
+  if (exact) return exact;
+  const want = stem(name);
+  const all = [...clips.values()].filter((c) => !c.name.startsWith(OUTRO));
+  return all.find((c) => stem(c.name) === want) ?? all.find((c) => stem(c.name).startsWith(want) && !/[a-z0-9]/.test(stem(c.name)[want.length] ?? ""));
 }
 
 type Placement = { clip: string; at: number; until: number; sourceIn?: number; name?: string };
@@ -207,7 +236,7 @@ export async function applyExplainers(projectId: string) {
   const films = await prisma.sequenceFilm.findMany({ where: { projectId, compositionId: { not: null } } });
   let added = 0;
   for (const f of films) {
-    const want = ((f.overlays ?? []) as unknown as Placement[]).map((p, i) => ({ p, key: placementKey(p, i) })).filter((x) => clips.has(x.p.clip) && !f.placed.includes(x.key));
+    const want = ((f.overlays ?? []) as unknown as Placement[]).map((p, i) => ({ p, key: placementKey(p, i) })).filter((x) => !!findClip(clips, x.p.clip) && !f.placed.includes(x.key));
     if (!want.length) continue;
     for (let attempt = 0; attempt < 5; attempt++) {
       const cur = await prisma.videoComposition.findUnique({ where: { id: f.compositionId! } });
@@ -215,7 +244,7 @@ export async function applyExplainers(projectId: string) {
       const doc = cur.document as unknown as EditorDocument;
       const total = docDuration(doc);
       const layers = want.flatMap(({ p, key }) => {
-        const c = clips.get(p.clip)!;
+        const c = findClip(clips, p.clip)!;
         const sourceIn = Math.min(p.sourceIn ?? 0, Math.max(0, c.durationSec - 0.5));
         const end = Math.min(p.at + (c.durationSec - sourceIn), p.until, total);
         if (end - p.at < 0.8 || doc.overlays.some((o) => o.id === layerId(key))) return [];
@@ -251,6 +280,51 @@ export async function setExplainers(filmId: string, on: boolean) {
   throw new HttpError(409, "Montaż był w tym czasie edytowany - spróbuj ponownie");
 }
 
+/** Outro clips live in the same library under this prefix (one per format: 1:1, 9:16, 16:9...). */
+export const OUTRO = "outro__";
+
+/**
+ * The outro of a film version: the uploaded outro clip (the one whose format is closest to the film's)
+ * as the last clip of the edit - or taken out again. It is an ordinary clip: it can be moved or cut in the Studio.
+ */
+export async function setOutro(filmId: string, on: boolean) {
+  const f = await prisma.sequenceFilm.findUniqueOrThrow({ where: { id: filmId } });
+  if (!f.compositionId) return { changed: false };
+  const outros = on ? await prisma.sequenceClip.findMany({ where: { projectId: f.projectId, name: { startsWith: OUTRO } } }) : [];
+  if (on && !outros.length) throw new HttpError(400, "Najpierw wgraj klip outro");
+  const assets = on ? await prisma.mediaAsset.findMany({ where: { id: { in: outros.map((o) => o.assetId) } }, select: { id: true, width: true, height: true } }) : [];
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const cur = await prisma.videoComposition.findUniqueOrThrow({ where: { id: f.compositionId } });
+    const doc = cur.document as unknown as EditorDocument;
+    const clips = doc.clips.filter((c) => !c.id.startsWith("outro_"));
+    if (on) {
+      const ratio = doc.width / doc.height;
+      const pick = [...outros].sort((a, b) => {
+        const r = (x: typeof a) => {
+          const m = assets.find((q) => q.id === x.assetId);
+          return Math.abs(Math.log((m?.width && m.height ? m.width / m.height : 1) / ratio));
+        };
+        return r(a) - r(b);
+      })[0];
+      const end = clips.reduce((m, c) => Math.max(m, c.start + (c.sourceOut - c.sourceIn)), 0);
+      clips.push({ id: `outro_${Math.random().toString(36).slice(2, 8)}`, assetId: pick.assetId, sourceIn: 0, sourceOut: pick.durationSec, start: Math.round(end * 30) / 30, volume: 1, muted: false, framing: { scale: 1, cx: 0.5, cy: 0.5 }, label: "OUTRO" });
+    }
+    if (clips.length === doc.clips.length && !on) return { changed: false };
+    const r = await prisma.videoComposition.updateMany({ where: { id: cur.id, version: cur.version }, data: { document: { ...doc, clips } as unknown as Prisma.InputJsonValue, version: { increment: 1 } } });
+    if (r.count === 1) return { changed: true };
+    await new Promise((res) => setTimeout(res, 300));
+  }
+  throw new HttpError(409, "Montaż był w tym czasie edytowany - spróbuj ponownie");
+}
+
+/** The outro in every film of the tab (or out of every one). */
+export async function setOutroAll(projectId: string, kind: "sequence" | "testimonial", on: boolean) {
+  const films = await prisma.sequenceFilm.findMany({ where: { projectId, kind, compositionId: { not: null } }, select: { id: true } });
+  let changed = 0;
+  for (const f of films) if ((await setOutro(f.id, on)).changed) changed++;
+  return { changed };
+}
+
 /** Everything the Sekwencja tab shows. */
 export async function sequenceData(projectId: string, kind: "sequence" | "testimonial" = "sequence") {
   const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { id: true, name: true } });
@@ -261,14 +335,25 @@ export async function sequenceData(projectId: string, kind: "sequence" | "testim
     const a = coverAssets.find((x) => x.id === f.coverAssetId);
     if (a && !coverOf.has(f.id)) coverOf.set(f.id, { view: await signedUrl(a.storageKey), download: await signedUrl(a.storageKey, { download: `${f.code}_okladka.jpg` }) });
   }
-  const clips = await prisma.sequenceClip.findMany({ where: { projectId }, select: { name: true, durationSec: true } });
-  const have = new Set(clips.map((c) => c.name));
+  const all = await prisma.sequenceClip.findMany({ where: { projectId }, select: { name: true, durationSec: true, assetId: true } });
+  const clips = all.filter((c) => !c.name.startsWith(OUTRO));
+  const byName = new Map(clips.map((c) => [c.name, c]));
+  const have = { has: (n: string) => !!findClip(byName, n) };
+  const outroAssets = await prisma.mediaAsset.findMany({ where: { id: { in: all.filter((c) => c.name.startsWith(OUTRO)).map((c) => c.assetId) } }, select: { id: true, width: true, height: true } });
+  const outros = all.filter((c) => c.name.startsWith(OUTRO)).map((c) => {
+    const m = outroAssets.find((a) => a.id === c.assetId);
+    return { name: c.name.slice(OUTRO.length), durationSec: c.durationSec, width: m?.width ?? null, height: m?.height ?? null };
+  });
+  const wantedAll = new Set(films.flatMap((f) => ((f.overlays ?? []) as unknown as Placement[]).map((p) => p.clip)));
+  const explainerFiles = [...wantedAll].filter((n) => have.has(n)).sort();
   const comps = await prisma.videoComposition.findMany({ where: { id: { in: films.map((f) => f.compositionId).filter((x): x is string => !!x) } }, select: { id: true, document: true, status: true, updatedAt: true } });
   const byId = new Map(comps.map((c) => [c.id, c]));
   return {
     project,
     kind,
     clips: clips.length,
+    outros,
+    explainers: { planned: wantedAll.size, uploaded: explainerFiles.map((n) => n.replace(/\.[a-z0-9]+$/i, "")) },
     films: films.map((f) => {
       const c = f.compositionId ? byId.get(f.compositionId) : undefined;
       const parts = f.parts as unknown as Array<{ clip: string; label: string }>;
@@ -276,6 +361,7 @@ export async function sequenceData(projectId: string, kind: "sequence" | "testim
       const layers = c ? (c.document as unknown as EditorDocument).overlays.filter((o) => o.id.startsWith("expl_")) : [];
       return {
         explainers: { planned: wanted.length, inEdit: layers.length, on: layers.filter((o) => !o.hidden).length, waiting: [...new Set(wanted.filter((p) => !have.has(p.clip)).map((p) => p.clip))] },
+        outro: c ? (c.document as unknown as EditorDocument).clips.some((x) => x.id.startsWith("outro_")) : false,
         id: f.id,
         cover: coverOf.get(f.id) ?? null,
         code: f.code,

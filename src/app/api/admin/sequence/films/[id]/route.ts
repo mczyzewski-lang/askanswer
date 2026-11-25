@@ -2,14 +2,15 @@ import { z } from "zod";
 import { prisma } from "@/lib/server/db";
 import { requireAdmin } from "@/lib/server/auth";
 import { json, route } from "@/lib/server/http";
-import { setExplainers } from "@/lib/server/sequence";
+import { setExplainers, setOutro } from "@/lib/server/sequence";
 
 /** Review of a film version: its status and note. */
 export const PATCH = route(async (req: Request, ctx: { params: Promise<{ id: string }> }) => {
   await requireAdmin();
   const { id } = await ctx.params;
-  const b = z.object({ review: z.enum(["TODO", "OK", "FIX"]).optional(), note: z.string().trim().max(2000).nullable().optional(), explainers: z.boolean().optional() }).parse(await req.json());
+  const b = z.object({ review: z.enum(["TODO", "OK", "FIX"]).optional(), note: z.string().trim().max(2000).nullable().optional(), explainers: z.boolean().optional(), outro: z.boolean().optional() }).parse(await req.json());
   if (b.explainers !== undefined) await setExplainers(id, b.explainers);
+  if (b.outro !== undefined) await setOutro(id, b.outro);
   await prisma.sequenceFilm.update({ where: { id }, data: { ...(b.review ? { review: b.review } : {}), ...(b.note !== undefined ? { note: b.note } : {}) } });
   return json({ ok: true });
 });

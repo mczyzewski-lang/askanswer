@@ -1,3 +1,4 @@
+import { EditorDocumentSchema } from "@/lib/editor/schema";
 import { describe, expect, it } from "vitest";
 import { createCanvas } from "@napi-rs/canvas";
 import { parseHybridCsv } from "../../src/lib/csv-import";
@@ -68,6 +69,21 @@ describe("CTA end card", () => {
     expect(px[3]).toBe(255);
     applyEndCard(doc, { ctaEnabled: false, ctaUrl: "kancelaria.pl", ctaText: null, ctaSeconds: 3 });
     expect(docDuration(doc)).toBeCloseTo(10);
+  });
+
+  it("stays off in a video where it was removed in the Studio, until it is brought back", () => {
+    const doc = buildInitialDocument({ questionText: "Q", theme: DEFAULT_THEME, mode: "ANSWER_ONLY", recording: { assetId: "rec", duration: 10 }, segments: [], pauses: [], visibility: "FULL", questionSeconds: 4 });
+    const project = { ctaEnabled: true, ctaUrl: "kancelaria.pl", ctaText: "Umów konsultację", ctaSeconds: 3 };
+    applyEndCard(doc, project);
+    expect(doc.endCard).toBeTruthy();
+    doc.noEndCard = true;
+    applyEndCard(doc, project);
+    expect(doc.endCard).toBeUndefined();
+    expect(docDuration(doc)).toBeCloseTo(10);
+    expect(EditorDocumentSchema.parse(doc).noEndCard).toBe(true);
+    doc.noEndCard = false;
+    applyEndCard(doc, project);
+    expect(docDuration(doc)).toBeCloseTo(13);
   });
 });
 

@@ -332,6 +332,12 @@ export function Studio({ id }: { id: string }) {
     if (!sel) return;
     if (sel.kind === "overlay") st.apply((d) => ({ ...d, overlays: d.overlays.filter((o) => !sel.ids.includes(o.id)) }));
     else if (sel.kind === "subtitles" && sel.segId) st.apply((d) => ({ ...d, subtitles: { ...d.subtitles, source: "edited", segments: d.subtitles.segments.filter((s) => s.id !== sel.segId) } }));
+    else if (sel.kind === "endcard")
+      st.apply((d) => {
+        // the CTA card comes from the project: taking it out of this one video is remembered in the video
+        const { endCard: _gone, ...rest } = d;
+        return { ...rest, noEndCard: true };
+      });
     else if ("id" in sel && sel.kind !== "pause") st.apply((d) => deleteClip(d, sel.id, ripple));
     st.select(null);
   }, []);
