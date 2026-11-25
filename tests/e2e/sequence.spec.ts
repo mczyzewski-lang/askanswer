@@ -151,6 +151,7 @@ test("testimonials: films with client captions and a downloadable cover", async 
   await expect(page.getByTestId("sequence-film")).toHaveCount(1);
   await expect(page.getByTestId("sequence-film")).toContainText("Film 1 · Od czego zaczynałem");
   await expect(page.getByTestId("sequence-cover")).toBeVisible();
+  await expect.poll(() => page.getByTestId("sequence-cover").evaluate((el) => (el as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
   const cover = await request.get((await page.getByTestId("sequence-cover-download").getAttribute("href"))!);
   expect(cover.status()).toBe(200);
   expect((await cover.body()).subarray(0, 2).toString("hex")).toBe("ffd8");
