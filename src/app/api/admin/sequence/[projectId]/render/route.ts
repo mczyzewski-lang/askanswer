@@ -8,8 +8,8 @@ import { enqueue } from "@/lib/server/jobs";
 export const POST = route(async (req: Request, ctx: { params: Promise<{ projectId: string }> }) => {
   await requireAdmin();
   const { projectId } = await ctx.params;
-  const b = z.object({ filmIds: z.array(z.string().max(64)).max(200).optional(), quality: z.enum(["draft", "standard", "high"]).default("standard") }).parse(await req.json().catch(() => ({})));
-  const films = (await prisma.sequenceFilm.findMany({ where: { projectId, ...(b.filmIds?.length ? { id: { in: b.filmIds } } : {}) }, orderBy: [{ order: "asc" }] })).filter((f) => f.compositionId);
+  const b = z.object({ filmIds: z.array(z.string().max(64)).max(200).optional(), kind: z.enum(["sequence", "testimonial"]).default("sequence"), quality: z.enum(["draft", "standard", "high"]).default("standard") }).parse(await req.json().catch(() => ({})));
+  const films = (await prisma.sequenceFilm.findMany({ where: { projectId, kind: b.kind, ...(b.filmIds?.length ? { id: { in: b.filmIds } } : {}) }, orderBy: [{ order: "asc" }] })).filter((f) => f.compositionId);
   const jobs = [];
   for (const f of films) {
     if (!(await prisma.videoComposition.findUnique({ where: { id: f.compositionId! }, select: { id: true } }))) continue;

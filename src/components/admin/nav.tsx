@@ -20,6 +20,7 @@ import {
   Sparkles,
   Target,
   ListVideo,
+  MessageSquareQuote,
   UserCog,
   Users,
   type LucideIcon,
@@ -184,6 +185,7 @@ export function AdminNav({ vertical = false, projects, current: remembered, role
         { href: `/admin/projects/${current.id}/social`, label: "Harmonogram social", icon: CalendarDays, match: (p: string) => p === `/admin/projects/${current.id}/social` },
         { href: `/admin/adwords/${current.id}`, label: "Performance Ads", icon: Target, match: (p: string) => p === `/admin/adwords/${current.id}` },
         { href: `/admin/sekwencja/${current.id}`, label: "Sekwencja", icon: ListVideo, match: (p: string) => p === `/admin/sekwencja/${current.id}` },
+        { href: `/admin/testimoniale/${current.id}`, label: "Testimoniale", icon: MessageSquareQuote, match: (p: string) => p === `/admin/testimoniale/${current.id}` },
       ]
     : [];
   // Projekt → Ustawienia: its theme, people (with experts), narrator voices, general

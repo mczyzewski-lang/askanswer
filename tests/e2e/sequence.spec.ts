@@ -122,3 +122,47 @@ test("sequence: a package of clips → films in versions → review → 1:1 expo
   if (process.env.LP_SHOTS) await page.screenshot({ path: `${process.env.LP_SHOTS}/sequence-studio.png` });
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+/** Testimoniale: the same package mechanics in its own tab - clients signed by name, a cover to download per film. */
+test("testimonials: films with client captions and a downloadable cover", async ({ page, request }) => {
+  test.setTimeout(240_000);
+  await adminRequest(request);
+  const { project } = await demoProject(request);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "testi-"));
+  const cut = (name: string, ss: number, t: number) => execFileSync("ffmpeg", ["-v", "error", "-y", "-ss", String(ss), "-t", String(t), "-i", "tests/fixtures/generated/sample-take.mp4", "-vf", "crop=min(iw\\,ih):min(iw\\,ih),scale=540:540,fps=30", "-c:a", "aac", "-c:v", "libx264", "-preset", "ultrafast", path.join(dir, name)]);
+  cut("t_agnieszka.mp4", 0, 3);
+  cut("t_mariusz.mp4", 3, 2.5);
+  execFileSync("ffmpeg", ["-v", "error", "-y", "-ss", "1", "-i", "tests/fixtures/generated/sample-take.mp4", "-frames:v", "1", "-vf", "crop=min(iw\\,ih):min(iw\\,ih),scale=540:540", path.join(dir, "F1_okladka.jpg")]);
+  const manifest = {
+    kind: "testimonial",
+    films: [{ code: "F1", title: "Od czego zaczynałem", subject: "Zaczyna: Agnieszka", cover: "F1_okladka.jpg", versions: [{ version: "A", parts: [
+      { clip: "t_agnieszka.mp4", label: "KLIENT", caption: { title: "Agnieszka", subtitle: "klientka Nowego Etapu" } },
+      { clip: "t_mariusz.mp4", label: "KLIENT", caption: { title: "Mariusz", subtitle: "klient Nowego Etapu" } },
+    ] }] }],
+  };
+  fs.writeFileSync(path.join(dir, "manifest.json"), JSON.stringify(manifest));
+  await login(page);
+  await page.goto(`/admin/projects/${project.id}`);
+  await page.getByRole("link", { name: "Testimoniale" }).click();
+  await expect(page.getByRole("heading", { name: "Testimoniale" })).toBeVisible();
+  await page.getByTestId("sequence-input").setInputFiles(fs.readdirSync(dir).map((f) => path.join(dir, f)));
+  await expect(page.getByTestId("sequence-upload-status")).toContainText("Filmy: 1 wersji - 1 nowych", { timeout: 120_000 });
+  // the film is listed here (not under Sekwencja), with its cover to download
+  await expect(page.getByTestId("sequence-film")).toHaveCount(1);
+  await expect(page.getByTestId("sequence-film")).toContainText("Film 1 · Od czego zaczynałem");
+  await expect(page.getByTestId("sequence-cover")).toBeVisible();
+  const cover = await request.get((await page.getByTestId("sequence-cover-download").getAttribute("href"))!);
+  expect(cover.status()).toBe(200);
+  expect((await cover.body()).subarray(0, 2).toString("hex")).toBe("ffd8");
+  expect(cover.headers()["content-disposition"]).toContain("F1_okladka.jpg");
+  const data = await (await request.get(`/api/admin/sequence/${project.id}?kind=testimonial`)).json();
+  expect((await (await request.get(`/api/admin/sequence/${project.id}`)).json()).films.some((f: { code: string }) => f.code === "F1")).toBe(false);
+  const doc = (await (await request.get(`/api/admin/compositions/${data.films[0].compositionId}`)).json()).composition.document;
+  // every client is signed when the clip starts: the name as the title, "klient Nowego Etapu" under it
+  const caps = doc.overlays.filter((o: { kind: string }) => o.kind === "lowerThird");
+  expect(caps.map((o: { title: string; subtitle: string }) => [o.title, o.subtitle])).toEqual([["Agnieszka", "klientka Nowego Etapu"], ["Mariusz", "klient Nowego Etapu"]]);
+  expect(caps[1].start).toBeCloseTo(3.2, 1);
+  expect(caps[0].titleSize).toBeGreaterThan(caps[0].subtitleSize * 1.5);
+  if (process.env.LP_SHOTS) await page.screenshot({ path: `${process.env.LP_SHOTS}/testimoniale.png`, fullPage: true });
+  fs.rmSync(dir, { recursive: true, force: true });
+});

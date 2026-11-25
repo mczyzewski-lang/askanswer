@@ -595,7 +595,11 @@ model SequenceFilm {
   id            String   @id @default(cuid())
   projectId     String
   project       Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  /// "0" (thank-you page), "1"… "7"
+  /// which tab it belongs to: "sequence" (Sekwencja) or "testimonial" (Testimoniale)
+  kind          String   @default("sequence")
+  /// the film's cover image (a still with the hook), to download next to the film
+  coverAssetId  String?
+  /// "0" (thank-you page), "1"… "7"; "F1"… for testimonials
   code          String
   /// "A", "B"… - the same film with other takes
   version       String   @default("A")

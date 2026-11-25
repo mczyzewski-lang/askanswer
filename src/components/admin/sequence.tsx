@@ -9,6 +9,7 @@ import { sendChunks } from "@/lib/client/chunked-upload";
 
 interface FilmRow {
   id: string;
+  cover: { view: string; download: string } | null;
   code: string;
   version: string;
   title: string;
@@ -35,7 +36,8 @@ const clock = (s: number | null) => (s == null ? "-" : `${Math.floor(s / 60)}:${
 const REVIEW: Record<FilmRow["review"], string> = { TODO: "Do przejrzenia", OK: "OK", FIX: "Do poprawy" };
 
 /** Sekwencja: the films of an e-mail sequence, each in one or more versions, reviewed and exported from here. */
-export function SequenceView({ id }: { id: string }) {
+export function SequenceView({ id, kind = "sequence" }: { id: string; kind?: "sequence" | "testimonial" }) {
+  const testi = kind === "testimonial";
   const [data, setData] = useState<Data | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const { toast, toastNode } = useToast();
@@ -46,21 +48,22 @@ export function SequenceView({ id }: { id: string }) {
 
   const load = useCallback(async () => {
     try {
-      setData(await api<Data>(`/api/admin/sequence/${id}`));
+      setData(await api<Data>(`/api/admin/sequence/${id}?kind=${kind}`));
     } catch (e) {
       setErr((e as Error).message);
     }
-  }, [id]);
+  }, [id, kind]);
   useEffect(() => void load(), [load]);
 
   // the package: every clip first, then manifest.json that lays out the films
   const send = async (files: File[]) => {
     const manifest = files.find((f) => f.name.toLowerCase() === "manifest.json");
     const clips = files.filter((f) => /\.(mp4|mov|webm)$/i.test(f.name));
-    if (!manifest && !clips.length) return toast("Wybierz klipy wideo i plik manifest.json z paczki", "err");
+    const covers = files.filter((f) => /\.(jpe?g|png)$/i.test(f.name));
+    if (!manifest && !clips.length && !covers.length) return toast("Wybierz klipy wideo i plik manifest.json z paczki", "err");
     setBusy(true);
     const log: Array<{ ok: boolean; text: string }> = [];
-    const total = clips.length + (manifest ? 1 : 0);
+    const total = clips.length + covers.length + (manifest ? 1 : 0);
     let done = 0;
     setUp({ done, total, current: clips[0]?.name ?? "manifest.json", log });
     let next = 0;
@@ -82,6 +85,15 @@ export function SequenceView({ id }: { id: string }) {
       }
     };
     await Promise.all([worker(), worker()]);
+    // cover images are small: one request each
+    for (const f of covers) {
+      const fd = new FormData();
+      fd.set("file", f);
+      const res = await fetch(`/api/admin/sequence/${id}/covers`, { method: "POST", body: fd }).catch(() => null);
+      if (!res?.ok) log.push({ ok: false, text: ((await res?.json().catch(() => ({}))) as { error?: string })?.error ?? `${f.name}: nie udało się wgrać okładki` });
+      done++;
+      setUp({ done, total, current: f.name, log: [...log] });
+    }
     if (manifest) {
       try {
         const body = JSON.parse(await manifest.text());
@@ -122,7 +134,7 @@ export function SequenceView({ id }: { id: string }) {
   }, [jobs]);
   const render = async (filmIds?: string[]) => {
     try {
-      const r = await api<{ jobs: Array<{ id: string; filmId: string; code: string }> }>(`/api/admin/sequence/${id}/render`, { method: "POST", json: { filmIds } });
+      const r = await api<{ jobs: Array<{ id: string; filmId: string; code: string }> }>(`/api/admin/sequence/${id}/render`, { method: "POST", json: { filmIds, kind } });
       setJobs((old) => [...old.filter((o) => !r.jobs.some((n) => n.filmId === o.filmId)), ...r.jobs.map((j) => ({ ...j, status: "QUEUED", progress: 0, downloadUrl: null }))]);
     } catch (e) {
       toast((e as Error).message, "err");
@@ -138,11 +150,15 @@ export function SequenceView({ id }: { id: string }) {
     <div className="mx-auto max-w-5xl space-y-5 px-4 py-8" data-testid="sequence">
       <div>
         <p className="text-sm text-muted">{data.project.name}</p>
-        <h1 className="font-display text-3xl font-semibold">Sekwencja</h1>
-        <p className="mt-1 max-w-3xl text-sm text-muted">Filmy sekwencji (strona z podziękowaniem i kolejne dni), zmontowane z gotowych fragmentów w formacie 1:1. Gdy ujęcie było nagrane kilka razy, film ma kilka wersji - obejrzyj je, oznacz właściwą i wyeksportuj.</p>
+        <h1 className="font-display text-3xl font-semibold">{testi ? "Testimoniale" : "Sekwencja"}</h1>
+        <p className="mt-1 max-w-3xl text-sm text-muted">
+          {testi
+            ? "Filmy klientów na stronę główną: każdy to jeden temat i kilka krótkich wypowiedzi, w formacie 1:1, z podpisem klienta i napisami. Przy każdym filmie jest okładka do pobrania."
+            : "Filmy sekwencji (strona z podziękowaniem i kolejne dni), zmontowane z gotowych fragmentów w formacie 1:1. Gdy ujęcie było nagrane kilka razy, film ma kilka wersji - obejrzyj je, oznacz właściwą i wyeksportuj."}
+        </p>
       </div>
 
-      <DropZone accept="video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm,.json,application/json" multiple={true} label="Upuść wszystkie pliki z paczki (klipy + manifest.json)" onFiles={(fs) => void send(fs)} className="rounded-2xl" data-testid="sequence-drop">
+      <DropZone accept="video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm,.json,application/json,image/jpeg,image/png,.jpg,.jpeg,.png" multiple={true} label="Upuść wszystkie pliki z paczki (klipy + manifest.json)" onFiles={(fs) => void send(fs)} className="rounded-2xl" data-testid="sequence-drop">
         <Card className="space-y-3">
           <h2 className="flex items-center gap-2 text-base font-semibold">
             <Upload className="h-4 w-4" /> Paczka z fragmentami
@@ -150,14 +166,15 @@ export function SequenceView({ id }: { id: string }) {
           <p className="text-sm text-muted">
             Zaznacz wszystkie pliki z folderu paczki: klipy wideo i <code className="rounded bg-black/5 px-1">manifest.json</code>. Klipy trafiają do biblioteki sekwencji ({data.clips} w bibliotece), a manifest układa z nich filmy. Ponowne wgranie klipu o tej samej nazwie podmienia go.
           </p>
-          <p className="text-sm text-muted">
+          {testi ? <p className="text-sm text-muted">Okładki (pliki <code className="rounded bg-black/5 px-1">F1_okladka.jpg</code>…) wgrywasz razem z klipami - trafiają do swojego filmu.</p> : null}
+          <p className={testi ? "hidden" : "text-sm text-muted"}>
             <b>Explainery</b> (pliki <code className="rounded bg-black/5 px-1">E0a.mp4</code>, <code className="rounded bg-black/5 px-1">E1b.mp4</code>…) wgrywasz tym samym przyciskiem, także później. Każdy trafia jako warstwa w miejsce, w którym Kamil mówi dany fragment. Włączasz i wyłączasz je przy wersji filmu albo pojedynczo w Studiu.
           </p>
           <div>
             <Button onClick={() => fileRef.current?.click()} disabled={busy} data-testid="sequence-upload">
               {busy ? <Loader2 className="animate-spin" /> : <Upload />} {busy ? "Wgrywam…" : "Wgraj paczkę"}
             </Button>
-            <input ref={fileRef} type="file" multiple accept="video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm,.json,application/json" className="hidden" data-testid="sequence-input" onChange={(e) => (void send([...(e.target.files ?? [])]), (e.target.value = ""))} />
+            <input ref={fileRef} type="file" multiple accept="video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm,.json,application/json,image/jpeg,image/png,.jpg,.jpeg,.png" className="hidden" data-testid="sequence-input" onChange={(e) => (void send([...(e.target.files ?? [])]), (e.target.value = ""))} />
           </div>
           {up ? (
             <div className="space-y-1.5" data-testid="sequence-upload-status">
@@ -217,11 +234,22 @@ export function SequenceView({ id }: { id: string }) {
               const f0 = versions[0];
               return (
                 <section key={code} className="rounded-xl border border-line" data-testid="sequence-film" data-code={code}>
-                  <header className="border-b border-line px-4 py-3">
-                    <h3 className="font-semibold">
-                      {code === "0" ? "Film 0" : `Odcinek ${code}`} · {f0.title}
-                    </h3>
-                    {f0.subject ? <p className="text-xs text-muted">Temat e-maila: {f0.subject}</p> : null}
+                  <header className="flex flex-wrap items-center gap-3 border-b border-line px-4 py-3">
+                    {f0.cover ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={f0.cover.view} alt={`Okładka: ${f0.title}`} className="h-20 w-20 shrink-0 rounded-lg border border-line object-cover" data-testid="sequence-cover" />
+                    ) : null}
+                    <div className="min-w-0 flex-1">
+                      <h3 className="font-semibold">
+                        {testi ? `Film ${code.replace(/^F/i, "")}` : code === "0" ? "Film 0" : `Odcinek ${code}`} · {f0.title}
+                      </h3>
+                      {f0.subject ? <p className="text-xs text-muted">{testi ? f0.subject : `Temat e-maila: ${f0.subject}`}</p> : null}
+                    </div>
+                    {f0.cover ? (
+                      <a href={f0.cover.download} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-line px-3 text-xs font-medium hover:bg-black/[.03]" data-testid="sequence-cover-download">
+                        <Download className="h-3.5 w-3.5" /> Pobierz okładkę (JPG)
+                      </a>
+                    ) : null}
                   </header>
                   <ul>
                     {versions.map((f) => (

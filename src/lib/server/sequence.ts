@@ -12,7 +12,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "./db";
 import { env } from "./env";
 import { decodePcm, makePreviewProxy, probe, run } from "./ffmpeg";
-import { makeTempDir, putFile } from "./storage";
+import { makeTempDir, putFile, signedUrl } from "./storage";
 import { HttpError } from "./errors";
 import { computeWaveform } from "../editor/silence";
 import { buildSegments } from "../editor/subtitles";
@@ -26,18 +26,32 @@ type Word = { text: string; start: number; end: number };
 
 const word = z.object({ text: z.string().max(80), start: z.number().min(0), end: z.number().min(0) });
 export const Manifest = z.object({
+  /** the tab the films go to (default: Sekwencja) */
+  kind: z.enum(["sequence", "testimonial"]).optional(),
   films: z
     .array(
       z.object({
         code: z.string().trim().min(1).max(12),
         title: z.string().trim().min(1).max(200),
         subject: z.string().trim().max(300).nullable().optional(),
+        /** the cover image of the film (a file of the package) */
+        cover: z.string().trim().max(200).nullable().optional(),
         versions: z
           .array(
             z.object({
               version: z.string().trim().min(1).max(12),
               note: z.string().trim().max(2000).nullable().optional(),
-              parts: z.array(z.object({ clip: z.string().trim().min(1).max(200), label: z.string().trim().max(40).default("KLIP") })).min(1).max(200),
+              parts: z
+                .array(
+                  z.object({
+                    clip: z.string().trim().min(1).max(200),
+                    label: z.string().trim().max(40).default("KLIP"),
+                    /** who speaks: shown for a few seconds when the clip starts (the name large, the line under it small) */
+                    caption: z.object({ title: z.string().trim().min(1).max(80), subtitle: z.string().trim().max(120).default("") }).optional(),
+                  }),
+                )
+                .min(1)
+                .max(200),
               /** explainers over the film: where each starts, how far it may run, and from which second of its file */
               overlays: z.array(z.object({ clip: z.string().trim().min(1).max(200), at: z.number().min(0), until: z.number().min(0), sourceIn: z.number().min(0).optional(), name: z.string().trim().max(120).optional() })).max(60).optional(),
             }),
@@ -94,8 +108,9 @@ export async function ingestSequenceClip(projectId: string, src: string, name: s
 type ClipRow = { name: string; assetId: string; durationSec: number; words: unknown };
 
 /** One film version as a Studio document: the clips one after another, 1:1, subtitles from the clips' words. */
-export function sequenceDocument(title: string, parts: Array<{ clip: string; label: string }>, clips: Map<string, ClipRow>, theme: ReturnType<typeof themeFromRow>, logo: boolean): EditorDocument | null {
-  const used = parts.map((p) => ({ p, c: clips.get(p.clip) })).filter((x): x is { p: { clip: string; label: string }; c: ClipRow } => !!x.c);
+type Part = { clip: string; label: string; caption?: { title: string; subtitle: string } };
+export function sequenceDocument(title: string, parts: Part[], clips: Map<string, ClipRow>, theme: ReturnType<typeof themeFromRow>, logo: boolean): EditorDocument | null {
+  const used = parts.map((p) => ({ p, c: clips.get(p.clip) })).filter((x): x is { p: Part; c: ClipRow } => !!x.c);
   if (!used.length) return null;
   const doc = buildInitialDocument({ questionText: title, theme, mode: "ANSWER_ONLY", recording: { assetId: used[0].c.assetId, duration: used[0].c.durationSec }, narration: null, segments: [], pauses: [], visibility: "NARRATION_ONLY", questionSeconds: 0, logo });
   doc.width = SEQ_SIZE;
@@ -104,11 +119,18 @@ export function sequenceDocument(title: string, parts: Array<{ clip: string; lab
   doc.overlays = doc.overlays.filter((o) => !(o.kind === "text" && o.role === "question"));
   const out: AVClip[] = [];
   let t = 0;
+  const captions: EditorDocument["overlays"] = [];
   used.forEach(({ p, c }, k) => {
+    if (p.caption) {
+      // top left, clear of the subtitles at the bottom: the name large, "klient Nowego Etapu" small under it
+      const start = Math.round(t * 30) / 30;
+      captions.push({ id: `cap_${k}_${Math.random().toString(36).slice(2, 8)}`, name: `Podpis: ${p.caption.title}`, kind: "lowerThird", start: start + 0.2, end: start + Math.min(c.durationSec - 0.1, 4.5), x: 0.045, y: 0.05, w: 0.5, h: 0.105, opacity: 1, animation: "slide", title: p.caption.title, subtitle: p.caption.subtitle, fill: "$primary", accent: "$accent", textColor: "$text", fontFamily: "$label", titleSize: 46, subtitleSize: 25 });
+    }
     out.push({ id: `seq_${k}_${Math.random().toString(36).slice(2, 8)}`, assetId: c.assetId, sourceIn: 0, sourceOut: c.durationSec, start: Math.round(t * 30) / 30, volume: 1, muted: false, framing: { scale: 1, cx: 0.5, cy: 0.5 }, label: p.label.toUpperCase() });
     t = Math.round((t + c.durationSec) * 30) / 30;
   });
   doc.clips = out;
+  doc.overlays = [...doc.overlays, ...captions];
   const seen = new Set<string>();
   doc.subtitles.segments = used.flatMap(({ c }) => {
     if (seen.has(c.assetId)) return [];
@@ -154,7 +176,10 @@ export async function importManifest(projectId: string, m: SequenceManifest, opt
           status = comp ? "updated" : "created";
         }
       }
+      const cover = f.cover ? clips.get(f.cover) : undefined;
       const data = {
+        kind: m.kind ?? "sequence",
+        ...(cover ? { coverAssetId: cover.assetId } : {}),
         title: f.title, subject: f.subject ?? null, note: v.note ?? null, parts: v.parts as unknown as Prisma.InputJsonValue, compositionId, order,
         ...(v.overlays ? { overlays: v.overlays as unknown as Prisma.InputJsonValue } : {}),
         // an edit laid out again starts without the explainer layers
@@ -227,15 +252,22 @@ export async function setExplainers(filmId: string, on: boolean) {
 }
 
 /** Everything the Sekwencja tab shows. */
-export async function sequenceData(projectId: string) {
+export async function sequenceData(projectId: string, kind: "sequence" | "testimonial" = "sequence") {
   const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { id: true, name: true } });
-  const films = await prisma.sequenceFilm.findMany({ where: { projectId }, orderBy: [{ order: "asc" }, { code: "asc" }, { version: "asc" }] });
+  const films = await prisma.sequenceFilm.findMany({ where: { projectId, kind }, orderBy: [{ order: "asc" }, { code: "asc" }, { version: "asc" }] });
+  const coverAssets = await prisma.mediaAsset.findMany({ where: { id: { in: films.map((f) => f.coverAssetId).filter((x): x is string => !!x) } }, select: { id: true, storageKey: true } });
+  const coverOf = new Map<string, { view: string; download: string }>();
+  for (const f of films) {
+    const a = coverAssets.find((x) => x.id === f.coverAssetId);
+    if (a && !coverOf.has(f.id)) coverOf.set(f.id, { view: await signedUrl(a.storageKey), download: await signedUrl(a.storageKey, { download: `${f.code}_okladka.jpg` }) });
+  }
   const clips = await prisma.sequenceClip.findMany({ where: { projectId }, select: { name: true, durationSec: true } });
   const have = new Set(clips.map((c) => c.name));
   const comps = await prisma.videoComposition.findMany({ where: { id: { in: films.map((f) => f.compositionId).filter((x): x is string => !!x) } }, select: { id: true, document: true, status: true, updatedAt: true } });
   const byId = new Map(comps.map((c) => [c.id, c]));
   return {
     project,
+    kind,
     clips: clips.length,
     films: films.map((f) => {
       const c = f.compositionId ? byId.get(f.compositionId) : undefined;
@@ -245,6 +277,7 @@ export async function sequenceData(projectId: string) {
       return {
         explainers: { planned: wanted.length, inEdit: layers.length, on: layers.filter((o) => !o.hidden).length, waiting: [...new Set(wanted.filter((p) => !have.has(p.clip)).map((p) => p.clip))] },
         id: f.id,
+        cover: coverOf.get(f.id) ?? null,
         code: f.code,
         version: f.version,
         title: f.title,
@@ -261,4 +294,28 @@ export async function sequenceData(projectId: string) {
       };
     }),
   };
+}
+
+/** An image of the package (a film's cover): stored and kept in the clip library under its file name. */
+export async function ingestSequenceImage(projectId: string, file: File) {
+  const buf = Buffer.from(await file.arrayBuffer());
+  const jpg = buf[0] === 0xff && buf[1] === 0xd8;
+  const png = buf[0] === 0x89 && buf.toString("latin1", 1, 4) === "PNG";
+  if (!jpg && !png) throw new HttpError(415, `„${file.name}”: okładka musi być plikiem JPG albo PNG`);
+  if (buf.length > 8 * 1024 * 1024) throw new HttpError(413, `„${file.name}”: okładka jest za duża (max 8 MB)`);
+  const name = path.basename(file.name).slice(0, 200);
+  const work = await makeTempDir("seq-cover");
+  try {
+    const p = path.join(work, jpg ? "c.jpg" : "c.png");
+    await fsp.writeFile(p, buf);
+    const info = await probe(p).catch(() => null);
+    const key = `projects/${projectId}/sequence/covers/${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}.${jpg ? "jpg" : "png"}`;
+    const size = await putFile(key, p, jpg ? "image/jpeg" : "image/png");
+    const asset = await prisma.mediaAsset.create({ data: { kind: "IMAGE", projectId, storageKey: key, mimeType: jpg ? "image/jpeg" : "image/png", sizeBytes: size, width: info?.width ?? null, height: info?.height ?? null, originalName: name, meta: { source: "sequence-cover" } } });
+    await prisma.sequenceClip.upsert({ where: { projectId_name: { projectId, name } }, create: { projectId, name, assetId: asset.id, durationSec: 0 }, update: { assetId: asset.id } });
+    // films already laid out that name this cover get it at once
+    return { name };
+  } finally {
+    await fsp.rm(work, { recursive: true, force: true });
+  }
 }
