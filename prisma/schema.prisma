@@ -606,6 +606,10 @@ model SequenceFilm {
   note          String?
   /// [{ clip, label }] in order (clip = SequenceClip.name)
   parts         Json
+  /// explainers laid over the film: [{ clip, at, until, sourceIn?, name? }] (seconds on the film's timeline)
+  overlays      Json?
+  /// the explainer layers already put into the edit (so one removed in the Studio does not come back)
+  placed        String[] @default([])
   compositionId String?
   order         Int      @default(0)
   /// review: TODO | OK | FIX

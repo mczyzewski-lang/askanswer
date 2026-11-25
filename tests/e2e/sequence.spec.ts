@@ -79,6 +79,27 @@ test("sequence: a package of clips → films in versions → review → 1:1 expo
   const again = await (await request.post(`/api/admin/sequence/${project.id}/manifest`, { data: manifest })).json();
   expect(again).toMatchObject({ created: 0, updated: 0, kept: 2 });
 
+  // explainers: sent later with a manifest that says where they go - they become layers, switched on and off per version
+  cut("E1a.mp4", 8, 2, false);
+  const withExpl = { ...manifest, films: manifest.films.map((f) => ({ ...f, versions: f.versions.map((vv) => (f.code === "1" ? { ...vv, overlays: [{ clip: "E1a.mp4", at: 1.5, until: 2.8 }, { clip: "E9z.mp4", at: 3.2, until: 4 }] } : vv)) })) };
+  fs.writeFileSync(path.join(dir, "manifest.json"), JSON.stringify(withExpl));
+  await page.getByTestId("sequence-input").setInputFiles([path.join(dir, "E1a.mp4"), path.join(dir, "manifest.json")]);
+  await expect(status).toContainText("Explainery: dodano 2 warstw do filmów", { timeout: 120_000 });
+  await expect(status).toContainText("2 bez zmian");
+  const ex = v.nth(0).getByTestId("sequence-explainers");
+  await expect(ex).toContainText("1 z 1 włączonych");
+  await expect(ex).toContainText("czekają na pliki: E9z.mp4");
+  const layersOf = async () => (await (await request.get(`/api/admin/compositions/${a.compositionId}`)).json()).composition.document.overlays.filter((o: { id: string }) => o.id.startsWith("expl_"));
+  // from its moment, for the clip's length but never past `until`; full frame, quiet
+  expect(await layersOf()).toMatchObject([{ kind: "video", start: 1.5, end: 2.8, w: 1, h: 1, fit: "cover", volume: 0.4 }]);
+  await v.nth(0).getByTestId("sequence-explainers-toggle").click();
+  await expect(ex).toContainText("0 z 1 włączonych");
+  expect((await layersOf())[0].hidden).toBe(true);
+  await v.nth(0).getByTestId("sequence-explainers-toggle").click();
+  await expect(ex).toContainText("1 z 1 włączonych");
+  // sending the same again adds nothing
+  expect((await (await request.post(`/api/admin/sequence/${project.id}/explainers`)).json()).added).toBe(0);
+
   // export all: one 1:1 MP4 per version, then one ZIP
   await page.getByTestId("sequence-render-all").click();
   await expect(page.getByTestId("sequence-zip")).toBeVisible({ timeout: 300_000 });

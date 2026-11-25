@@ -22,6 +22,7 @@ interface FilmRow {
   durationSec: number | null;
   exported: boolean;
   updatedAt: string;
+  explainers: { planned: number; inEdit: number; on: number; waiting: string[] };
 }
 interface Data {
   project: { id: string; name: string };
@@ -84,14 +85,19 @@ export function SequenceView({ id }: { id: string }) {
     if (manifest) {
       try {
         const body = JSON.parse(await manifest.text());
-        const r = await api<{ films: number; created: number; updated: number; kept: number; missing: Array<{ film: string; missing: string[] }> }>(`/api/admin/sequence/${id}/manifest`, { method: "POST", json: body });
+        const r = await api<{ films: number; created: number; updated: number; kept: number; explainers?: { added: number }; missing: Array<{ film: string; missing: string[] }> }>(`/api/admin/sequence/${id}/manifest`, { method: "POST", json: body });
         log.push({ ok: true, text: `Filmy: ${r.films} wersji - ${r.created} nowych, ${r.updated} zaktualizowanych, ${r.kept} bez zmian` });
+        if (r.explainers?.added) log.push({ ok: true, text: `Explainery: dodano ${r.explainers.added} warstw do filmów` });
         for (const m of r.missing) log.push({ ok: false, text: `Film ${m.film}: brakuje klipów ${m.missing.join(", ")}` });
       } catch (e) {
         log.push({ ok: false, text: `manifest.json: ${(e as Error).message}` });
       }
       done++;
-    } else log.push({ ok: true, text: `Wgrano ${clips.length} klipów. Filmy powstają po wgraniu manifest.json.` });
+    } else {
+      // clips alone (e.g. the explainers sent later): the ones the films wait for go into them now
+      const r = await api<{ added: number }>(`/api/admin/sequence/${id}/explainers`, { method: "POST" }).catch(() => ({ added: 0 }));
+      log.push({ ok: true, text: `Wgrano ${clips.length} klipów.${r.added ? ` Explainery: dodano ${r.added} warstw do filmów.` : " Filmy powstają po wgraniu manifest.json."}` });
+    }
     setUp({ done, total, current: "", log: [...log] });
     setBusy(false);
     toast(log.some((l) => !l.ok) ? "Paczka wgrana z uwagami - zobacz listę" : "Paczka wgrana", log.some((l) => !l.ok) ? "err" : "ok");
@@ -143,6 +149,9 @@ export function SequenceView({ id }: { id: string }) {
           </h2>
           <p className="text-sm text-muted">
             Zaznacz wszystkie pliki z folderu paczki: klipy wideo i <code className="rounded bg-black/5 px-1">manifest.json</code>. Klipy trafiają do biblioteki sekwencji ({data.clips} w bibliotece), a manifest układa z nich filmy. Ponowne wgranie klipu o tej samej nazwie podmienia go.
+          </p>
+          <p className="text-sm text-muted">
+            <b>Explainery</b> (pliki <code className="rounded bg-black/5 px-1">E0a.mp4</code>, <code className="rounded bg-black/5 px-1">E1b.mp4</code>…) wgrywasz tym samym przyciskiem, także później. Każdy trafia jako warstwa w miejsce, w którym Kamil mówi dany fragment. Włączasz i wyłączasz je przy wersji filmu albo pojedynczo w Studiu.
           </p>
           <div>
             <Button onClick={() => fileRef.current?.click()} disabled={busy} data-testid="sequence-upload">
@@ -227,6 +236,27 @@ export function SequenceView({ id }: { id: string }) {
                           </p>
                           {f.note ? <p className="text-sm">{f.note}</p> : null}
                           {f.missing.length ? <p className="text-sm text-red-600">Brakuje klipów: {f.missing.join(", ")}</p> : null}
+                          {f.explainers.planned ? (
+                            <p className="flex flex-wrap items-center gap-2 text-xs text-muted" data-testid="sequence-explainers">
+                              <span>
+                                Explainery: {f.explainers.inEdit ? `${f.explainers.on} z ${f.explainers.inEdit} włączonych` : "jeszcze nie wgrane"}
+                                {f.explainers.waiting.length ? ` · czekają na pliki: ${f.explainers.waiting.join(", ")}` : ""}
+                              </span>
+                              {f.explainers.inEdit ? (
+                                <button
+                                  type="button"
+                                  className="rounded-md border border-line px-2 py-0.5 font-medium text-ink hover:bg-black/[.04]"
+                                  data-testid="sequence-explainers-toggle"
+                                  onClick={async () => {
+                                    await api(`/api/admin/sequence/films/${f.id}`, { method: "PATCH", json: { explainers: f.explainers.on === 0 } });
+                                    await load();
+                                  }}
+                                >
+                                  {f.explainers.on === 0 ? "Włącz wszystkie" : "Wyłącz wszystkie"}
+                                </button>
+                              ) : null}
+                            </p>
+                          ) : null}
                           {f.exported ? <Badge tone="green">wyeksportowany</Badge> : null}
                         </div>
                         <NativeSelect

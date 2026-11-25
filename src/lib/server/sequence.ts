@@ -38,6 +38,8 @@ export const Manifest = z.object({
               version: z.string().trim().min(1).max(12),
               note: z.string().trim().max(2000).nullable().optional(),
               parts: z.array(z.object({ clip: z.string().trim().min(1).max(200), label: z.string().trim().max(40).default("KLIP") })).min(1).max(200),
+              /** explainers over the film: where each starts, how far it may run, and from which second of its file */
+              overlays: z.array(z.object({ clip: z.string().trim().min(1).max(200), at: z.number().min(0), until: z.number().min(0), sourceIn: z.number().min(0).optional(), name: z.string().trim().max(120).optional() })).max(60).optional(),
             }),
           )
           .min(1)
@@ -152,12 +154,76 @@ export async function importManifest(projectId: string, m: SequenceManifest, opt
           status = comp ? "updated" : "created";
         }
       }
-      const data = { title: f.title, subject: f.subject ?? null, note: v.note ?? null, parts: v.parts as unknown as Prisma.InputJsonValue, compositionId, order };
+      const data = {
+        title: f.title, subject: f.subject ?? null, note: v.note ?? null, parts: v.parts as unknown as Prisma.InputJsonValue, compositionId, order,
+        ...(v.overlays ? { overlays: v.overlays as unknown as Prisma.InputJsonValue } : {}),
+        // an edit laid out again starts without the explainer layers
+        ...(status === "created" || status === "updated" ? { placed: [] } : {}),
+      };
       if (existing) await prisma.sequenceFilm.update({ where: { id: existing.id }, data });
       else await prisma.sequenceFilm.create({ data: { projectId, code: f.code, version: v.version, ...data } });
       report.push({ film: `${f.code}${v.version}`, status, missing });
     }
-  return { films: report.length, created: report.filter((r) => r.status === "created").length, updated: report.filter((r) => r.status === "updated").length, kept: report.filter((r) => r.status === "kept").length, missing: report.filter((r) => r.status === "missing") };
+  const explainers = await applyExplainers(projectId);
+  return { explainers, films: report.length, created: report.filter((r) => r.status === "created").length, updated: report.filter((r) => r.status === "updated").length, kept: report.filter((r) => r.status === "kept").length, missing: report.filter((r) => r.status === "missing") };
+}
+
+type Placement = { clip: string; at: number; until: number; sourceIn?: number; name?: string };
+const placementKey = (p: Placement, i: number) => `${p.clip}@${i}`;
+const layerId = (key: string) => `expl_${key.replace(/[^a-zA-Z0-9]+/g, "_")}`.slice(0, 64);
+
+/**
+ * Explainers as layers: every placement of a film whose clip is in the library (and that was not
+ * placed before) becomes a full-frame video layer at its moment, running for the clip's length but
+ * never past `until`. Layers switched off or removed in the Studio stay as the editor left them.
+ */
+export async function applyExplainers(projectId: string) {
+  const clips = new Map((await prisma.sequenceClip.findMany({ where: { projectId } })).map((c) => [c.name, c]));
+  const films = await prisma.sequenceFilm.findMany({ where: { projectId, compositionId: { not: null } } });
+  let added = 0;
+  for (const f of films) {
+    const want = ((f.overlays ?? []) as unknown as Placement[]).map((p, i) => ({ p, key: placementKey(p, i) })).filter((x) => clips.has(x.p.clip) && !f.placed.includes(x.key));
+    if (!want.length) continue;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const cur = await prisma.videoComposition.findUnique({ where: { id: f.compositionId! } });
+      if (!cur) break;
+      const doc = cur.document as unknown as EditorDocument;
+      const total = docDuration(doc);
+      const layers = want.flatMap(({ p, key }) => {
+        const c = clips.get(p.clip)!;
+        const sourceIn = Math.min(p.sourceIn ?? 0, Math.max(0, c.durationSec - 0.5));
+        const end = Math.min(p.at + (c.durationSec - sourceIn), p.until, total);
+        if (end - p.at < 0.8 || doc.overlays.some((o) => o.id === layerId(key))) return [];
+        return [{ id: layerId(key), name: p.name ?? `Explainer ${p.clip.replace(/\.[a-z0-9]+$/i, "")}`, kind: "video" as const, assetId: c.assetId, start: Math.round(p.at * 30) / 30, end: Math.round(end * 30) / 30, x: 0, y: 0, w: 1, h: 1, opacity: 1, animation: "fade" as const, fit: "cover" as const, sourceIn, loop: false, volume: 0.4, radius: 0 }];
+      });
+      const next = { ...doc, overlays: [...doc.overlays, ...layers] };
+      const r = layers.length ? await prisma.videoComposition.updateMany({ where: { id: cur.id, version: cur.version }, data: { document: next as unknown as Prisma.InputJsonValue, version: { increment: 1 } } }) : { count: 1 };
+      if (r.count === 1) {
+        await prisma.sequenceFilm.update({ where: { id: f.id }, data: { placed: [...f.placed, ...want.map((x) => x.key)] } });
+        added += layers.length;
+        break;
+      }
+      await new Promise((res) => setTimeout(res, 300));
+    }
+  }
+  return { added };
+}
+
+/** Switch every explainer layer of a film version on or off (the layers stay in the edit). */
+export async function setExplainers(filmId: string, on: boolean) {
+  const f = await prisma.sequenceFilm.findUniqueOrThrow({ where: { id: filmId } });
+  if (!f.compositionId) return { changed: 0 };
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const cur = await prisma.videoComposition.findUniqueOrThrow({ where: { id: f.compositionId } });
+    const doc = cur.document as unknown as EditorDocument;
+    let changed = 0;
+    const overlays = doc.overlays.map((o) => (o.id.startsWith("expl_") && !!o.hidden === on ? (changed++, { ...o, hidden: !on }) : o));
+    if (!changed) return { changed: 0 };
+    const r = await prisma.videoComposition.updateMany({ where: { id: cur.id, version: cur.version }, data: { document: { ...doc, overlays } as unknown as Prisma.InputJsonValue, version: { increment: 1 } } });
+    if (r.count === 1) return { changed };
+    await new Promise((res) => setTimeout(res, 300));
+  }
+  throw new HttpError(409, "Montaż był w tym czasie edytowany - spróbuj ponownie");
 }
 
 /** Everything the Sekwencja tab shows. */
@@ -174,7 +240,10 @@ export async function sequenceData(projectId: string) {
     films: films.map((f) => {
       const c = f.compositionId ? byId.get(f.compositionId) : undefined;
       const parts = f.parts as unknown as Array<{ clip: string; label: string }>;
+      const wanted = (f.overlays ?? []) as unknown as Placement[];
+      const layers = c ? (c.document as unknown as EditorDocument).overlays.filter((o) => o.id.startsWith("expl_")) : [];
       return {
+        explainers: { planned: wanted.length, inEdit: layers.length, on: layers.filter((o) => !o.hidden).length, waiting: [...new Set(wanted.filter((p) => !have.has(p.clip)).map((p) => p.clip))] },
         id: f.id,
         code: f.code,
         version: f.version,
