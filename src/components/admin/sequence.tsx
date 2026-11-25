@@ -75,15 +75,30 @@ export function SequenceView({ id, kind = "sequence" }: { id: string; kind?: "se
     const worker = async () => {
       while (next < clips.length) {
         const f = clips[next++];
-        try {
-          // in slices: one request carries a few MB at most
-          const upload = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
-          const totalChunks = await sendChunks(f, (i) => `/api/admin/sequence/${id}/clips/${upload}/${i}`, () => {}, { parallel: 2 });
-          const res = await fetch(`/api/admin/sequence/${id}/clips/${upload}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: f.name, totalChunks }) });
-          const d = (await res.json().catch(() => ({}))) as { error?: string };
-          if (!res.ok) log.push({ ok: false, text: d.error ?? `${f.name}: błąd ${res.status}` });
-        } catch (e) {
-          log.push({ ok: false, text: `${f.name}: ${(e as Error).message}` });
+        // a server hiccup (a restart, a busy moment) costs one more try of this clip, not a hole in the film
+        for (let attempt = 0; ; attempt++) {
+          let problem: string | null = null;
+          let retry = false;
+          try {
+            // in slices: one request carries a few MB at most
+            const upload = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
+            const totalChunks = await sendChunks(f, (i) => `/api/admin/sequence/${id}/clips/${upload}/${i}`, () => {}, { parallel: 2 });
+            const res = await fetch(`/api/admin/sequence/${id}/clips/${upload}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: f.name, totalChunks }) });
+            const d = (await res.json().catch(() => ({}))) as { error?: string };
+            if (!res.ok) {
+              problem = d.error?.includes(f.name) ? d.error : `${f.name}: ${d.error ?? `błąd ${res.status}`}`;
+              retry = res.status >= 500 || res.status === 409;
+            }
+          } catch (e) {
+            problem = `${f.name}: ${(e as Error).message}`;
+            retry = true;
+          }
+          if (!problem) break;
+          if (!retry || attempt >= 2) {
+            log.push({ ok: false, text: problem });
+            break;
+          }
+          await new Promise((r) => setTimeout(r, 4000 * (attempt + 1)));
         }
         done++;
         setUp({ done, total, current: clips[Math.min(next, clips.length - 1)]?.name ?? "manifest.json", log: [...log] });
