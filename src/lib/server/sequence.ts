@@ -144,6 +144,8 @@ export function sequenceDocument(title: string, parts: Part[], clips: Map<string
   doc.overlays = [...doc.overlays, ...captions, ...wipes];
   // these films end their own way: the project's CTA card is off (it can be brought back in the Studio)
   doc.noEndCard = true;
+  // ready-cut material (clients, cards, an outro): the project's automatic background blur is not for it
+  doc.meta.defaults = { ...(doc.meta.defaults ?? {}), blur: true };
   delete doc.endCard;
   const seen = new Set<string>();
   doc.subtitles.segments = used.flatMap(({ c }) => {

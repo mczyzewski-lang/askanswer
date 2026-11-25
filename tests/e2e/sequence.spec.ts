@@ -15,7 +15,7 @@ test("sequence: a package of clips → films in versions → review → 1:1 expo
   await adminRequest(request);
   const { project } = await demoProject(request);
   // the project has its own CTA end card: the films of a sequence go without it
-  expect((await request.patch(`/api/admin/projects/${project.id}`, { data: { ctaEnabled: true, ctaUrl: "kancelaria.pl", ctaText: "Umów konsultację", ctaSeconds: 3 } })).ok()).toBe(true);
+  expect((await request.patch(`/api/admin/projects/${project.id}`, { data: { ctaEnabled: true, ctaUrl: "kancelaria.pl", ctaText: "Umów konsultację", ctaSeconds: 3, autoBlur: true } })).ok()).toBe(true);
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "seq-"));
   // three square clips cut from the fixture; the card has no sound
   const cut = (name: string, ss: number, t: number, audio = true) =>
@@ -72,6 +72,8 @@ test("sequence: a package of clips → films in versions → review → 1:1 expo
   expect(doc.overlays.some((o: { role?: string }) => o.role === "question")).toBe(false);
   expect(doc.subtitles.style.y).toBeCloseTo(0.86, 2);
   expect(doc.noEndCard).toBe(true);
+  // ...and without the project's automatic background blur: the clips come ready
+  expect(doc.clips.some((c: { background?: unknown }) => c.background)).toBe(false);
   expect(doc.endCard).toBeUndefined();
   // the cut to the client's words gets the quick stair wipe without a title, its middle on the cut; card → expert stays a plain cut
   const wipes = doc.overlays.filter((o: { kind: string; preset?: string }) => o.kind === "typo" && o.preset === "stairWipe");
