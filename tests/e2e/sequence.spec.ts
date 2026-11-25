@@ -166,6 +166,12 @@ test("sequence: a package of clips → films in versions → review → 1:1 expo
   expect(Math.abs(Number(probe.format.duration) - 4.5)).toBeLessThan(0.5);
   expect(probe.streams.some((s: { codec_type: string }) => s.codec_type === "audio")).toBe(true);
 
+  // film 2 waited for a clip: sent later on its own (no manifest), the film is laid out
+  cut("brak.mp4", 4, 1.2);
+  await page.getByTestId("sequence-input").setInputFiles([path.join(dir, "brak.mp4")]);
+  await expect(page.getByTestId("sequence-film").nth(1).getByTestId("sequence-open")).toBeVisible({ timeout: 120_000 });
+  await expect(page.getByTestId("sequence-film").nth(1)).not.toContainText("Brakuje klipów");
+
   await page.getByTestId("sequence-film").first().getByTestId("sequence-open").first().click();
   await page.waitForURL(`**/studio/${a.compositionId}`);
   await expect(page.getByTestId("save-status")).toBeVisible();

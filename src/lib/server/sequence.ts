@@ -241,7 +241,34 @@ const layerId = (key: string) => `expl_${key.replace(/[^a-zA-Z0-9]+/g, "_")}`.sl
  * placed before) becomes a full-frame video layer at its moment, running for the clip's length but
  * never past `until`. Layers switched off or removed in the Studio stay as the editor left them.
  */
+/**
+ * Films that could not be laid out when their manifest came (a clip was missing then) and whose clips are
+ * all there now - e.g. sent again on their own - get their edit without the manifest being sent again.
+ */
+export async function layOutWaiting(projectId: string) {
+  const films = await prisma.sequenceFilm.findMany({ where: { projectId } });
+  if (!films.length) return { laidOut: 0 };
+  const have = new Set((await prisma.videoComposition.findMany({ where: { id: { in: films.map((f) => f.compositionId).filter((x): x is string => !!x) } }, select: { id: true } })).map((c) => c.id));
+  const waiting = films.filter((f) => !f.compositionId || !have.has(f.compositionId));
+  if (!waiting.length) return { laidOut: 0 };
+  const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, include: { theme: true } });
+  const clips = new Map((await prisma.sequenceClip.findMany({ where: { projectId } })).map((c) => [c.name, c as ClipRow]));
+  const theme = project.theme ? themeFromRow(project.theme) : DEFAULT_THEME;
+  let laidOut = 0;
+  for (const f of waiting) {
+    const parts = f.parts as unknown as Part[];
+    if (!parts.length || parts.some((p) => !clips.has(p.clip))) continue;
+    const doc = sequenceDocument(f.title, parts, clips, theme, !!project.theme?.logoAssetId);
+    if (!doc) continue;
+    const comp = await prisma.videoComposition.create({ data: { projectId, name: nameOf(f.code, f.version, f.title), status: "READY_TO_EDIT", document: doc as unknown as Prisma.InputJsonValue } });
+    await prisma.sequenceFilm.update({ where: { id: f.id }, data: { compositionId: comp.id, placed: [] } });
+    laidOut++;
+  }
+  return { laidOut };
+}
+
 export async function applyExplainers(projectId: string) {
+  await layOutWaiting(projectId);
   const clips = new Map((await prisma.sequenceClip.findMany({ where: { projectId } })).map((c) => [c.name, c]));
   const films = await prisma.sequenceFilm.findMany({ where: { projectId, compositionId: { not: null } } });
   let added = 0;
