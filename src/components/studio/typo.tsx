@@ -131,7 +131,7 @@ export function TypoProps({ o, doc }: { o: TypoOverlay; doc: EditorDocument }) {
       <Row label="Motyw marki">
         <Seg value={o.motif ?? defaultMotif(doc.theme.name)} options={[["stairs", "Schodki"], ["bar", "Belka"], ["none", "Brak"]]} onChange={(v) => patch(o.id, { motif: v })} />
       </Row>
-      {o.preset !== "stairWipe" && o.preset !== "stairSteps" ? <Toggle checked={!!o.plate} onChange={(v) => patch(o.id, { plate: v })} label={o.preset === "stamp" ? "Ciemna plakietka (zamiast złotej)" : "Podkład pod tekstem (czytelniej na jasnym kadrze)"} /> : null}
+      {o.preset !== "stairWipe" && o.preset !== "stairSteps" && o.preset !== "stairMark" ? <Toggle checked={!!o.plate} onChange={(v) => patch(o.id, { plate: v })} label={o.preset === "stamp" ? "Ciemna plakietka (zamiast złotej)" : "Podkład pod tekstem (czytelniej na jasnym kadrze)"} /> : null}
       <Row label="Akcent">
         <ColorField value={o.accent ?? "$accent"} onChange={(v) => patch(o.id, { accent: v ?? "$accent" })} theme={doc.theme} />
       </Row>

@@ -120,7 +120,7 @@ export const overlay = z.discriminatedUnion("kind", [
   z.object({
     ...overlayBase,
     kind: z.literal("typo"),
-    preset: z.enum(["stairTitle", "stairSteps", "stairWipe", "kinetic", "curtain", "underline", "stamp"]),
+    preset: z.enum(["stairTitle", "stairSteps", "stairWipe", "stairMark", "kinetic", "curtain", "underline", "stamp"]),
     text: z.string().max(400),
     sub: z.string().max(200).optional(),
     size: num.min(12).max(400),

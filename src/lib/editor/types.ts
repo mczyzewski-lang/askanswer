@@ -227,7 +227,7 @@ export interface VideoOverlay extends OverlayBase {
  */
 export interface TypoOverlay extends OverlayBase {
   kind: "typo";
-  preset: "stairTitle" | "stairSteps" | "stairWipe" | "kinetic" | "curtain" | "underline" | "stamp";
+  preset: "stairTitle" | "stairSteps" | "stairWipe" | "stairMark" | "kinetic" | "curtain" | "underline" | "stamp";
   text: string;
   /** a small second line (title presets, the transition) */
   sub?: string;

@@ -23,7 +23,7 @@ import type { AVClip, EditorDocument } from "../editor/types";
 
 export const SEQ_SIZE = 1080;
 /** length of the quick stair wipe between speakers */
-const WIPE = 0.7;
+const WIPE = 1.2;
 type Word = { text: string; start: number; end: number };
 
 const word = z.object({ text: z.string().max(80), start: z.number().min(0), end: z.number().min(0) });
@@ -111,7 +111,7 @@ type ClipRow = { name: string; assetId: string; durationSec: number; words: unkn
 
 /** One film version as a Studio document: the clips one after another, 1:1, subtitles from the clips' words. */
 type Part = { clip: string; label: string; caption?: { title: string; subtitle: string } };
-export function sequenceDocument(title: string, parts: Part[], clips: Map<string, ClipRow>, theme: ReturnType<typeof themeFromRow>, logo: boolean): EditorDocument | null {
+export function sequenceDocument(title: string, parts: Part[], clips: Map<string, ClipRow>, theme: ReturnType<typeof themeFromRow>, logo: boolean, opts: { mark?: boolean } = {}): EditorDocument | null {
   const used = parts.map((p) => ({ p, c: clips.get(p.clip) })).filter((x): x is { p: Part; c: ClipRow } => !!x.c);
   if (!used.length) return null;
   const doc = buildInitialDocument({ questionText: title, theme, mode: "ANSWER_ONLY", recording: { assetId: used[0].c.assetId, duration: used[0].c.durationSec }, narration: null, segments: [], pauses: [], visibility: "NARRATION_ONLY", questionSeconds: 0, logo });
@@ -141,7 +141,10 @@ export function sequenceDocument(title: string, parts: Part[], clips: Map<string
     t = Math.round((t + c.durationSec) * 30) / 30;
   });
   doc.clips = out;
-  doc.overlays = [...doc.overlays, ...captions, ...wipes];
+  // the brand's steps in the top right corner (drawn in at the start), over the clients - not over an end card
+  const firstCard = out.find((c) => c.label === "PLANSZA" && c.start > 0);
+  const mark: EditorDocument["overlays"] = opts.mark ? [markLayer(firstCard ? firstCard.start : t)] : [];
+  doc.overlays = [...doc.overlays, ...captions, ...mark, ...wipes];
   // these films end their own way: the project's CTA card is off (it can be brought back in the Studio)
   doc.noEndCard = true;
   // ready-cut material (clients, cards, an outro): the project's automatic background blur is not for it
@@ -163,6 +166,7 @@ export function sequenceDocument(title: string, parts: Part[], clips: Map<string
 
 /** words as one comparable string (the database returns the keys in its own order) */
 const sig = (words: unknown) => (Array.isArray(words) ? (words as Word[]).map((w) => `${w.text}|${w.start}|${w.end}`).join(" ") : "");
+const markLayer = (end: number): EditorDocument["overlays"][number] => ({ id: `mark_${Math.random().toString(36).slice(2, 8)}`, name: "Schodki w narożniku", kind: "typo", preset: "stairMark", text: "", size: 60, start: 0.3, end: Math.round(end * 30) / 30, x: 0.83, y: 0.045, w: 0.12, h: 0.12, opacity: 1, animation: "none" });
 const nameOf = (code: string, version: string, title: string) => `Sekwencja ${code}${version} - ${title}`.slice(0, 180);
 
 /**
@@ -197,7 +201,7 @@ export async function importManifest(projectId: string, m: SequenceManifest, opt
       let compositionId = comp?.id ?? null;
       let status: (typeof report)[number]["status"] = missing.length ? "missing" : "kept";
       if (!missing.length && (!comp || !same || opts.rebuild)) {
-        const doc = sequenceDocument(f.title, v.parts, clips, theme, !!project.theme?.logoAssetId);
+        const doc = sequenceDocument(f.title, v.parts, clips, theme, !!project.theme?.logoAssetId, { mark: m.kind === "testimonial" });
         if (doc) {
           const name = nameOf(f.code, v.version, f.title);
           if (comp) await prisma.videoComposition.update({ where: { id: comp.id }, data: { name, document: doc as unknown as Prisma.InputJsonValue, version: { increment: 1 } } });
@@ -258,7 +262,7 @@ export async function layOutWaiting(projectId: string) {
   for (const f of waiting) {
     const parts = f.parts as unknown as Part[];
     if (!parts.length || parts.some((p) => !clips.has(p.clip))) continue;
-    const doc = sequenceDocument(f.title, parts, clips, theme, !!project.theme?.logoAssetId);
+    const doc = sequenceDocument(f.title, parts, clips, theme, !!project.theme?.logoAssetId, { mark: f.kind === "testimonial" });
     if (!doc) continue;
     const comp = await prisma.videoComposition.create({ data: { projectId, name: nameOf(f.code, f.version, f.title), status: "READY_TO_EDIT", document: doc as unknown as Prisma.InputJsonValue } });
     await prisma.sequenceFilm.update({ where: { id: f.id }, data: { compositionId: comp.id, placed: [] } });
@@ -312,6 +316,27 @@ export async function setExplainers(filmId: string, on: boolean) {
     if (!changed) return { changed: 0 };
     const r = await prisma.videoComposition.updateMany({ where: { id: cur.id, version: cur.version }, data: { document: { ...doc, overlays } as unknown as Prisma.InputJsonValue, version: { increment: 1 } } });
     if (r.count === 1) return { changed };
+    await new Promise((res) => setTimeout(res, 300));
+  }
+  throw new HttpError(409, "Montaż był w tym czasie edytowany - spróbuj ponownie");
+}
+
+/** The steps in the corner of a film version: shown, hidden, or added when the edit has none yet. */
+export async function setMark(filmId: string, on: boolean) {
+  const f = await prisma.sequenceFilm.findUniqueOrThrow({ where: { id: filmId } });
+  if (!f.compositionId) return { changed: false };
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const cur = await prisma.videoComposition.findUniqueOrThrow({ where: { id: f.compositionId } });
+    const doc = cur.document as unknown as EditorDocument;
+    const has = doc.overlays.some((o) => o.id.startsWith("mark_"));
+    let overlays = doc.overlays.map((o) => (o.id.startsWith("mark_") ? { ...o, hidden: !on } : o));
+    if (!has && on) {
+      const card = doc.clips.find((c) => c.label === "PLANSZA" || c.label === "OUTRO");
+      overlays = [...overlays, markLayer(card ? card.start : docDuration(doc))];
+    }
+    if (!has && !on) return { changed: false };
+    const r = await prisma.videoComposition.updateMany({ where: { id: cur.id, version: cur.version }, data: { document: { ...doc, overlays } as unknown as Prisma.InputJsonValue, version: { increment: 1 } } });
+    if (r.count === 1) return { changed: true };
     await new Promise((res) => setTimeout(res, 300));
   }
   throw new HttpError(409, "Montaż był w tym czasie edytowany - spróbuj ponownie");
@@ -398,6 +423,7 @@ export async function sequenceData(projectId: string, kind: "sequence" | "testim
       const layers = c ? (c.document as unknown as EditorDocument).overlays.filter((o) => o.id.startsWith("expl_")) : [];
       return {
         explainers: { planned: wanted.length, inEdit: layers.length, on: layers.filter((o) => !o.hidden).length, waiting: [...new Set(wanted.filter((p) => !have.has(p.clip)).map((p) => p.clip))] },
+        mark: c ? (c.document as unknown as EditorDocument).overlays.some((o) => o.id.startsWith("mark_") && !o.hidden) : false,
         outro: c ? (c.document as unknown as EditorDocument).clips.some((x) => x.id.startsWith("outro_")) : false,
         id: f.id,
         cover: coverOf.get(f.id) ?? null,

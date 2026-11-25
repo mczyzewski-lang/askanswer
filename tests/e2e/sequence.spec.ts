@@ -80,7 +80,8 @@ test("sequence: a package of clips → films in versions → review → 1:1 expo
   expect(wipes).toHaveLength(1);
   expect(wipes[0].text).toBe("");
   expect((wipes[0].start + wipes[0].end) / 2).toBeCloseTo(3, 1);
-  expect(wipes[0].end - wipes[0].start).toBeLessThan(0.9);
+  expect(wipes[0].end - wipes[0].start).toBeCloseTo(1.2, 1);
+  expect(doc.overlays.some((o: { preset?: string }) => o.preset === "stairMark")).toBe(false);
 
   // review marks, then the Studio opens the edit
   await page.getByLabel("Ocena wersji 1B").selectOption("OK");
@@ -219,8 +220,19 @@ test("testimonials: films with client captions and a downloadable cover", async 
   const caps = doc.overlays.filter((o: { kind: string }) => o.kind === "lowerThird");
   expect(caps.map((o: { title: string; subtitle: string }) => [o.title, o.subtitle])).toEqual([["Agnieszka", "klientka Nowego Etapu"], ["Mariusz", "klient Nowego Etapu"]]);
   // (after the quick wipe that covers the cut between the two clients)
-  expect(caps[1].start).toBeCloseTo(3.45, 1);
+  expect(caps[1].start).toBeCloseTo(3.7, 1);
   expect(doc.overlays.filter((o: { preset?: string }) => o.preset === "stairWipe")).toHaveLength(1);
+  // the brand's steps in the top right corner over the clients, switched off and on from the list
+  const markOf = async () => (await (await request.get(`/api/admin/compositions/${data.films[0].compositionId}`)).json()).composition.document.overlays.find((o: { preset?: string }) => o.preset === "stairMark");
+  expect(await markOf()).toMatchObject({ kind: "typo", text: "" });
+  expect((await markOf()).x).toBeGreaterThan(0.8);
+  expect((await markOf()).y).toBeLessThan(0.1);
+  await expect(page.getByTestId("sequence-version")).toContainText("Schodki w narożniku: włączone");
+  await page.getByTestId("sequence-mark-toggle").click();
+  await expect(page.getByTestId("sequence-version")).toContainText("Schodki w narożniku: wyłączone");
+  expect((await markOf()).hidden).toBe(true);
+  await page.getByTestId("sequence-mark-toggle").click();
+  await expect(page.getByTestId("sequence-version")).toContainText("Schodki w narożniku: włączone");
   expect(caps[0].titleSize).toBeGreaterThan(caps[0].subtitleSize * 1.5);
   if (process.env.LP_SHOTS) await page.screenshot({ path: `${process.env.LP_SHOTS}/testimoniale.png`, fullPage: true });
   fs.rmSync(dir, { recursive: true, force: true });

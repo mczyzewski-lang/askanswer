@@ -25,6 +25,7 @@ interface FilmRow {
   updatedAt: string;
   explainers: { planned: number; inEdit: number; on: number; waiting: string[] };
   outro: boolean;
+  mark: boolean;
 }
 interface Data {
   project: { id: string; name: string };
@@ -401,6 +402,22 @@ export function SequenceView({ id, kind = "sequence" }: { id: string; kind?: "se
                                   {f.explainers.on === 0 ? "Włącz wszystkie" : "Wyłącz wszystkie"}
                                 </button>
                               ) : null}
+                            </p>
+                          ) : null}
+                          {f.compositionId ? (
+                            <p className="flex flex-wrap items-center gap-2 text-xs text-muted">
+                              <span>Schodki w narożniku: {f.mark ? "włączone" : "wyłączone"}</span>
+                              <button
+                                type="button"
+                                className="rounded-md border border-line px-2 py-0.5 font-medium text-ink hover:bg-black/[.04]"
+                                data-testid="sequence-mark-toggle"
+                                onClick={async () => {
+                                  await api(`/api/admin/sequence/films/${f.id}`, { method: "PATCH", json: { mark: !f.mark } }).catch((e) => toast((e as Error).message, "err"));
+                                  await load();
+                                }}
+                              >
+                                {f.mark ? "Wyłącz" : "Włącz"}
+                              </button>
                             </p>
                           ) : null}
                           {data.outros.length || f.outro ? (

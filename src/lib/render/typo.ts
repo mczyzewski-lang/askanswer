@@ -13,6 +13,7 @@ export const TYPO_PRESETS: Array<{ key: TypoOverlay["preset"]; label: string; hi
   { key: "stairTitle", label: "Schodki: tytuł", hint: "Schodki rysują się jak w logo, linie tekstu wjeżdżają po kolei", sample: "Najpierw *plan*\npotem pozew", sub: "Rozwód krok po kroku", box: { x: 0.07, y: 0.26, w: 0.86, h: 0.24 }, size: 124, seconds: 4 },
   { key: "stairSteps", label: "Schodki: trzy kroki", hint: "Kroki procesu rosną jak stopnie w prawo (rozdziel |)", sample: "Plan | Ustalenia | Pozew", box: { x: 0.06, y: 0.22, w: 0.88, h: 0.3 }, size: 62, seconds: 5 },
   { key: "stairWipe", label: "Przejście schodkowe", hint: "Trzy pasy zasłaniają kadr schodkami, w środku tytuł, potem odsłaniają dalszy ciąg", sample: "Krok *drugi*", sub: "Ustalenia", box: { x: 0, y: 0, w: 1, h: 1 }, size: 150, seconds: 2.2 },
+  { key: "stairMark", label: "Schodki: znak w narożniku", hint: "Sam znak schodków (bez tekstu), rysuje się przy wejściu - np. w prawym górnym rogu przez cały film", sample: "", box: { x: 0.82, y: 0.05, w: 0.13, h: 0.13 }, size: 60, seconds: 6 },
   { key: "kinetic", label: "Słowo po słowie", hint: "Każde słowo wskakuje osobno, *wyróżnione* w kolorze akcentu", sample: "Rozwód bez *walki* w sądzie", box: { x: 0.06, y: 0.27, w: 0.88, h: 0.22 }, size: 140, seconds: 3.5 },
   { key: "curtain", label: "Kurtyna", hint: "Złoty pas przejeżdża przez linię i odsłania tekst", sample: "Cena znana\n*z góry*", box: { x: 0.07, y: 0.28, w: 0.86, h: 0.2 }, size: 132, seconds: 3.5 },
   { key: "underline", label: "Podkreślenie", hint: "Tekst wjeżdża, potem rysuje się odręczne podkreślenie", sample: "Porozumienie zamiast *sporu*", box: { x: 0.06, y: 0.28, w: 0.88, h: 0.2 }, size: 120, seconds: 3.5 },
@@ -482,6 +483,16 @@ export function drawTypo(ctx: Ctx, doc: EditorDocument, o: TypoOverlay, t: numbe
           ctx.restore();
         }
       }
+      break;
+    }
+
+    case "stairMark": {
+      // the brand's steps alone, drawn in when the layer starts
+      const sd = Math.min(R.w, R.h);
+      ctx.save();
+      shadowOn(ctx, u, true);
+      drawMotif(ctx, "stairs", R.x + (R.w - sd) / 2, R.y + (R.h - sd) / 2, sd, sd, seg(lt, 0, 0.9), accent, Math.max(4 * u, sd * 0.13));
+      ctx.restore();
       break;
     }
 
