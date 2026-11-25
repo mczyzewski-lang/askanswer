@@ -51,6 +51,7 @@ export function SequenceView({ id, kind = "sequence" }: { id: string; kind?: "se
   const [up, setUp] = useState<{ done: number; total: number; current: string; log: Array<{ ok: boolean; text: string }> } | null>(null);
   const [busy, setBusy] = useState(false);
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [noCard, setNoCard] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -184,7 +185,7 @@ export function SequenceView({ id, kind = "sequence" }: { id: string; kind?: "se
   }, [jobs]);
   const render = async (filmIds?: string[]) => {
     try {
-      const r = await api<{ jobs: Array<{ id: string; filmId: string; code: string }> }>(`/api/admin/sequence/${id}/render`, { method: "POST", json: { filmIds, kind } });
+      const r = await api<{ jobs: Array<{ id: string; filmId: string; code: string }> }>(`/api/admin/sequence/${id}/render`, { method: "POST", json: { filmIds, kind, noCard } });
       setJobs((old) => [...old.filter((o) => !r.jobs.some((n) => n.filmId === o.filmId)), ...r.jobs.map((j) => ({ ...j, status: "QUEUED", progress: 0, downloadUrl: null }))]);
     } catch (e) {
       toast((e as Error).message, "err");
@@ -319,7 +320,12 @@ export function SequenceView({ id, kind = "sequence" }: { id: string; kind?: "se
             <h2 className="text-base font-semibold">
               Filmy: {codes.length} · wersji: {data.films.length}
             </h2>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              {data.films.some((f) => f.labels.includes("PLANSZA")) ? (
+                <label className="flex cursor-pointer items-center gap-1.5 text-sm" title="Film kończy się na ostatniej wypowiedzi (i outro, jeśli jest). Montaż w Studiu zostaje bez zmian.">
+                  <input type="checkbox" checked={noCard} onChange={(e) => setNoCard(e.target.checked)} data-testid="sequence-no-card" /> Eksport bez planszy końcowej
+                </label>
+              ) : null}
               <Button size="sm" variant="outline" onClick={() => void render(data.films.filter((f) => f.review === "OK").map((f) => f.id))} disabled={running || !data.films.some((f) => f.review === "OK")}>
                 <Download /> Eksportuj oznaczone OK
               </Button>

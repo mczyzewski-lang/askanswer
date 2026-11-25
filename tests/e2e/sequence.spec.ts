@@ -182,19 +182,21 @@ test("sequence: a package of clips → films in versions → review → 1:1 expo
 
 /** Testimoniale: the same package mechanics in its own tab - clients signed by name, a cover to download per film. */
 test("testimonials: films with client captions and a downloadable cover", async ({ page, request }) => {
-  test.setTimeout(240_000);
+  test.setTimeout(420_000);
   await adminRequest(request);
   const { project } = await demoProject(request);
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "testi-"));
   const cut = (name: string, ss: number, t: number) => execFileSync("ffmpeg", ["-v", "error", "-y", "-ss", String(ss), "-t", String(t), "-i", "tests/fixtures/generated/sample-take.mp4", "-vf", "crop=min(iw\\,ih):min(iw\\,ih),scale=540:540,fps=30", "-c:a", "aac", "-c:v", "libx264", "-preset", "ultrafast", path.join(dir, name)]);
   cut("t_agnieszka.mp4", 0, 3);
   cut("t_mariusz.mp4", 3, 2.5);
+  cut("t_plansza.mp4", 6, 1);
   execFileSync("ffmpeg", ["-v", "error", "-y", "-ss", "1", "-i", "tests/fixtures/generated/sample-take.mp4", "-frames:v", "1", "-vf", "crop=min(iw\\,ih):min(iw\\,ih),scale=540:540", path.join(dir, "F1_okladka.jpg")]);
   const manifest = {
     kind: "testimonial",
     films: [{ code: "F1", title: "Od czego zaczynałem", subject: "Zaczyna: Agnieszka", cover: "F1_okladka.jpg", versions: [{ version: "A", parts: [
       { clip: "t_agnieszka.mp4", label: "KLIENT", caption: { title: "Agnieszka", subtitle: "klientka Nowego Etapu" } },
       { clip: "t_mariusz.mp4", label: "KLIENT", caption: { title: "Mariusz", subtitle: "klient Nowego Etapu" } },
+      { clip: "t_plansza.mp4", label: "PLANSZA" },
     ] }] }],
   };
   fs.writeFileSync(path.join(dir, "manifest.json"), JSON.stringify(manifest));
@@ -221,7 +223,8 @@ test("testimonials: films with client captions and a downloadable cover", async 
   expect(caps.map((o: { title: string; subtitle: string }) => [o.title, o.subtitle])).toEqual([["Agnieszka", "klientka Nowego Etapu"], ["Mariusz", "klient Nowego Etapu"]]);
   // (after the quick wipe that covers the cut between the two clients)
   expect(caps[1].start).toBeCloseTo(3.7, 1);
-  expect(doc.overlays.filter((o: { preset?: string }) => o.preset === "stairWipe")).toHaveLength(1);
+  // one wipe between the two clients, one into the end card
+  expect(doc.overlays.filter((o: { preset?: string }) => o.preset === "stairWipe")).toHaveLength(2);
   // the brand's steps in the top right corner over the clients, switched off and on from the list
   const markOf = async () => (await (await request.get(`/api/admin/compositions/${data.films[0].compositionId}`)).json()).composition.document.overlays.find((o: { preset?: string }) => o.preset === "stairMark");
   expect(await markOf()).toMatchObject({ kind: "typo", text: "" });
@@ -234,6 +237,19 @@ test("testimonials: films with client captions and a downloadable cover", async 
   await page.getByTestId("sequence-mark-toggle").click();
   await expect(page.getByTestId("sequence-version")).toContainText("Schodki w narożniku: włączone");
   expect(caps[0].titleSize).toBeGreaterThan(caps[0].subtitleSize * 1.5);
+  // export without the end card: the film ends on the last client (the edit itself keeps its card)
+  expect(doc.clips.map((c: { label: string }) => c.label)).toEqual(["KLIENT", "KLIENT", "PLANSZA"]);
+  await page.getByTestId("sequence-no-card").check();
+  const started = page.waitForResponse((r) => r.url().includes("/render") && r.request().method() === "POST");
+  await page.getByTestId("sequence-render-all").click();
+  const job = (await (await started).json()).jobs[0];
+  let done: { status: string; downloadUrl?: string; duration?: number } = { status: "QUEUED" };
+  await expect.poll(async () => (done = await (await request.get(`/api/admin/render-jobs/${job.id}`)).json()).status, { timeout: 180_000, intervals: [3000] }).toMatch(/SUCCEEDED|FAILED/);
+  expect(done.status).toBe("SUCCEEDED");
+  expect(done.duration).toBeCloseTo(5.5, 0);
+  expect(done.duration!).toBeLessThan(6);
+  const after = (await (await request.get(`/api/admin/compositions/${data.films[0].compositionId}`)).json()).composition.document;
+  expect(after.clips).toHaveLength(3);
   if (process.env.LP_SHOTS) await page.screenshot({ path: `${process.env.LP_SHOTS}/testimoniale.png`, fullPage: true });
   fs.rmSync(dir, { recursive: true, force: true });
 });

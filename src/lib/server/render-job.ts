@@ -11,7 +11,7 @@ import { themeFromRow } from "../themes";
 import { syncTheme } from "../question-styles";
 import { applyEndCard } from "../end-card";
 import { applyProjectDefaults } from "./project-defaults";
-import { switchHook } from "../editor/timeline";
+import { switchHook, deleteClip } from "../editor/timeline";
 import { probe } from "./ffmpeg";
 
 export interface RenderSettings {
@@ -19,6 +19,8 @@ export interface RenderSettings {
   quality: "draft" | "standard" | "high";
   /** Ads Studio: which hook version to render */
   hook?: number | null;
+  /** leave out the clips with these labels (e.g. the end card of a testimonial film), closing the gap */
+  dropLabels?: string[];
 }
 
 /** Container memory limit in bytes (cgroup v2/v1), falling back to total RAM. */
@@ -155,6 +157,16 @@ export async function runRender(renderJobId: string): Promise<void> {
         const v = doc.hooks.variants[settings.hook];
         doc = switchHook(doc, settings.hook);
         name = v.title ? `${v.code} ${v.title}` : v.code;
+      }
+      if (settings.dropLabels?.length) {
+        const drop = new Set(settings.dropLabels.map((l) => l.toUpperCase()));
+        const gone = doc.clips.filter((c) => drop.has((c.label ?? "").toUpperCase()));
+        // from the last one back, so the earlier ones keep their place while the gaps close
+        // the wipe into a dropped card goes with it (else the film would end behind the wipe)
+        const into = (o: EditorDocument["overlays"][number]) => o.kind === "typo" && o.preset === "stairWipe" && gone.some((c) => o.start < c.start && (o.end ?? Infinity) > c.start);
+        doc = { ...doc, overlays: doc.overlays.filter((o) => !into(o)) };
+        for (const c of [...gone].sort((x, y) => y.start - x.start)) doc = deleteClip(doc, c.id, true);
+        if (gone.length) name = `${name} (bez planszy)`;
       }
       await renderOne(doc, out, settings, progress(0, 0.99));
     }

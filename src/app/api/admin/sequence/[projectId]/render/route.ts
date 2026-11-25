@@ -8,12 +8,12 @@ import { enqueue } from "@/lib/server/jobs";
 export const POST = route(async (req: Request, ctx: { params: Promise<{ projectId: string }> }) => {
   await requireAdmin();
   const { projectId } = await ctx.params;
-  const b = z.object({ filmIds: z.array(z.string().max(64)).max(200).optional(), kind: z.enum(["sequence", "testimonial"]).default("sequence"), quality: z.enum(["draft", "standard", "high"]).default("standard") }).parse(await req.json().catch(() => ({})));
+  const b = z.object({ filmIds: z.array(z.string().max(64)).max(200).optional(), kind: z.enum(["sequence", "testimonial"]).default("sequence"), quality: z.enum(["draft", "standard", "high"]).default("standard"), noCard: z.boolean().optional() }).parse(await req.json().catch(() => ({})));
   const films = (await prisma.sequenceFilm.findMany({ where: { projectId, kind: b.kind, ...(b.filmIds?.length ? { id: { in: b.filmIds } } : {}) }, orderBy: [{ order: "asc" }] })).filter((f) => f.compositionId);
   const jobs = [];
   for (const f of films) {
     if (!(await prisma.videoComposition.findUnique({ where: { id: f.compositionId! }, select: { id: true } }))) continue;
-    const j = await prisma.renderJob.create({ data: { projectId, compositionId: f.compositionId, kind: "single", settings: { format: "1080x1080", quality: b.quality } } });
+    const j = await prisma.renderJob.create({ data: { projectId, compositionId: f.compositionId, kind: "single", settings: { format: "1080x1080", quality: b.quality, ...(b.noCard ? { dropLabels: ["PLANSZA"] } : {}) } } });
     await enqueue("render", { renderJobId: j.id }, { idempotencyKey: `render:${j.id}`, maxAttempts: 2 });
     jobs.push({ id: j.id, filmId: f.id, code: `${f.code}${f.version}` });
   }
