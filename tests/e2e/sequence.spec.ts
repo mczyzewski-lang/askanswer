@@ -138,6 +138,12 @@ test("sequence: a package of clips → films in versions → review → 1:1 expo
   expect((await clipsOf())[2].assetId).not.toBe(before);
   expect((await clipsOf()).map((c) => c.label)).toEqual(["PLANSZA", "KAMIL", "KLIENT", "OUTRO"]);
   expect(await layersOf()).toHaveLength(2);
+  // new word times alone (the manifest sent again) also lay the subtitles out again
+  const retimed = { ...withExpl, words: { ...manifest.words, "c1_klient.mp4": [{ text: "Byłam", start: 0.3, end: 0.7 }, { text: "przerażona.", start: 0.8, end: 1.4 }] } };
+  expect(await (await request.post(`/api/admin/sequence/${project.id}/manifest`, { data: retimed })).json()).toMatchObject({ updated: 2, kept: 0 });
+  const subs = (await (await request.get(`/api/admin/compositions/${a.compositionId}`)).json()).composition.document.subtitles.segments.flatMap((sg: { words: Array<{ text: string; start: number }> }) => sg.words);
+  expect(subs.find((w: { text: string }) => w.text === "Byłam").start).toBeCloseTo(0.3, 2);
+  expect(await (await request.post(`/api/admin/sequence/${project.id}/manifest`, { data: retimed })).json()).toMatchObject({ updated: 0, kept: 2 });
   await v.nth(0).getByTestId("sequence-outro-toggle").click();
   await expect(v.nth(0)).toContainText("Outro: brak");
   await v.nth(1).getByTestId("sequence-outro-toggle").click();

@@ -161,6 +161,8 @@ export function sequenceDocument(title: string, parts: Part[], clips: Map<string
   return doc;
 }
 
+/** words as one comparable string (the database returns the keys in its own order) */
+const sig = (words: unknown) => (Array.isArray(words) ? (words as Word[]).map((w) => `${w.text}|${w.start}|${w.end}`).join(" ") : "");
 const nameOf = (code: string, version: string, title: string) => `Sekwencja ${code}${version} - ${title}`.slice(0, 180);
 
 /**
@@ -169,7 +171,13 @@ const nameOf = (code: string, version: string, title: string) => `Sekwencja ${co
  */
 export async function importManifest(projectId: string, m: SequenceManifest, opts: { rebuild?: boolean } = {}) {
   const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, include: { theme: true } });
-  for (const [name, words] of Object.entries(m.words ?? {})) await prisma.sequenceClip.updateMany({ where: { projectId, name }, data: { words: words as unknown as Prisma.InputJsonValue } });
+  // new word times for a clip: the edits that use it get their subtitles laid out again
+  const before = new Map((await prisma.sequenceClip.findMany({ where: { projectId }, select: { name: true, words: true } })).map((c) => [c.name, sig(c.words)]));
+  const reworded = new Set<string>();
+  for (const [name, words] of Object.entries(m.words ?? {})) {
+    if (before.has(name) && before.get(name) !== sig(words)) reworded.add(name);
+    await prisma.sequenceClip.updateMany({ where: { projectId, name }, data: { words: words as unknown as Prisma.InputJsonValue } });
+  }
   const clips = new Map((await prisma.sequenceClip.findMany({ where: { projectId } })).map((c) => [c.name, c as ClipRow]));
   const theme = project.theme ? themeFromRow(project.theme) : DEFAULT_THEME;
   const report: Array<{ film: string; status: "created" | "updated" | "kept" | "missing"; missing: string[] }> = [];
@@ -183,7 +191,7 @@ export async function importManifest(projectId: string, m: SequenceManifest, opt
       const old = comp ? (comp.document as unknown as EditorDocument) : null;
       // a clip uploaded again is a new file: the edit still shows the old one until it is laid out again
       const inEdit = new Set((old?.clips ?? []).map((c) => c.assetId));
-      const fresh = v.parts.every((p) => !clips.get(p.clip) || inEdit.has(clips.get(p.clip)!.assetId));
+      const fresh = v.parts.every((p) => !clips.get(p.clip) || inEdit.has(clips.get(p.clip)!.assetId)) && !v.parts.some((p) => reworded.has(p.clip));
       const hadOutro = !!old?.clips.some((c) => c.id.startsWith("outro_"));
       const same = !!existing && JSON.stringify(existing.parts) === JSON.stringify(v.parts) && fresh;
       let compositionId = comp?.id ?? null;
