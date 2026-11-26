@@ -210,7 +210,7 @@ export function SequenceView({ id, kind = "sequence" }: { id: string; kind?: "se
       </div>
 
       <DropZone accept="video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm,.json,application/json,image/jpeg,image/png,.jpg,.jpeg,.png" multiple={true} label="Upuść wszystkie pliki z paczki (klipy + manifest.json)" onFiles={(fs) => void send(fs)} className="rounded-2xl" data-testid="sequence-drop">
-        <Card className="space-y-3">
+        <Card className="space-y-3 p-5">
           <h2 className="flex items-center gap-2 text-base font-semibold">
             <Upload className="h-4 w-4" /> Paczka z fragmentami
           </h2>
@@ -267,7 +267,7 @@ export function SequenceView({ id, kind = "sequence" }: { id: string; kind?: "se
         </Card>
       </DropZone>
 
-      <Card className="space-y-3" data-testid="sequence-outro">
+      <Card className="space-y-3 p-5" data-testid="sequence-outro">
         <h2 className="flex items-center gap-2 text-base font-semibold">
           <Film className="h-4 w-4" /> Outro
         </h2>
@@ -317,7 +317,7 @@ export function SequenceView({ id, kind = "sequence" }: { id: string; kind?: "se
       <EmbedCard id={id} kind={kind} stamp={data.films.map((f) => `${f.id}:${f.updatedAt}`).join("|")} onToast={toast} />
 
       {data.films.length ? (
-        <Card className="space-y-3">
+        <Card className="space-y-3 p-5">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-base font-semibold">
               Filmy: {codes.length} · wersji: {data.films.length}
@@ -565,7 +565,7 @@ function EmbedCard({ id, kind, stamp, onToast }: { id: string; kind: "sequence" 
     }
   };
   return (
-    <Card className="space-y-3" data-testid="sequence-embed">
+    <Card className="space-y-3 p-5" data-testid="sequence-embed">
       <h2 className="flex items-center gap-2 text-base font-semibold">
         <ArrowUpRight className="h-4 w-4" /> Osadzanie na stronie
       </h2>
