@@ -486,7 +486,9 @@ export async function ingestSequenceImage(projectId: string, file: File) {
     const size = await putFile(key, p, jpg ? "image/jpeg" : "image/png");
     const asset = await prisma.mediaAsset.create({ data: { kind: "IMAGE", projectId, storageKey: key, mimeType: jpg ? "image/jpeg" : "image/png", sizeBytes: size, width: info?.width ?? null, height: info?.height ?? null, originalName: name, meta: { source: "sequence-cover" } } });
     await prisma.sequenceClip.upsert({ where: { projectId_name: { projectId, name } }, create: { projectId, name, assetId: asset.id, durationSec: 0 }, update: { assetId: asset.id } });
-    // films already laid out that name this cover get it at once
+    // a cover sent on its own ("F6_okladka.jpg") goes to its film at once - also in the embedded players
+    const code = /^(.+)_okladka\.(?:jpe?g|png)$/i.exec(name)?.[1];
+    if (code) await prisma.sequenceFilm.updateMany({ where: { projectId, code: { equals: code, mode: "insensitive" } }, data: { coverAssetId: asset.id } });
     return { name };
   } finally {
     await fsp.rm(work, { recursive: true, force: true });

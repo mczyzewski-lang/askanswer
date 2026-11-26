@@ -31,7 +31,9 @@ export async function publishEmbeds(projectId: string, kind: Kind, filmIds?: str
     if (!comp) continue;
     if (!f.embedToken) await prisma.sequenceFilm.update({ where: { id: f.id }, data: { embedToken: token() } });
     const hasCard = (comp.document as unknown as EditorDocument).clips.some((c) => (c.label ?? "").toUpperCase() === "PLANSZA");
-    const variants: Array<{ embed: EmbedVariant | "both"; drop: boolean }> = hasCard ? [{ embed: "card", drop: false }, { embed: "nocard", drop: true }] : [{ embed: "both", drop: false }];
+    // versions of one film differ by their end card: the film without a card is published once, with the first version
+    const first = !films.some((x) => x.code === f.code && x.order < f.order) && !(await prisma.sequenceFilm.count({ where: { projectId, kind, code: f.code, order: { lt: f.order } } }));
+    const variants: Array<{ embed: EmbedVariant | "both"; drop: boolean }> = !hasCard ? [{ embed: "both", drop: false }] : first ? [{ embed: "card", drop: false }, { embed: "nocard", drop: true }] : [{ embed: "card", drop: false }];
     for (const v of variants) {
       const j = await prisma.renderJob.create({ data: { projectId, compositionId: f.compositionId, kind: "single", settings: { format: "1080x1080", quality: "standard", ...(v.drop ? { dropLabels: ["PLANSZA"] } : {}), embed: { filmId: f.id, variant: v.embed } } } });
       await enqueue("render", { renderJobId: j.id }, { idempotencyKey: `render:${j.id}`, maxAttempts: 2 });
@@ -186,6 +188,9 @@ export async function embedData(projectId: string, kind: Kind, origin?: string) 
         version: f.version,
         title: f.title,
         published: !!(f.embedAssetId || f.embedNoCardAssetId),
+        note: f.note,
+        // this version has its own file without the end card (the first version of a film does)
+        hasNoCard: !!f.embedNoCardAssetId,
         publishedAt: f.embedAt?.toISOString() ?? null,
         // the edit was changed after the files were published
         stale: !!f.embedAt && !!comp && comp.updatedAt.getTime() > f.embedAt.getTime() + 60_000,
@@ -207,13 +212,21 @@ export async function embedData(projectId: string, kind: Kind, origin?: string) 
 export async function embedCodesText(projectId: string, kind: Kind, origin?: string) {
   const d = await embedData(projectId, kind, origin);
   const out = ["KODY EMBED - " + (kind === "testimonial" ? "TESTIMONIALE" : "SEKWENCJA"), "Wklej kod w miejscu, w którym film ma się pojawić. Film ma format 1:1 i dopasowuje się do szerokości (najwyżej 560 px - zmień max-width, jeśli ma być większy).", "Statystyki oglądania są w panelu, w tej samej zakładce.", ""];
-  for (const f of d.films) {
-    out.push("=".repeat(64), `${f.code}${f.version} - ${f.title}`, "=".repeat(64));
-    if (!f.codes || !f.published) {
+  const codes = [...new Set(d.films.map((f) => f.code))];
+  for (const code of codes) {
+    const versions = d.films.filter((f) => f.code === code);
+    out.push("=".repeat(64), `${code} - ${versions[0].title}`, "=".repeat(64));
+    if (!versions.some((f) => f.codes && f.published)) {
       out.push("(jeszcze nieopublikowany - kliknij w panelu „Opublikuj do osadzenia”)", "");
       continue;
     }
-    out.push("Z planszą końcową:", f.codes.card, "", "Bez planszy końcowej:", f.codes.nocard, "", "");
+    for (const f of versions) {
+      if (!f.codes || !f.published) continue;
+      out.push(`Wersja ${f.version} - z planszą końcową${f.note ? ` (${f.note})` : ""}:`, f.codes.card, "");
+    }
+    const plain = versions.find((f) => f.codes && f.hasNoCard);
+    if (plain) out.push("Bez planszy końcowej:", plain.codes!.nocard, "");
+    out.push("");
   }
   return out.join("\n");
 }

@@ -266,7 +266,7 @@ test("testimonials: films with client captions and a downloadable cover", async 
   await page.getByTestId("sequence-embed-publish").click({ timeout: 20_000 });
   await expect(page.getByTestId("sequence-embed-codes")).toBeVisible({ timeout: 240_000 });
   const txt = await (await request.get((await page.getByTestId("sequence-embed-codes").getAttribute("href"))!)).text();
-  expect(txt).toContain("Z planszą końcową:");
+  expect(txt).toContain("Wersja A - z planszą końcową:");
   expect(txt).toContain("Bez planszy końcowej:");
   const srcs = [...txt.matchAll(/<iframe src="([^"]+)"/g)].map((m) => m[1]);
   expect(srcs).toHaveLength(2);
@@ -314,6 +314,23 @@ test("testimonials: films with client captions and a downloadable cover", async 
   await expect(page.getByTestId("sequence-embed-film")).toContainText("/strona-klienta/referencje (1)");
   await page.getByTestId("sequence-embed-recent-toggle").click();
   await expect(page.getByTestId("sequence-embed-recent")).toContainText("F1A bez planszy · obejrzane 100%");
+  // a new cover sent on its own replaces the film's cover - in the list and in the published player
+  const coverBefore = await (await request.get(`${tokenUrl}/cover`)).body();
+  execFileSync("ffmpeg", ["-v", "error", "-y", "-ss", "4", "-i", "tests/fixtures/generated/sample-take.mp4", "-frames:v", "1", "-vf", "crop=min(iw\\,ih):min(iw\\,ih),scale=540:540,negate", path.join(dir, "F1_okladka.jpg")]);
+  await page.getByTestId("sequence-input").setInputFiles([path.join(dir, "F1_okladka.jpg")]);
+  await expect.poll(async () => (await (await request.get(`${tokenUrl}/cover`)).body()).equals(coverBefore), { timeout: 60_000 }).toBe(false);
   if (process.env.LP_SHOTS) await page.screenshot({ path: `${process.env.LP_SHOTS}/testimoniale.png`, fullPage: true });
+  // a second version of the film with another end card: three codes for the film - A with its card, B with its card, one without a card
+  const two = { ...manifest, films: [{ ...manifest.films[0], versions: [{ ...manifest.films[0].versions[0], note: "Plansza: plan i koszt" }, { version: "B", note: "Plansza: rozmowa", parts: [manifest.films[0].versions[0].parts[0], { clip: "t_plansza.mp4", label: "PLANSZA" }] }] }] };
+  expect(await (await request.post(`/api/admin/sequence/${project.id}/manifest`, { data: two })).json()).toMatchObject({ films: 2, created: 1 });
+  const pub = await (await request.post(`/api/admin/sequence/${project.id}/embed`, { data: { kind: "testimonial" } })).json();
+  expect(pub.jobs.map((j: { code: string }) => j.code)).toEqual(["F1A", "F1A bez planszy", "F1B"]);
+  for (const j of pub.jobs) await expect.poll(async () => (await (await request.get(`/api/admin/render-jobs/${j.id}`)).json()).status, { timeout: 240_000, intervals: [3000] }).toBe("SUCCEEDED");
+  const txt2 = await (await request.get(`/api/admin/sequence/${project.id}/embed-codes?kind=testimonial`)).text();
+  expect(txt2).toContain("Wersja A - z planszą końcową (Plansza: plan i koszt):");
+  expect(txt2).toContain("Wersja B - z planszą końcową (Plansza: rozmowa):");
+  expect(txt2.match(/Bez planszy końcowej:/g)).toHaveLength(1);
+  expect(txt2.match(/<iframe /g)).toHaveLength(3);
+  expect(new Set([...txt2.matchAll(/embed\/t\/([\w-]+)\?/g)].map((m) => m[1])).size).toBe(2);
   fs.rmSync(dir, { recursive: true, force: true });
 });

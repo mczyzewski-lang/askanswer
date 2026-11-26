@@ -513,6 +513,8 @@ interface EmbedFilm {
   version: string;
   title: string;
   published: boolean;
+  hasNoCard: boolean;
+  note: string | null;
   publishedAt: string | null;
   stale: boolean;
   codes: { card: string; nocard: string } | null;
@@ -615,7 +617,7 @@ function EmbedCard({ id, kind, stamp, onToast }: { id: string; kind: "sequence" 
               </div>
               {f.published && f.codes && f.preview ? (
                 <>
-                  {(["card", "nocard"] as const).map((v) => (
+                  {(f.hasNoCard ? (["card", "nocard"] as const) : (["card"] as const)).map((v) => (
                     <p key={v} className="flex flex-wrap items-center gap-2 text-xs text-muted">
                       <span className="w-24 shrink-0 font-medium text-ink">{v === "card" ? "Z planszą" : "Bez planszy"}</span>
                       <span className="min-w-0 flex-1">{statLine(f[v])}</span>
