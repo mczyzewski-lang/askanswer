@@ -143,8 +143,12 @@ export function sequenceDocument(title: string, parts: Part[], clips: Map<string
   doc.clips = out;
   // the brand's steps in the top right corner (drawn in at the start), over the clients - not over an end card
   const firstCard = out.find((c) => c.label === "PLANSZA" && c.start > 0);
-  const mark: EditorDocument["overlays"] = opts.mark ? [markLayer(firstCard ? firstCard.start : t)] : [];
-  doc.overlays = [...doc.overlays, ...captions, ...mark, ...wipes];
+  const until = firstCard ? firstCard.start : t;
+  const mark: EditorDocument["overlays"] = opts.mark ? [markLayer(until, clips.get(MARK_CLIP))] : [];
+  // a soft dark gradient from the bottom, under the subtitles (they sit on bright shirts and tables otherwise)
+  const shadeClip = opts.mark ? clips.get(SHADE_IMAGE) : undefined;
+  const shade: EditorDocument["overlays"] = shadeClip ? [{ id: `shade_${Math.random().toString(36).slice(2, 8)}`, name: "Gradient pod napisami", kind: "image", assetId: shadeClip.assetId, fit: "cover", start: 0, end: Math.round(until * 30) / 30, x: 0, y: 0, w: 1, h: 1, opacity: 1, animation: "none" }] : [];
+  doc.overlays = [...doc.overlays, ...shade, ...captions, ...mark, ...wipes];
   // these films end their own way: the project's CTA card is off (it can be brought back in the Studio)
   doc.noEndCard = true;
   // ready-cut material (clients, cards, an outro): the project's automatic background blur is not for it
@@ -166,7 +170,17 @@ export function sequenceDocument(title: string, parts: Part[], clips: Map<string
 
 /** words as one comparable string (the database returns the keys in its own order) */
 const sig = (words: unknown) => (Array.isArray(words) ? (words as Word[]).map((w) => `${w.text}|${w.start}|${w.end}`).join(" ") : "");
-const markLayer = (end: number): EditorDocument["overlays"][number] => ({ id: `mark_${Math.random().toString(36).slice(2, 8)}`, name: "Schodki w narożniku", kind: "typo", preset: "stairMark", text: "", size: 60, start: 0.3, end: Math.round(end * 30) / 30, x: 0.83, y: 0.045, w: 0.12, h: 0.12, opacity: 1, animation: "none" });
+/** files of a testimonial package that dress every film: the steps animation for the corner, the gradient under the subtitles */
+const MARK_CLIP = "t_schodki.mp4";
+const SHADE_IMAGE = "t_gradient.png";
+/**
+ * The steps in the top right corner, at the height and of the height of the client's name plate:
+ * the package's own animation (a rounded tile, quiet) when it is there, else the drawn mark.
+ */
+const markLayer = (end: number, clip?: { assetId: string }): EditorDocument["overlays"][number] =>
+  clip
+    ? { id: `mark_${Math.random().toString(36).slice(2, 8)}`, name: "Schodki w narożniku", kind: "video", assetId: clip.assetId, start: 0.2, end: Math.round(end * 30) / 30, x: 0.85, y: 0.05, w: 0.105, h: 0.105, opacity: 1, animation: "fade", fit: "cover", sourceIn: 0, loop: false, volume: 0.3, radius: 18 }
+    : { id: `mark_${Math.random().toString(36).slice(2, 8)}`, name: "Schodki w narożniku", kind: "typo", preset: "stairMark", text: "", size: 60, start: 0.3, end: Math.round(end * 30) / 30, x: 0.85, y: 0.05, w: 0.105, h: 0.105, opacity: 1, animation: "none" };
 /** the edit's name (the Studio shows it, the exported file carries it): by the tab the film belongs to */
 const nameOf = (code: string, version: string, title: string, kind: string = "sequence") => `${kind === "testimonial" ? "Testimonial" : "Sekwencja"} ${code}${version} - ${title}`.slice(0, 180);
 
@@ -197,8 +211,10 @@ export async function importManifest(projectId: string, m: SequenceManifest, opt
       // a clip uploaded again is a new file: the edit still shows the old one until it is laid out again
       const inEdit = new Set((old?.clips ?? []).map((c) => c.assetId));
       const fresh = v.parts.every((p) => !clips.get(p.clip) || inEdit.has(clips.get(p.clip)!.assetId)) && !v.parts.some((p) => reworded.has(p.clip));
+      // the package brought (or replaced) the corner animation / the gradient: edits without them are laid out again
+      const dressed = m.kind !== "testimonial" || !old || [[MARK_CLIP, "mark_"], [SHADE_IMAGE, "shade_"]].every(([file, id]) => !clips.get(file) || old.overlays.some((o) => o.id.startsWith(id) && "assetId" in o && o.assetId === clips.get(file)!.assetId));
       const hadOutro = !!old?.clips.some((c) => c.id.startsWith("outro_"));
-      const same = !!existing && JSON.stringify(existing.parts) === JSON.stringify(v.parts) && fresh;
+      const same = !!existing && JSON.stringify(existing.parts) === JSON.stringify(v.parts) && fresh && dressed;
       let compositionId = comp?.id ?? null;
       let status: (typeof report)[number]["status"] = missing.length ? "missing" : "kept";
       if (!missing.length && (!comp || !same || opts.rebuild)) {
@@ -339,7 +355,8 @@ export async function setMark(filmId: string, on: boolean) {
     let overlays = doc.overlays.map((o) => (o.id.startsWith("mark_") ? { ...o, hidden: !on } : o));
     if (!has && on) {
       const card = doc.clips.find((c) => c.label === "PLANSZA" || c.label === "OUTRO");
-      overlays = [...overlays, markLayer(card ? card.start : docDuration(doc))];
+      const clip = await prisma.sequenceClip.findUnique({ where: { projectId_name: { projectId: f.projectId, name: MARK_CLIP } } });
+      overlays = [...overlays, markLayer(card ? card.start : docDuration(doc), clip ?? undefined)];
     }
     if (!has && !on) return { changed: false };
     const r = await prisma.videoComposition.updateMany({ where: { id: cur.id, version: cur.version }, data: { document: { ...doc, overlays } as unknown as Prisma.InputJsonValue, version: { increment: 1 } } });

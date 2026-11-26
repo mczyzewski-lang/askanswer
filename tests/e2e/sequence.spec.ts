@@ -190,6 +190,9 @@ test("testimonials: films with client captions and a downloadable cover", async 
   cut("t_agnieszka.mp4", 0, 3);
   cut("t_mariusz.mp4", 3, 2.5);
   cut("t_plansza.mp4", 6, 1);
+  // the package's own dressing: the steps animation for the corner and the gradient under the subtitles
+  cut("t_schodki.mp4", 1, 2);
+  execFileSync("ffmpeg", ["-v", "error", "-y", "-f", "lavfi", "-i", "color=c=0x163028@0.5:s=270x270,format=rgba", "-frames:v", "1", path.join(dir, "t_gradient.png")]);
   execFileSync("ffmpeg", ["-v", "error", "-y", "-ss", "1", "-i", "tests/fixtures/generated/sample-take.mp4", "-frames:v", "1", "-vf", "crop=min(iw\\,ih):min(iw\\,ih),scale=540:540", path.join(dir, "F1_okladka.jpg")]);
   const manifest = {
     kind: "testimonial",
@@ -228,10 +231,17 @@ test("testimonials: films with client captions and a downloadable cover", async 
   // one wipe between the two clients, one into the end card
   expect(doc.overlays.filter((o: { preset?: string }) => o.preset === "stairWipe")).toHaveLength(2);
   // the brand's steps in the top right corner over the clients, switched off and on from the list
-  const markOf = async () => (await (await request.get(`/api/admin/compositions/${data.films[0].compositionId}`)).json()).composition.document.overlays.find((o: { preset?: string }) => o.preset === "stairMark");
-  expect(await markOf()).toMatchObject({ kind: "typo", text: "" });
-  expect((await markOf()).x).toBeGreaterThan(0.8);
-  expect((await markOf()).y).toBeLessThan(0.1);
+  const markOf = async () => (await (await request.get(`/api/admin/compositions/${data.films[0].compositionId}`)).json()).composition.document.overlays.find((o: { id: string }) => o.id.startsWith("mark_"));
+  // the package's animation, as a rounded quiet tile exactly as high (and at the height) of the client's name plate
+  expect(await markOf()).toMatchObject({ kind: "video", loop: false, y: caps[0].y, h: caps[0].h });
+  expect((await markOf()).x + (await markOf()).w).toBeCloseTo(1 - caps[0].x, 2);
+  expect((await markOf()).volume).toBeLessThan(0.5);
+  expect((await markOf()).radius).toBeGreaterThan(0);
+  // the gradient lies under everything else, from the start to the end card
+  expect(doc.overlays.findIndex((o: { id: string }) => o.id.startsWith("shade_"))).toBeLessThan(doc.overlays.findIndex((o: { kind: string }) => o.kind === "lowerThird"));
+  expect(doc.overlays.find((o: { id: string }) => o.id.startsWith("shade_"))).toMatchObject({ kind: "image", start: 0, end: 5.5, w: 1, h: 1 });
+  // the same package again changes nothing
+  expect(await (await request.post(`/api/admin/sequence/${project.id}/manifest`, { data: manifest })).json()).toMatchObject({ updated: 0, kept: 1 });
   await expect(page.getByTestId("sequence-version")).toContainText("Schodki w narożniku: włączone");
   await page.getByTestId("sequence-mark-toggle").click();
   await expect(page.getByTestId("sequence-version")).toContainText("Schodki w narożniku: wyłączone");
