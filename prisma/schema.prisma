@@ -618,6 +618,12 @@ model SequenceFilm {
   order         Int      @default(0)
   /// review: TODO | OK | FIX
   review        String   @default("TODO")
+  /// embedding on a web page: the public token, the published files (with and without the end card), when published
+  embedToken         String?   @unique
+  embedAssetId       String?
+  embedNoCardAssetId String?
+  embedAt            DateTime?
+  embedEvents        EmbedEvent[]
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
@@ -1659,4 +1665,28 @@ model MetaAd {
   updatedAt    DateTime  @updatedAt
 
   @@index([projectId])
+}
+
+/// What happened in an embedded player (no cookies, no personal data: a random visitor id kept in the browser).
+model EmbedEvent {
+  id        String       @id @default(cuid())
+  filmId    String
+  film      SequenceFilm @relation(fields: [filmId], references: [id], onDelete: Cascade)
+  /// "card" (with the end card) | "nocard"
+  variant   String
+  /// load (the cover was shown) | play | progress | end | time (how far it got, sent on pause / leaving)
+  kind      String
+  visitor   String
+  /// one page view
+  session   String
+  percent   Int?
+  seconds   Float?
+  /// the page the player sits on (origin + path)
+  page      String?
+  /// mobile | desktop
+  device    String?
+  createdAt DateTime     @default(now())
+
+  @@index([filmId, createdAt])
+  @@index([filmId, session])
 }

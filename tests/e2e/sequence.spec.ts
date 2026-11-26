@@ -181,8 +181,8 @@ test("sequence: a package of clips → films in versions → review → 1:1 expo
 });
 
 /** Testimoniale: the same package mechanics in its own tab - clients signed by name, a cover to download per film. */
-test("testimonials: films with client captions and a downloadable cover", async ({ page, request }) => {
-  test.setTimeout(420_000);
+test("testimonials: films with client captions and a downloadable cover", async ({ page, request, playwright }) => {
+  test.setTimeout(780_000);
   await adminRequest(request);
   const { project } = await demoProject(request);
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "testi-"));
@@ -262,6 +262,58 @@ test("testimonials: films with client captions and a downloadable cover", async 
   expect(done.duration!).toBeLessThan(6);
   const after = (await (await request.get(`/api/admin/compositions/${data.films[0].compositionId}`)).json()).composition.document;
   expect(after.clips).toHaveLength(3);
+  // embedding: publish the files (with and without the end card), take the codes, watch one, see the numbers
+  await page.getByTestId("sequence-embed-publish").click({ timeout: 20_000 });
+  await expect(page.getByTestId("sequence-embed-codes")).toBeVisible({ timeout: 240_000 });
+  const txt = await (await request.get((await page.getByTestId("sequence-embed-codes").getAttribute("href"))!)).text();
+  expect(txt).toContain("Z planszą końcową:");
+  expect(txt).toContain("Bez planszy końcowej:");
+  const srcs = [...txt.matchAll(/<iframe src="([^"]+)"/g)].map((m) => m[1]);
+  expect(srcs).toHaveLength(2);
+  expect(srcs[0]).toMatch(/\/embed\/t\/[\w-]+\?p=1$/);
+  expect(srcs[1]).toMatch(/\?p=0$/);
+  // the player is public and may be framed by any site; the admin pages may not
+  const anon = await playwright.request.newContext();
+  const player = await anon.get(srcs[0]);
+  expect(player.status()).toBe(200);
+  expect(player.headers()["x-frame-options"]).toBeUndefined();
+  expect(player.headers()["content-security-policy"]).toContain("frame-ancestors *");
+  expect((await request.get(`/admin/testimoniale/${project.id}`)).headers()["x-frame-options"]).toBe("SAMEORIGIN");
+  expect(await player.text()).toContain("Odtwórz film: Od czego zaczynałem");
+  const tokenUrl = srcs[0].replace(/\?p=1$/, "");
+  const lengthOf = async (p: number) => {
+    const f = path.join(dir, `embed-${p}.mp4`);
+    fs.writeFileSync(f, await (await anon.get(`${tokenUrl}/video?p=${p}`)).body());
+    return Number(execFileSync("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", f]).toString());
+  };
+  expect(await lengthOf(1)).toBeCloseTo(6.5, 0);
+  expect(await lengthOf(0)).toBeCloseTo(5.5, 0);
+  expect((await anon.get(`${tokenUrl}/cover`)).headers()["content-type"]).toContain("image/jpeg");
+  expect((await anon.get(tokenUrl.replace(/[\w-]+$/, "nie-ma-takiego-filmu"))).status()).toBe(404);
+  await anon.dispose();
+  // a visitor opens the page with the player, presses play and watches to the end
+  const visitor = await page.context().browser()!.newContext();
+  const vp = await visitor.newPage();
+  // (a page of the same host: the browser does not let a made-up public site frame localhost)
+  const host = new URL(srcs[1]).origin;
+  await vp.route(`${host}/strona-klienta/**`, (r) => r.fulfill({ contentType: "text/html", body: `<html><body style="margin:0"><iframe id="f" src="${srcs[1]}" style="width:480px;height:480px;border:0" allow="autoplay"></iframe></body></html>` }));
+  await vp.goto(`${host}/strona-klienta/referencje`);
+  const fr = vp.frameLocator("#f");
+  await expect(fr.locator("img")).toBeVisible();
+  await expect.poll(() => fr.locator("img").evaluate((el) => (el as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+  if (process.env.LP_SHOTS) await vp.screenshot({ path: `${process.env.LP_SHOTS}/embed-player.png` });
+  await fr.getByRole("button", { name: /Odtwórz film/ }).click();
+  await expect.poll(() => fr.locator("video").evaluate((v) => (v as HTMLVideoElement).ended), { timeout: 60_000 }).toBe(true);
+  await visitor.close();
+  await expect
+    .poll(async () => (await (await request.get(`/api/admin/sequence/${project.id}/embed?kind=testimonial`)).json()).films[0].nocard, { timeout: 30_000 })
+    .toMatchObject({ loads: 1, plays: 1, viewers: 1, ends: 1, avgPercent: 100 });
+  await page.reload();
+  await expect(page.getByTestId("sequence-embed-film")).toContainText("1 odtworzeń (1 osoba) · średnio 100% filmu · 1 do końca");
+  await expect(page.getByTestId("sequence-embed-film")).toContainText("opublikowany");
+  await expect(page.getByTestId("sequence-embed-film")).toContainText("/strona-klienta/referencje (1)");
+  await page.getByTestId("sequence-embed-recent-toggle").click();
+  await expect(page.getByTestId("sequence-embed-recent")).toContainText("F1A bez planszy · obejrzane 100%");
   if (process.env.LP_SHOTS) await page.screenshot({ path: `${process.env.LP_SHOTS}/testimoniale.png`, fullPage: true });
   fs.rmSync(dir, { recursive: true, force: true });
 });

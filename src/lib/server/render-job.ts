@@ -21,6 +21,8 @@ export interface RenderSettings {
   hook?: number | null;
   /** leave out the clips with these labels (e.g. the end card of a testimonial film), closing the gap */
   dropLabels?: string[];
+  /** the render is a film's file for its embedded players */
+  embed?: { filmId: string; variant: "card" | "nocard" | "both" };
 }
 
 /** Container memory limit in bytes (cgroup v2/v1), falling back to total RAM. */
@@ -193,6 +195,10 @@ export async function runRender(renderJobId: string): Promise<void> {
       update: { sizeBytes: size, durationSec: info.duration },
     });
     await prisma.renderJob.update({ where: { id: job.id }, data: { status: "SUCCEEDED", progress: 1, outputAssetId: asset.id } });
+    if (settings.embed) {
+      const { attachEmbedRender } = await import("./embed");
+      await attachEmbedRender(settings.embed.filmId, settings.embed.variant, asset.id);
+    }
     if (job.compositionId) await prisma.videoComposition.update({ where: { id: job.compositionId }, data: { status: "EXPORTED" } });
     else await prisma.videoComposition.updateMany({ where: { id: { in: job.compositionIds } }, data: { status: "EXPORTED" } });
   } catch (e) {

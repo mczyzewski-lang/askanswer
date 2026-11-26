@@ -314,6 +314,8 @@ export function SequenceView({ id, kind = "sequence" }: { id: string; kind?: "se
         </div>
       </Card>
 
+      <EmbedCard id={id} kind={kind} stamp={data.films.map((f) => `${f.id}:${f.updatedAt}`).join("|")} onToast={toast} />
+
       {data.films.length ? (
         <Card className="space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -495,6 +497,161 @@ export function SequenceView({ id, kind = "sequence" }: { id: string; kind?: "se
       )}
       {toastNode}
     </div>
+  );
+}
+
+interface EmbedStat {
+  loads: number;
+  plays: number;
+  viewers: number;
+  ends: number;
+  avgPercent: number | null;
+}
+interface EmbedFilm {
+  id: string;
+  code: string;
+  version: string;
+  title: string;
+  published: boolean;
+  publishedAt: string | null;
+  stale: boolean;
+  codes: { card: string; nocard: string } | null;
+  preview: { card: string; nocard: string } | null;
+  card: EmbedStat;
+  nocard: EmbedStat;
+  pages: Array<{ page: string; plays: number }>;
+}
+interface EmbedInfo {
+  films: EmbedFilm[];
+  recent: Array<{ film: string; variant: string; at: string; page: string | null; device: string | null; percent: number }>;
+}
+
+const statLine = (s: EmbedStat) => (s.loads || s.plays ? `${s.loads} wyświetleń okładki · ${s.plays} odtworzeń (${s.viewers} ${s.viewers === 1 ? "osoba" : "osób"}) · średnio ${s.avgPercent ?? 0}% filmu · ${s.ends} do końca` : "brak wyświetleń");
+
+/** Embedding on a website: publish the files, take the codes, see who watched how much. */
+function EmbedCard({ id, kind, stamp, onToast }: { id: string; kind: "sequence" | "testimonial"; /** changes when the list of films does */ stamp: string; onToast: (text: string, tone?: "ok" | "err") => void }) {
+  const [info, setInfo] = useState<EmbedInfo | null>(null);
+  const [jobs, setJobs] = useState<Job[]>([]);
+  const [open, setOpen] = useState(false);
+  const load = useCallback(async () => setInfo(await api<EmbedInfo>(`/api/admin/sequence/${id}/embed?kind=${kind}`).catch(() => null)), [id, kind]);
+  useEffect(() => void load(), [load, stamp]);
+  const running = jobs.some((j) => j.status === "QUEUED" || j.status === "RUNNING");
+  useEffect(() => {
+    if (!running) return;
+    const t = setInterval(async () => {
+      const next = await Promise.all(
+        jobs.map(async (j) => {
+          if (j.status === "SUCCEEDED" || j.status === "FAILED") return j;
+          const r = await fetch(`/api/admin/render-jobs/${j.id}`, { cache: "no-store" }).then((x) => (x.ok ? x.json() : null)).catch(() => null);
+          return r ? { ...j, status: r.status, progress: r.progress ?? 0 } : j;
+        }),
+      );
+      setJobs(next);
+      if (!next.some((j) => j.status === "QUEUED" || j.status === "RUNNING")) {
+        onToast(next.some((j) => j.status === "FAILED") ? "Część plików nie powstała - spróbuj ponownie" : "Filmy opublikowane - kody są gotowe", next.some((j) => j.status === "FAILED") ? "err" : "ok");
+        await load();
+      }
+    }, 3000);
+    return () => clearInterval(t);
+  }, [jobs, running, load, onToast]);
+  if (!info || !info.films.length) return null;
+  const published = info.films.filter((f) => f.published).length;
+  const copy = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      onToast("Kod skopiowany");
+    } catch {
+      onToast("Nie udało się skopiować - pobierz plik TXT", "err");
+    }
+  };
+  return (
+    <Card className="space-y-3" data-testid="sequence-embed">
+      <h2 className="flex items-center gap-2 text-base font-semibold">
+        <ArrowUpRight className="h-4 w-4" /> Osadzanie na stronie
+      </h2>
+      <p className="text-sm text-muted">
+        Każdy film dostaje kod do wklejenia na stronę: okładka, przycisk odtwarzania i wideo ładują się stąd, w wersji z planszą końcową albo bez. Publikacja tworzy pliki dla odtwarzaczy; po zmianie montażu opublikuj ponownie - kody zostają te same. Statystyki są anonimowe (bez plików cookie): widać liczbę osób, stronę i to, jak daleko oglądano, nie widać, kim są widzowie.
+      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          size="sm"
+          disabled={running}
+          data-testid="sequence-embed-publish"
+          onClick={async () => {
+            try {
+              const r = await api<{ jobs: Array<{ id: string; filmId: string; code: string }> }>(`/api/admin/sequence/${id}/embed`, { method: "POST", json: { kind } });
+              setJobs(r.jobs.map((j) => ({ ...j, status: "QUEUED", progress: 0, downloadUrl: null })));
+            } catch (e) {
+              onToast((e as Error).message, "err");
+            }
+          }}
+        >
+          {running ? <Loader2 className="animate-spin" /> : <Upload />} {published ? "Opublikuj ponownie (po zmianach)" : "Opublikuj do osadzenia"}
+        </Button>
+        {published ? (
+          <a href={`/api/admin/sequence/${id}/embed-codes?kind=${kind}`} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-line px-3 text-xs font-medium hover:bg-black/[.03]" data-testid="sequence-embed-codes">
+            <Download className="h-3.5 w-3.5" /> Pobierz kody embed (TXT)
+          </a>
+        ) : null}
+        <span className="text-xs text-muted">
+          Opublikowane: {published} z {info.films.length}
+        </span>
+      </div>
+      {jobs.length ? (
+        <p className="text-xs text-muted tabular" data-testid="sequence-embed-progress">
+          Publikacja: {jobs.filter((j) => j.status === "SUCCEEDED").length}/{jobs.length} plików{running ? ` · ${jobs.filter((j) => j.status === "RUNNING").map((j) => `${j.code} ${Math.round(j.progress * 100)}%`).join(", ")}` : ""}
+        </p>
+      ) : null}
+      {published ? (
+        <ul className="divide-y divide-line rounded-xl border border-line text-sm">
+          {info.films.map((f) => (
+            <li key={f.id} className="space-y-1 px-3 py-2" data-testid="sequence-embed-film">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-medium">
+                  {f.code}
+                  {f.version} · {f.title}
+                </span>
+                {!f.published ? <Badge tone="gray">nieopublikowany</Badge> : f.stale ? <Badge tone="amber">montaż zmieniony po publikacji</Badge> : <Badge tone="green">opublikowany</Badge>}
+              </div>
+              {f.published && f.codes && f.preview ? (
+                <>
+                  {(["card", "nocard"] as const).map((v) => (
+                    <p key={v} className="flex flex-wrap items-center gap-2 text-xs text-muted">
+                      <span className="w-24 shrink-0 font-medium text-ink">{v === "card" ? "Z planszą" : "Bez planszy"}</span>
+                      <span className="min-w-0 flex-1">{statLine(f[v])}</span>
+                      <a href={f.preview![v]} target="_blank" rel="noreferrer" className="rounded-md border border-line px-2 py-0.5 font-medium text-ink hover:bg-black/[.04]">
+                        Podgląd
+                      </a>
+                      <button type="button" className="rounded-md border border-line px-2 py-0.5 font-medium text-ink hover:bg-black/[.04]" onClick={() => void copy(f.codes![v])} data-testid={`sequence-embed-copy-${v}`}>
+                        Kopiuj kod
+                      </button>
+                    </p>
+                  ))}
+                  {f.pages.length ? <p className="text-xs text-muted">Strony: {f.pages.map((p) => `${p.page.replace(/^https?:\/\//, "")} (${p.plays})`).join(", ")}</p> : null}
+                </>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {info.recent.length ? (
+        <div>
+          <button type="button" className="text-xs font-medium text-brand hover:underline" onClick={() => setOpen(!open)} data-testid="sequence-embed-recent-toggle">
+            {open ? "Ukryj ostatnie odtworzenia" : `Pokaż ostatnie odtworzenia (${info.recent.length})`}
+          </button>
+          {open ? (
+            <ul className="mt-1 space-y-0.5 text-xs text-muted tabular" data-testid="sequence-embed-recent">
+              {info.recent.map((r, i) => (
+                <li key={i}>
+                  {new Date(r.at).toLocaleString("pl-PL", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })} · {r.film} {r.variant === "nocard" ? "bez planszy" : "z planszą"} · obejrzane {r.percent}% · {r.device === "mobile" ? "telefon" : "komputer"}
+                  {r.page ? ` · ${r.page.replace(/^https?:\/\//, "")}` : ""}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      ) : null}
+    </Card>
   );
 }
 
