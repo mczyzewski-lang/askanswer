@@ -26,6 +26,10 @@ async function handle(job: { id: string; type: string; payload: unknown }) {
       return transcribeTake(p.takeId, Boolean(p.force));
     case "render":
       return runRender(p.renderJobId);
+    case "embed-refresh": {
+      const { refreshEmbed } = await import("../lib/server/embed");
+      return refreshEmbed(p.filmId);
+    }
     case "enhance-audio":
       return { map: await enhanceComposition(p.compositionId, p.mode as "podcast" | "isolator", (p.strength as "natural" | "podcast" | "radio") ?? "podcast") };
     case "generate-broll":

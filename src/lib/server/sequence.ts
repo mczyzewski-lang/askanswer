@@ -221,7 +221,10 @@ export async function importManifest(projectId: string, m: SequenceManifest, opt
         const doc = sequenceDocument(f.title, v.parts, clips, theme, !!project.theme?.logoAssetId, { mark: m.kind === "testimonial" });
         if (doc) {
           const name = nameOf(f.code, v.version, f.title, m.kind);
-          if (comp) await prisma.videoComposition.update({ where: { id: comp.id }, data: { name, document: doc as unknown as Prisma.InputJsonValue, version: { increment: 1 } } });
+          if (comp) {
+            await prisma.videoComposition.update({ where: { id: comp.id }, data: { name, document: doc as unknown as Prisma.InputJsonValue, version: { increment: 1 } } });
+            await refreshPublished(comp.id);
+          }
           else compositionId = (await prisma.videoComposition.create({ data: { projectId, name, status: "READY_TO_EDIT", document: doc as unknown as Prisma.InputJsonValue } })).id;
           status = comp ? "updated" : "created";
         }
@@ -327,6 +330,9 @@ export async function applyExplainers(projectId: string) {
   return { added };
 }
 
+/** A film that is embedded on a website follows its edit (see embed.ts). */
+const refreshPublished = (compositionId: string | null) => import("./embed").then((m) => m.scheduleEmbedRefresh(compositionId)).catch(() => null);
+
 /** Switch every explainer layer of a film version on or off (the layers stay in the edit). */
 export async function setExplainers(filmId: string, on: boolean) {
   const f = await prisma.sequenceFilm.findUniqueOrThrow({ where: { id: filmId } });
@@ -338,7 +344,10 @@ export async function setExplainers(filmId: string, on: boolean) {
     const overlays = doc.overlays.map((o) => (o.id.startsWith("expl_") && !!o.hidden === on ? (changed++, { ...o, hidden: !on }) : o));
     if (!changed) return { changed: 0 };
     const r = await prisma.videoComposition.updateMany({ where: { id: cur.id, version: cur.version }, data: { document: { ...doc, overlays } as unknown as Prisma.InputJsonValue, version: { increment: 1 } } });
-    if (r.count === 1) return { changed };
+    if (r.count === 1) {
+      await refreshPublished(f.compositionId);
+      return { changed };
+    }
     await new Promise((res) => setTimeout(res, 300));
   }
   throw new HttpError(409, "Montaż był w tym czasie edytowany - spróbuj ponownie");
@@ -360,7 +369,10 @@ export async function setMark(filmId: string, on: boolean) {
     }
     if (!has && !on) return { changed: false };
     const r = await prisma.videoComposition.updateMany({ where: { id: cur.id, version: cur.version }, data: { document: { ...doc, overlays } as unknown as Prisma.InputJsonValue, version: { increment: 1 } } });
-    if (r.count === 1) return { changed: true };
+    if (r.count === 1) {
+      await refreshPublished(f.compositionId);
+      return { changed: true };
+    }
     await new Promise((res) => setTimeout(res, 300));
   }
   throw new HttpError(409, "Montaż był w tym czasie edytowany - spróbuj ponownie");
@@ -397,7 +409,10 @@ export async function setOutro(filmId: string, on: boolean) {
     }
     if (clips.length === doc.clips.length && !on) return { changed: false };
     const r = await prisma.videoComposition.updateMany({ where: { id: cur.id, version: cur.version }, data: { document: { ...doc, clips } as unknown as Prisma.InputJsonValue, version: { increment: 1 } } });
-    if (r.count === 1) return { changed: true };
+    if (r.count === 1) {
+      await refreshPublished(f.compositionId);
+      return { changed: true };
+    }
     await new Promise((res) => setTimeout(res, 300));
   }
   throw new HttpError(409, "Montaż był w tym czasie edytowany - spróbuj ponownie");

@@ -572,7 +572,7 @@ function EmbedCard({ id, kind, stamp, onToast }: { id: string; kind: "sequence" 
         <ArrowUpRight className="h-4 w-4" /> Osadzanie na stronie
       </h2>
       <p className="text-sm text-muted">
-        Każdy film dostaje kod do wklejenia na stronę: okładka, przycisk odtwarzania i wideo ładują się stąd, w wersji z planszą końcową albo bez. Publikacja tworzy pliki dla odtwarzaczy; po zmianie montażu opublikuj ponownie - kody zostają te same. Statystyki są anonimowe (bez plików cookie): widać liczbę osób, stronę i to, jak daleko oglądano, nie widać, kim są widzowie.
+        Każdy film dostaje kod do wklejenia na stronę: okładka, przycisk odtwarzania i wideo ładują się stąd, w wersji z planszą końcową albo bez. Publikacja tworzy pliki dla odtwarzaczy. Po zmianie montażu (w Studiu albo tutaj) opublikowany film odświeża się sam po kilku minutach - kody zostają te same. Statystyki są anonimowe (bez plików cookie): widać liczbę osób, stronę i to, jak daleko oglądano, nie widać, kim są widzowie.
       </p>
       <div className="flex flex-wrap items-center gap-2">
         <Button
@@ -613,7 +613,7 @@ function EmbedCard({ id, kind, stamp, onToast }: { id: string; kind: "sequence" 
                   {f.code}
                   {f.version} · {f.title}
                 </span>
-                {!f.published ? <Badge tone="gray">nieopublikowany</Badge> : f.stale ? <Badge tone="amber">montaż zmieniony po publikacji</Badge> : <Badge tone="green">opublikowany</Badge>}
+                {!f.published ? <Badge tone="gray">nieopublikowany</Badge> : f.stale ? <Badge tone="amber">montaż zmieniony - nowy plik powstanie sam za kilka minut</Badge> : <Badge tone="green">opublikowany</Badge>}
               </div>
               {f.published && f.codes && f.preview ? (
                 <>

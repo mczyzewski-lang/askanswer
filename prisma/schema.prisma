@@ -623,6 +623,8 @@ model SequenceFilm {
   embedAssetId       String?
   embedNoCardAssetId String?
   embedAt            DateTime?
+  /// the edit's version the published files show (the edit is newer = the film waits to be published again)
+  embedVersion       Int?
   embedEvents        EmbedEvent[]
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt

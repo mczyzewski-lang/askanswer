@@ -304,16 +304,25 @@ test("testimonials: films with client captions and a downloadable cover", async 
   if (process.env.LP_SHOTS) await vp.screenshot({ path: `${process.env.LP_SHOTS}/embed-player.png` });
   await fr.getByRole("button", { name: /Odtwórz film/ }).click();
   await expect.poll(() => fr.locator("video").evaluate((v) => (v as HTMLVideoElement).ended), { timeout: 60_000 }).toBe(true);
-  await visitor.close();
   await expect
     .poll(async () => (await (await request.get(`/api/admin/sequence/${project.id}/embed?kind=testimonial`)).json()).films[0].nocard, { timeout: 30_000 })
     .toMatchObject({ loads: 1, plays: 1, viewers: 1, ends: 1, avgPercent: 100 });
+  await visitor.close();
   await page.reload();
   await expect(page.getByTestId("sequence-embed-film")).toContainText("1 odtworzeń (1 osoba) · średnio 100% filmu · 1 do końca");
   await expect(page.getByTestId("sequence-embed-film")).toContainText("opublikowany");
   await expect(page.getByTestId("sequence-embed-film")).toContainText("/strona-klienta/referencje (1)");
   await page.getByTestId("sequence-embed-recent-toggle").click();
   await expect(page.getByTestId("sequence-embed-recent")).toContainText("F1A bez planszy · obejrzane 100%");
+  // the published film follows its edit: a change (here: the corner steps switched off) renders it again by itself,
+  // and the same code shows the new file
+  const fileOf = async (p: number) => ((await request.get(`${tokenUrl}/video?p=${p}`, { maxRedirects: 0 })).headers().location ?? "").split("?")[0];
+  const [was1, was0] = [await fileOf(1), await fileOf(0)];
+  expect(was1).not.toBe(was0);
+  await page.getByTestId("sequence-mark-toggle").click();
+  await expect(page.getByTestId("sequence-version")).toContainText("Schodki w narożniku: wyłączone");
+  await expect.poll(async () => (await fileOf(1)) !== was1 && (await fileOf(0)) !== was0, { timeout: 240_000, intervals: [4000] }).toBe(true);
+  expect((await (await request.get(`/api/admin/sequence/${project.id}/embed?kind=testimonial`)).json()).films[0].stale).toBe(false);
   // a new cover sent on its own replaces the film's cover - in the list and in the published player
   const coverBefore = await (await request.get(`${tokenUrl}/cover`)).body();
   execFileSync("ffmpeg", ["-v", "error", "-y", "-ss", "4", "-i", "tests/fixtures/generated/sample-take.mp4", "-frames:v", "1", "-vf", "crop=min(iw\\,ih):min(iw\\,ih),scale=540:540,negate", path.join(dir, "F1_okladka.jpg")]);

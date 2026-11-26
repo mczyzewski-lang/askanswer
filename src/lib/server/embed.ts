@@ -27,7 +27,7 @@ export async function publishEmbeds(projectId: string, kind: Kind, filmIds?: str
   const films = (await prisma.sequenceFilm.findMany({ where: { projectId, kind, ...(filmIds?.length ? { id: { in: filmIds } } : {}) }, orderBy: [{ order: "asc" }] })).filter((f) => f.compositionId);
   const jobs: Array<{ id: string; filmId: string; code: string }> = [];
   for (const f of films) {
-    const comp = await prisma.videoComposition.findUnique({ where: { id: f.compositionId! }, select: { document: true } });
+    const comp = await prisma.videoComposition.findUnique({ where: { id: f.compositionId! }, select: { document: true, version: true } });
     if (!comp) continue;
     if (!f.embedToken) await prisma.sequenceFilm.update({ where: { id: f.id }, data: { embedToken: token() } });
     const hasCard = (comp.document as unknown as EditorDocument).clips.some((c) => (c.label ?? "").toUpperCase() === "PLANSZA");
@@ -35,7 +35,7 @@ export async function publishEmbeds(projectId: string, kind: Kind, filmIds?: str
     const first = !films.some((x) => x.code === f.code && x.order < f.order) && !(await prisma.sequenceFilm.count({ where: { projectId, kind, code: f.code, order: { lt: f.order } } }));
     const variants: Array<{ embed: EmbedVariant | "both"; drop: boolean }> = !hasCard ? [{ embed: "both", drop: false }] : first ? [{ embed: "card", drop: false }, { embed: "nocard", drop: true }] : [{ embed: "card", drop: false }];
     for (const v of variants) {
-      const j = await prisma.renderJob.create({ data: { projectId, compositionId: f.compositionId, kind: "single", settings: { format: "1080x1080", quality: "standard", ...(v.drop ? { dropLabels: ["PLANSZA"] } : {}), embed: { filmId: f.id, variant: v.embed } } } });
+      const j = await prisma.renderJob.create({ data: { projectId, compositionId: f.compositionId, kind: "single", settings: { format: "1080x1080", quality: "standard", ...(v.drop ? { dropLabels: ["PLANSZA"] } : {}), embed: { filmId: f.id, variant: v.embed, version: comp.version } } } });
       await enqueue("render", { renderJobId: j.id }, { idempotencyKey: `render:${j.id}`, maxAttempts: 2 });
       jobs.push({ id: j.id, filmId: f.id, code: `${f.code}${f.version}${v.embed === "nocard" ? " bez planszy" : ""}` });
     }
@@ -44,11 +44,42 @@ export async function publishEmbeds(projectId: string, kind: Kind, filmIds?: str
   return { jobs };
 }
 
+/** how long an edit must rest before its published film is rendered again (the Studio saves while one works) */
+const REST_MS = Math.max(2, Number(process.env.EMBED_REST_SEC) || 90) * 1000;
+
+/**
+ * The edit of a published film changed: render it again once the editing rests, and put the new file
+ * under the same embed codes. Nothing happens for films that were never published.
+ */
+export async function scheduleEmbedRefresh(compositionId: string | null | undefined) {
+  if (!compositionId) return;
+  const films = await prisma.sequenceFilm.findMany({ where: { compositionId, embedToken: { not: null }, OR: [{ embedAssetId: { not: null } }, { embedNoCardAssetId: { not: null } }] }, select: { id: true } });
+  for (const f of films) await enqueue("embed-refresh", { filmId: f.id }, { idempotencyKey: `embed-refresh:${f.id}:${Math.floor(Date.now() / REST_MS)}`, maxAttempts: 2, runAt: new Date(Date.now() + REST_MS + 5000) });
+}
+
+/** The job behind scheduleEmbedRefresh: waits while the edit is still being changed, skips when the film is fresh or already rendering. */
+export async function refreshEmbed(filmId: string) {
+  const f = await prisma.sequenceFilm.findUnique({ where: { id: filmId } });
+  if (!f?.compositionId || !f.embedToken) return { skipped: "not published" };
+  const comp = await prisma.videoComposition.findUnique({ where: { id: f.compositionId }, select: { updatedAt: true, version: true } });
+  if (!comp) return { skipped: "no edit" };
+  if (f.embedVersion != null && comp.version <= f.embedVersion) return { skipped: "fresh" };
+  if (Date.now() - comp.updatedAt.getTime() < REST_MS - 2000) {
+    await scheduleEmbedRefresh(f.compositionId);
+    return { skipped: "still edited" };
+  }
+  const busy = await prisma.renderJob.count({ where: { compositionId: f.compositionId, status: { in: ["QUEUED", "RUNNING"] }, settings: { path: ["embed", "filmId"], equals: f.id } } });
+  if (busy) return { skipped: "rendering" };
+  // the edit as it is now is what gets published: later changes schedule their own refresh
+  const r = await publishEmbeds(f.projectId, f.kind === "testimonial" ? "testimonial" : "sequence", [f.id]);
+  return { jobs: r.jobs.length };
+}
+
 /** A finished embed render becomes the file its players show. */
-export async function attachEmbedRender(filmId: string, variant: EmbedVariant | "both", assetId: string) {
+export async function attachEmbedRender(filmId: string, variant: EmbedVariant | "both", assetId: string, version?: number) {
   await prisma.sequenceFilm.updateMany({
     where: { id: filmId },
-    data: { ...(variant !== "nocard" ? { embedAssetId: assetId } : {}), ...(variant !== "card" ? { embedNoCardAssetId: assetId } : {}), embedAt: new Date() },
+    data: { ...(variant !== "nocard" ? { embedAssetId: assetId } : {}), ...(variant !== "card" ? { embedNoCardAssetId: assetId } : {}), embedAt: new Date(), ...(version != null ? { embedVersion: version } : {}) },
   });
 }
 
@@ -156,7 +187,7 @@ export async function embedData(projectId: string, kind: Kind, origin?: string) 
   const base = (origin || env.appUrl).replace(/\/$/, "");
   const films = await prisma.sequenceFilm.findMany({ where: { projectId, kind }, orderBy: [{ order: "asc" }] });
   const ids = films.map((f) => f.id);
-  const comps = await prisma.videoComposition.findMany({ where: { id: { in: films.map((f) => f.compositionId).filter((x): x is string => !!x) } }, select: { id: true, updatedAt: true } });
+  const comps = await prisma.videoComposition.findMany({ where: { id: { in: films.map((f) => f.compositionId).filter((x): x is string => !!x) } }, select: { id: true, updatedAt: true, version: true } });
   type Row = { filmId: string; variant: string; loads: bigint; plays: bigint; viewers: bigint; ends: bigint };
   const rows = ids.length
     ? await prisma.$queryRaw<Row[]>(Prisma.sql`SELECT "filmId", "variant", count(*) FILTER (WHERE "kind" = 'load') AS loads, count(*) FILTER (WHERE "kind" = 'play') AS plays, count(DISTINCT "visitor") FILTER (WHERE "kind" = 'play') AS viewers, count(*) FILTER (WHERE "kind" = 'end') AS ends FROM "EmbedEvent" WHERE "filmId" IN (${Prisma.join(ids)}) GROUP BY 1, 2`)
@@ -193,7 +224,7 @@ export async function embedData(projectId: string, kind: Kind, origin?: string) 
         hasNoCard: !!f.embedNoCardAssetId,
         publishedAt: f.embedAt?.toISOString() ?? null,
         // the edit was changed after the files were published
-        stale: !!f.embedAt && !!comp && comp.updatedAt.getTime() > f.embedAt.getTime() + 60_000,
+        stale: !!comp && f.embedVersion != null && comp.version > f.embedVersion,
         codes: f.embedToken ? { card: iframe(base, f.embedToken, "card", f.title), nocard: iframe(base, f.embedToken, "nocard", f.title) } : null,
         preview: f.embedToken ? { card: `/embed/t/${f.embedToken}?p=1`, nocard: `/embed/t/${f.embedToken}?p=0` } : null,
         card: stat("card"),

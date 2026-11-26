@@ -33,6 +33,8 @@ export const PUT = route(async (req: Request, ctx: Ctx) => {
     if (!cur) return json({ error: "Nie znaleziono kompozycji" }, 404);
     return json({ error: "Kompozycja została zmieniona w innym oknie. Odśwież stronę.", version: cur.version }, 409);
   }
+  // a film that is embedded on a website follows its edit: rendered again once the editing rests
+  await import("@/lib/server/embed").then((m) => m.scheduleEmbedRefresh(id)).catch(() => null);
   return json({ ok: true, version: body.version + 1, savedAt: new Date().toISOString() });
 });
 
