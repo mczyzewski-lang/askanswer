@@ -167,7 +167,8 @@ export function sequenceDocument(title: string, parts: Part[], clips: Map<string
 /** words as one comparable string (the database returns the keys in its own order) */
 const sig = (words: unknown) => (Array.isArray(words) ? (words as Word[]).map((w) => `${w.text}|${w.start}|${w.end}`).join(" ") : "");
 const markLayer = (end: number): EditorDocument["overlays"][number] => ({ id: `mark_${Math.random().toString(36).slice(2, 8)}`, name: "Schodki w narożniku", kind: "typo", preset: "stairMark", text: "", size: 60, start: 0.3, end: Math.round(end * 30) / 30, x: 0.83, y: 0.045, w: 0.12, h: 0.12, opacity: 1, animation: "none" });
-const nameOf = (code: string, version: string, title: string) => `Sekwencja ${code}${version} - ${title}`.slice(0, 180);
+/** the edit's name (the Studio shows it, the exported file carries it): by the tab the film belongs to */
+const nameOf = (code: string, version: string, title: string, kind: string = "sequence") => `${kind === "testimonial" ? "Testimonial" : "Sekwencja"} ${code}${version} - ${title}`.slice(0, 180);
 
 /**
  * The package's manifest: the words go to the clips, every film version gets (or updates) its edit.
@@ -203,7 +204,7 @@ export async function importManifest(projectId: string, m: SequenceManifest, opt
       if (!missing.length && (!comp || !same || opts.rebuild)) {
         const doc = sequenceDocument(f.title, v.parts, clips, theme, !!project.theme?.logoAssetId, { mark: m.kind === "testimonial" });
         if (doc) {
-          const name = nameOf(f.code, v.version, f.title);
+          const name = nameOf(f.code, v.version, f.title, m.kind);
           if (comp) await prisma.videoComposition.update({ where: { id: comp.id }, data: { name, document: doc as unknown as Prisma.InputJsonValue, version: { increment: 1 } } });
           else compositionId = (await prisma.videoComposition.create({ data: { projectId, name, status: "READY_TO_EDIT", document: doc as unknown as Prisma.InputJsonValue } })).id;
           status = comp ? "updated" : "created";
@@ -253,6 +254,12 @@ export async function layOutWaiting(projectId: string) {
   const films = await prisma.sequenceFilm.findMany({ where: { projectId } });
   if (!films.length) return { laidOut: 0 };
   const have = new Set((await prisma.videoComposition.findMany({ where: { id: { in: films.map((f) => f.compositionId).filter((x): x is string => !!x) } }, select: { id: true } })).map((c) => c.id));
+  // edits named before the tabs had their own names ("Sekwencja F5A" for a testimonial) get the right one
+  const named = await prisma.videoComposition.findMany({ where: { id: { in: films.filter((f) => f.kind === "testimonial" && f.compositionId).map((f) => f.compositionId!) }, name: { startsWith: "Sekwencja " } }, select: { id: true } });
+  for (const c of named) {
+    const f = films.find((x) => x.compositionId === c.id)!;
+    await prisma.videoComposition.update({ where: { id: c.id }, data: { name: nameOf(f.code, f.version, f.title, f.kind) } });
+  }
   const waiting = films.filter((f) => !f.compositionId || !have.has(f.compositionId));
   if (!waiting.length) return { laidOut: 0 };
   const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, include: { theme: true } });
@@ -264,7 +271,7 @@ export async function layOutWaiting(projectId: string) {
     if (!parts.length || parts.some((p) => !clips.has(p.clip))) continue;
     const doc = sequenceDocument(f.title, parts, clips, theme, !!project.theme?.logoAssetId, { mark: f.kind === "testimonial" });
     if (!doc) continue;
-    const comp = await prisma.videoComposition.create({ data: { projectId, name: nameOf(f.code, f.version, f.title), status: "READY_TO_EDIT", document: doc as unknown as Prisma.InputJsonValue } });
+    const comp = await prisma.videoComposition.create({ data: { projectId, name: nameOf(f.code, f.version, f.title, f.kind), status: "READY_TO_EDIT", document: doc as unknown as Prisma.InputJsonValue } });
     await prisma.sequenceFilm.update({ where: { id: f.id }, data: { compositionId: comp.id, placed: [] } });
     laidOut++;
   }

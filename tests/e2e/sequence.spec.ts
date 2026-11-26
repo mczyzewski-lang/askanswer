@@ -217,6 +217,8 @@ test("testimonials: films with client captions and a downloadable cover", async 
   expect(cover.headers()["content-disposition"]).toContain("F1_okladka.jpg");
   const data = await (await request.get(`/api/admin/sequence/${project.id}?kind=testimonial`)).json();
   expect((await (await request.get(`/api/admin/sequence/${project.id}`)).json()).films.some((f: { code: string }) => f.code === "F1")).toBe(false);
+  // the edit is named after its tab (the Studio header and the exported file show it)
+  expect((await (await request.get(`/api/admin/compositions/${data.films[0].compositionId}`)).json()).composition.name).toBe("Testimonial F1A - Od czego zaczynałem");
   const doc = (await (await request.get(`/api/admin/compositions/${data.films[0].compositionId}`)).json()).composition.document;
   // every client is signed when the clip starts: the name as the title, "klient Nowego Etapu" under it
   const caps = doc.overlays.filter((o: { kind: string }) => o.kind === "lowerThird");
